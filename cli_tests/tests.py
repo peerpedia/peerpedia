@@ -1,0 +1,166 @@
+import hashlib
+import json
+import os
+from pathlib import Path
+import subprocess
+import sys
+import tempfile
+from unittest import skipUnless
+from unittest.mock import patch
+
+from django.contrib.staticfiles.testing import StaticLiveServerTestCase
+from django.db import connection
+from django.test import SimpleTestCase, override_settings
+
+from accounts.models import User
+from accounts.tokens import issue_token
+from cli.peerpedia_cli import main as client
+from publishing.models import Paper, Submission
+from publishing.services import decide, propose, publish
+from publishing.tests import document
+
+
+class ClientSafetyTests(SimpleTestCase):
+    def test_remote_requires_https_and_credentials_cannot_be_embedded_in_url(self):
+        for server in ["http://example.org", "https://user:pass@example.org", "https://example.org/path", "https://example.org/?token=x"]:
+            with self.assertRaises(client.ClientError):
+                client.origin(server)
+        self.assertEqual(client.origin("http://127.0.0.1:8000/"), "http://127.0.0.1:8000")
+
+    def test_injected_token_is_bound_to_explicit_origin(self):
+        with patch.dict(os.environ, {"PEERPEDIA_TOKEN": "pp_test", "PEERPEDIA_SERVER": "https://trusted.example"}):
+            self.assertEqual(client.token_for("https://trusted.example"), "pp_test")
+            with self.assertRaises(client.ClientError):
+                client.token_for("https://untrusted.example")
+
+    def test_manifest_tampering_is_detected(self):
+        record = {"manifest": {"format": "peerpedia-submission-v1", "paper_id": "00000000-0000-0000-0000-000000000001", "submission_id": "00000000-0000-0000-0000-000000000002", "title": "Title", "authors": "Ada", "abstract": "Abstract", "markdown_sha256": hashlib.sha256(b"Original").hexdigest()}, "markdown": "Original"}
+        record["hash"] = hashlib.sha256(json.dumps(record["manifest"], sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode()).hexdigest()
+        client.verify(record)
+        record["markdown"] = "Changed"
+        with self.assertRaises(client.ClientError):
+            client.verify(record)
+
+    def test_bearer_credentials_are_not_forwarded_on_redirect(self):
+        self.assertIsNone(client.NoRedirect().redirect_request(None, None, 302, "", {}, "https://untrusted.example"))
+
+    def test_project_lock_prevents_simultaneous_mutations(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            (root / ".peerpedia").mkdir()
+            with client.locked(root):
+                with self.assertRaises(client.ClientError):
+                    with client.locked(root):
+                        self.fail("Second process acquired lock")
+            self.assertFalse((root / ".peerpedia/lock").exists())
+
+
+@skipUnless(connection.vendor == "postgresql", "Live CLI integration uses isolated PostgreSQL")
+@override_settings(DEBUG=True, PASSWORD_HASHERS=["django.contrib.auth.hashers.MD5PasswordHasher"])
+class CLIJourneys(StaticLiveServerTestCase):
+    host = "127.0.0.1"
+
+    def setUp(self):
+        self.owner = User.objects.create_user("owner", "owner@example.org", "password", email_verified=True)
+        self.other = User.objects.create_user("other", "other@example.org", "password", email_verified=True)
+        _, self.owner_token = issue_token(self.owner, "Publisher", can_publish=True)
+        _, self.other_token = issue_token(self.other, "Contributor")
+        self.temporary = tempfile.TemporaryDirectory(prefix="peerpedia-cli-test-")
+        self.addCleanup(self.temporary.cleanup)
+        self.root = Path(self.temporary.name)
+        self.env = {key: value for key, value in os.environ.items() if not key.startswith("PEERPEDIA_")}
+        self.env.update(PEERPEDIA_CONFIG_DIR=str(self.root / "credentials"), PYTHONPATH=str(Path(__file__).resolve().parents[1] / "cli"), NO_PROXY="127.0.0.1,localhost", no_proxy="127.0.0.1,localhost")
+
+    def command(self, *args, folder=None, token=None, failure=None):
+        result = subprocess.run([sys.executable, "-m", "peerpedia_cli", *args, "--json"], cwd=folder or self.root, env=self.env, input=token, text=True, capture_output=True, timeout=40)
+        self.assertEqual(result.returncode, 1 if failure else 0, result.stdout + result.stderr)
+        data = json.loads(result.stdout)
+        if failure:
+            self.assertEqual(data["error"]["code"], failure, data)
+        for raw in (self.owner_token, self.other_token):
+            self.assertNotIn(raw, result.stdout + result.stderr)
+        return data
+
+    def login(self, raw):
+        return self.command("login", self.live_server_url, "--token-stdin", token=raw + "\n")
+
+    def fixture_paper(self):
+        return publish(self.owner, document())
+
+    def test_new_publication_clone_proposal_retry_accept_and_pull(self):
+        self.login(self.owner_token)
+        self.command("init", "original")
+        root = self.root / "original"
+        data = document()
+        (root / "paper.md").write_bytes(data["markdown"].encode())
+        client.write_json(root / "paper.json", {key: data[key] for key in ("title", "authors", "abstract")})
+        first = self.command("push", "-m", "Initial publication.", folder=root)
+        self.assertEqual(first["status"], "accepted")
+        paper = Paper.objects.get()
+        self.login(self.other_token)
+        self.command("clone", str(paper.pk), "contribution")
+        work = self.root / "contribution"
+        updated = b"# A test paper\r\n\r\nA corrected proof.\r\n"
+        (work / "paper.md").write_bytes(updated)
+        self.assertTrue(self.command("diff", folder=work)["changed"])
+        proposal = self.command("push", "-m", "Correct the proof.", folder=work)
+        repeated = self.command("push", "-m", "Correct the proof.", folder=work)
+        self.assertEqual(proposal["hash"], repeated["hash"])
+        self.assertEqual(Submission.objects.count(), 2)
+        self.assertEqual(self.command("status", folder=work)["last_submission"]["status"], "pending")
+        decide(self.owner, proposal["submission_id"], "accepted")
+        self.command("pull", folder=work)
+        self.assertEqual((work / "paper.md").read_bytes(), updated)
+        self.assertFalse(self.command("status", folder=work)["local_changes"])
+        self.assertFalse(self.command("diff", folder=work)["changed"])
+        if os.name == "posix":
+            self.assertEqual((self.root / "credentials/credentials.json").stat().st_mode & 0o777, 0o600)
+        self.command("logout")
+        (work / "paper.md").write_text("Another edit", encoding="utf-8")
+        self.command("push", "-m", "Edit", folder=work, failure="login_required")
+
+    def test_stale_push_dirty_pull_and_explicit_reconciliation(self):
+        paper = self.fixture_paper()
+        self.login(self.other_token)
+        self.command("clone", str(paper.pk), "work")
+        root = self.root / "work"
+        (root / "paper.md").write_text("My local improvement\n", encoding="utf-8")
+        remote = propose(self.owner, paper.pk, paper.current_id, document(markdown="Someone else's correction\n"))
+        decide(self.owner, remote.pk, "accepted")
+        self.command("push", "-m", "My improvement", folder=root, failure="stale_base")
+        self.assertFalse((root / ".peerpedia/pending.json").exists())
+        self.command("pull", folder=root, failure="local_changes")
+        self.assertEqual((root / "paper.md").read_text(), "My local improvement\n")
+        self.command("fetch", folder=root)
+        self.assertEqual((root / ".peerpedia/incoming.md").read_text(), remote.markdown)
+        self.command("rebase", folder=root, failure="reconciliation_required")
+        (root / "paper.md").write_text(remote.markdown + "My local improvement\n", encoding="utf-8")
+        self.command("rebase", "--acknowledge", folder=root)
+        result = self.command("push", "-m", "Combine both improvements", folder=root)
+        self.assertEqual(Submission.objects.get(pk=result["submission_id"]).base_id, remote.pk)
+
+    def test_lost_response_retries_saved_payload_even_after_local_edit(self):
+        paper = self.fixture_paper()
+        self.login(self.other_token)
+        self.command("clone", str(paper.pk), "work")
+        root = self.root / "work"
+        (root / "paper.md").write_text("Frozen first edit", encoding="utf-8")
+        code = '''from peerpedia_cli import main as cli
+real_request = cli.request
+def lose_response(*args, **kwargs):
+    result = real_request(*args, **kwargs)
+    if args[1] == "/api/v1/push/":
+        raise cli.ClientError("network_error", "Simulated lost response")
+    return result
+cli.request = lose_response
+cli.main(["push", "-m", "Correct proof", "--json"])
+'''
+        result = subprocess.run([sys.executable, "-c", code], cwd=root, env=self.env, text=True, capture_output=True, timeout=40)
+        self.assertEqual(result.returncode, 1, result.stderr)
+        self.assertEqual(Submission.objects.count(), 2)
+        (root / "paper.md").write_text("A later unsent edit", encoding="utf-8")
+        self.command("push", "-m", "Other", folder=root, failure="pending_push")
+        receipt = self.command("push", "--retry", folder=root)
+        self.assertEqual(Submission.objects.count(), 2)
+        self.assertEqual(Submission.objects.get(pk=receipt["submission_id"]).markdown, "Frozen first edit")
+        self.assertEqual((root / "paper.md").read_text(), "A later unsent edit")

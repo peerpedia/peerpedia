@@ -1,0 +1,38 @@
+{% load static %}<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}Peerpedia{% endblock %}</title>
+  <link rel="stylesheet" href="{% static 'site.css' %}">
+  {% block head %}{% endblock %}
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to content</a>
+  <header class="site-header"><div class="header-inner">
+    <a class="wordmark" href="{% url 'browse' %}" aria-label="Peerpedia home">peer<span>pedia</span><i aria-hidden="true">.</i></a>
+    <nav aria-label="Main navigation">
+      <a href="{% url 'browse' %}">Browse</a>
+      <a href="{% url 'publish' %}">Upload a paper</a>
+      <a href="{% url 'help' %}">Help</a>
+      {% if user.is_authenticated %}
+        <span class="account-name">{{ user.username }}</span>
+        {% if user.is_staff %}<a href="{% url 'admin:index' %}">Admin</a>{% endif %}
+        <a href="{% url 'password_change' %}" class="quiet-link">Password</a>
+        <a href="{% url 'access_tokens' %}" class="quiet-link">Access tokens</a>
+        <form action="{% url 'logout' %}" method="post" class="inline-form">{% csrf_token %}<button class="nav-button">Sign out</button></form>
+      {% else %}
+        <a href="{% url 'login' %}" class="quiet-link">Sign in</a><a href="{% url 'signup' %}" class="button small">Create account</a>
+      {% endif %}
+    </nav>
+  </div></header>
+  <main id="main" class="main-shell">
+    {% if messages %}<div class="messages" role="status">{% for message in messages %}<div class="notice {{ message.tags }}">{{ message }}</div>{% endfor %}</div>{% endif %}
+    {% if user.is_authenticated and not user.email_verified %}<div class="notice">Verify your email to publish, submit changes, and write reviews. <a href="{% url 'verification_needed' %}">Verify email</a></div>{% endif %}
+    {% block content %}{% endblock %}
+  </main>
+  <footer class="site-footer">
+    <span>Peerpedia · Research, with a history.</span>
+    <div class="footer-links"><a href="{% url 'help' %}">Help</a><a href="{{ repository_url }}">GitHub</a><span>Developed by <a href="{{ developer_url }}">{{ developer_name }}</a></span></div>
+  </footer>
+</body>
+</html>

@@ -1,0 +1,1 @@
+{% extends 'base.html' %}{% block title %}Confirm your email · Peerpedia{% endblock %}{% block content %}<div class="auth-panel"><h1>Verify your email</h1><p>Confirm this email address to participate in Peerpedia.</p><form method="post">{% csrf_token %}<button class="button">Verify email</button></form></div>{% endblock %}

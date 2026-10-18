@@ -1,0 +1,38 @@
+{% extends 'base.html' %}
+{% block title %}{{ paper.current.title }} · Peerpedia{% endblock %}
+{% block content %}
+<a class="breadcrumb" href="{% url 'browse' %}">← All papers</a>
+<article class="paper-metadata">
+  <div class="eyebrow">RESEARCH PAPER / NOTE</div>
+  <h1>{{ paper.current.title }}</h1>
+  <p class="author-list">{{ paper.current.authors|linebreaksbr }}</p>
+  <div class="meta-line"><span>Corresponding author: <strong>{{ paper.owner.username }}</strong></span><span>Latest acceptance: {{ paper.accepted_at|date:'j M Y, H:i' }} UTC</span></div>
+  <section class="abstract"><h2>Abstract</h2><p>{{ paper.current.abstract|linebreaksbr }}</p></section>
+  <div class="actions"><a class="button" href="{% url 'read_paper' paper.pk %}">Read paper <span aria-hidden="true">↗</span></a><a class="button secondary" href="{% url 'download' paper.current_id %}">Download Markdown</a><a class="button secondary" href="{% url 'propose' paper.pk %}">Submit a change</a></div>
+</article>
+<nav class="tabs" aria-label="Paper details"><a {% if tab == 'reviews' %}class="active" aria-current="page"{% endif %} href="?tab=reviews">Reviews <span>{{ stats.count }}</span></a><a {% if tab == 'submissions' %}class="active" aria-current="page"{% endif %} href="?tab=submissions">Submissions</a><a {% if tab == 'history' %}class="active" aria-current="page"{% endif %} href="?tab=history">History</a></nav>
+{% if tab == 'reviews' %}
+<section id="reviews">
+  <div class="section-heading"><div><h2>Community reviews</h2><p class="muted">Reviews apply to the paper as a whole. Newest first.</p></div><div class="rating-summary">{% if stats.count %}<span class="star" aria-hidden="true">★</span> {{ stats.average|floatformat:1 }} <small>/ 5 · {{ stats.count }} review{{ stats.count|pluralize }}</small>{% else %}<span class="muted">Not yet rated</span>{% endif %}</div></div>
+  {% for review in review_page %}<article class="review"><div class="review-heading"><strong>{{ review.user.username }}</strong><span class="review-score"><span class="star" aria-hidden="true">★</span> {{ review.score }}/5</span><time datetime="{{ review.created_at|date:'c' }}">{{ review.created_at|date:'j M Y' }}</time>{% if review.edited %}<span class="muted small-text">Edited {{ review.updated_at|date:'j M Y, H:i' }} UTC</span>{% endif %}</div><p>{{ review.text|linebreaksbr }}</p></article>{% empty %}<div class="empty-inline"><h3>No reviews yet</h3><p>Share a considered assessment with a rating and a written review.</p></div>{% endfor %}
+  {% include 'includes/pagination.html' with page=review_page %}
+  <div class="form-panel">
+  {% if user.is_authenticated and user.email_verified %}
+    {% if own_review.is_hidden %}<p class="muted">Your review has been hidden by an administrator and cannot currently be edited.</p>{% else %}<h3>{% if own_review %}Edit your review{% else %}Write a review{% endif %}</h3><form action="{% url 'review' paper.pk %}" method="post">{% csrf_token %}{% include 'includes/form.html' with form=review_form %}<button class="button">{% if own_review %}Save review{% else %}Publish review{% endif %}</button></form>{% endif %}
+  {% elif user.is_authenticated %}<p><a href="{% url 'verification_needed' %}">Verify your email</a> to write a review.</p>
+  {% else %}<p><a href="{% url 'login' %}?next={{ request.path|urlencode }}">Sign in</a> to rate this paper and write a review.</p>{% endif %}
+  </div>
+</section>
+{% elif tab == 'submissions' %}
+<section><div class="section-heading"><h2>Proposed changes</h2><a href="{% url 'propose' paper.pk %}">Submit a change →</a></div>
+{% for item in submission_page %}<article class="history-row"><span class="status {{ item.status }}">{{ item.status|title }}</span><div><a class="entry-title" href="{% url 'submission' item.pk %}">{{ item.explanation|truncatechars:140 }}</a><p class="muted">{{ item.contributor_name }} · {{ item.created_at|date:'j M Y, H:i' }} UTC · <code>{{ item.short_hash }}</code></p></div></article>{% empty %}<div class="empty-inline"><h3>No proposed changes yet</h3><p>Anyone with a verified account can contribute an improvement.</p></div>{% endfor %}
+{% include 'includes/pagination.html' with page=submission_page %}
+</section>
+{% else %}
+<section><div class="section-heading"><div><h2>Publication history</h2><p class="muted">Every accepted version remains available.</p></div><a href="{% url 'compare' paper.pk %}">Compare versions →</a></div>
+{% for item in history_page %}<article class="history-row"><span class="history-dot" aria-hidden="true"></span><div><div class="entry-title"><a href="{% url 'submission' item.pk %}">{{ item.explanation|truncatechars:140 }}</a> {% if item.pk == paper.current_id %}<span class="status accepted">Current</span>{% endif %}</div><p class="muted">Accepted {{ item.decision.created_at|date:'j M Y, H:i' }} UTC · Contribution by {{ item.contributor_name }}</p><div class="inline-links"><code>{{ item.short_hash }}</code><a href="{% url 'read_submission' item.pk %}">Read this version</a><a href="{% url 'download' item.pk %}">Markdown</a><a href="{% url 'manifest' item.pk %}">Verification manifest</a></div></div></article>{% endfor %}
+{% include 'includes/pagination.html' with page=history_page %}
+{% if contributions %}<div class="form-panel"><h3>Accepted contributions</h3><p class="muted">Contribution credit is separate from paper authorship.</p>{% for credit in contributions %}<p>{{ credit.contributor_name }} <span class="muted">· {{ credit.total }} accepted change{{ credit.total|pluralize }}</span></p>{% endfor %}</div>{% endif %}
+</section>
+{% endif %}
+{% endblock %}

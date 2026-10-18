@@ -1,0 +1,24 @@
+{% extends 'base.html' %}
+{% block title %}Browse research · Peerpedia{% endblock %}
+{% block content %}
+<div class="page-heading"><div><div class="eyebrow">THE OPEN RESEARCH LIBRARY</div><h1>Research, in revision.</h1><p class="lede">Read, review, and contribute to a growing body of knowledge.</p></div></div>
+<form class="search-bar" method="get" role="search">
+  <div class="search-input"><label class="sr-only" for="search">Search papers</label><input id="search" name="q" type="search" value="{{ query }}" placeholder="Search by title, author, or keyword"><button type="submit">Search</button></div>
+  <div class="sort-control"><label for="sort">Sort by</label><select id="sort" name="sort"><option value="latest" {% if sort == 'latest' %}selected{% endif %}>Latest acceptance</option><option value="rating" {% if sort == 'rating' %}selected{% endif %}>Highest rated</option></select><button class="button secondary small" type="submit">Apply</button></div>
+</form>
+<div class="results-heading"><h2>{% if query %}Results for “{{ query }}”{% else %}All papers{% endif %}</h2><span class="muted">{{ page.paginator.count }} paper{{ page.paginator.count|pluralize }}</span></div>
+{% if page.object_list %}
+<div class="paper-table" role="table" aria-label="Research papers">
+  <div class="paper-table-head" role="row"><span role="columnheader">PAPER</span><span role="columnheader">AUTHORS</span><span role="columnheader">RATING</span><span role="columnheader" class="sr-only">Read</span></div>
+  {% for paper in page %}<div class="paper-row" role="row">
+    <div role="cell" class="paper-title-cell"><a class="paper-title" href="{% url 'paper' paper.pk %}">{{ paper.current.title }}</a></div>
+    <div role="cell" class="authors-cell">{{ paper.current.authors|linebreaksbr }}</div>
+    <div role="cell" class="rating-cell">{% if paper.review_count %}<span class="star" aria-hidden="true">★</span> <strong>{{ paper.average|floatformat:1 }}</strong><span class="muted rating-count">({{ paper.review_count }})</span>{% else %}<span class="unrated">Not rated</span>{% endif %}</div>
+    <div role="cell"><a class="read-link" href="{% url 'read_paper' paper.pk %}">Read paper <span aria-hidden="true">↗</span></a></div>
+  </div>{% endfor %}
+</div>
+{% else %}
+<div class="empty-state"><span class="empty-mark" aria-hidden="true">¶</span><h2>{% if query %}No papers found{% else %}A place for your next contribution{% endif %}</h2><p>{% if query %}Try another title, author name, or keyword.{% else %}Upload a Markdown paper or note to begin its public history.{% endif %}</p>{% if query %}<a href="{% url 'browse' %}">Browse all papers</a>{% else %}<a class="button" href="{% url 'publish' %}">Upload the first paper</a>{% endif %}</div>
+{% endif %}
+{% include 'includes/pagination.html' %}
+{% endblock %}

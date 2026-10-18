@@ -1,0 +1,2 @@
+{% load static %}<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>{{ submission.title }}</title><link rel="stylesheet" href="{% static 'reader.css' %}"><script defer src="{% static 'math.js' %}"></script><script defer src="{% static 'vendor/mathjax/tex-svg.js' %}"></script></head><body class="reader"><main class="markdown-body">{{ body }}</main></body></html>

@@ -1,0 +1,159 @@
+"""Versioned JSON API. Write access uses bearer tokens, never session cookies."""
+from functools import wraps
+import hashlib
+import json
+import uuid
+
+from django.conf import settings
+from django.core.exceptions import PermissionDenied, RequestDataTooBig, ValidationError
+from django.core.files.uploadedfile import SimpleUploadedFile
+from django.db import transaction
+from django.http import Http404, JsonResponse
+from django.shortcuts import get_object_or_404
+from django.urls import path, reverse
+from django.views.decorators.csrf import csrf_exempt
+from django.views.decorators.debug import sensitive_variables
+
+from accounts.models import User
+from accounts.security import limited
+from accounts.tokens import authenticate_token
+from .forms import UploadForm
+from .models import ApiPush
+from .services import propose, publish
+from .views import public_papers, submission_queryset
+
+
+class APIError(Exception):
+    def __init__(self, code, message, status=400, details=None):
+        self.code, self.message, self.status, self.details = code, message, status, details
+
+
+def error_response(code, message, status, details=None):
+    return JsonResponse({"error": {"code": code, "message": message, "details": details}}, status=status)
+
+
+def endpoint(method="GET", authenticated=False):
+    def decorate(view):
+        @csrf_exempt
+        @wraps(view)
+        @sensitive_variables("raw")
+        def wrapped(request, *args, **kwargs):
+            try:
+                if request.method != method:
+                    raise APIError("method_not_allowed", f"Use {method}.", 405)
+                if authenticated:
+                    authorization = request.headers.get("Authorization", "")
+                    raw = authorization[7:] if authorization.startswith("Bearer ") else ""
+                    request.api_token = authenticate_token(raw)
+                    if not request.api_token:
+                        raise APIError("invalid_token", "A valid, unexpired access token is required.", 401)
+                    request.user = request.api_token.user
+                response = view(request, *args, **kwargs)
+                if response.status_code == 429:
+                    retry = response.get("Retry-After", "3600")
+                    response = error_response("rate_limited", "Too many pushes. Try again later.", 429)
+                    response["Retry-After"] = retry
+            except APIError as error:
+                response = error_response(error.code, error.message, error.status, error.details)
+            except Http404:
+                response = error_response("not_found", "Paper or submission not found.", 404)
+            except PermissionDenied:
+                response = error_response("forbidden", "This action is not permitted.", 403)
+            except RequestDataTooBig:
+                response = error_response("too_large", "The request exceeds the upload limit.", 413)
+            except UnicodeError:
+                response = error_response("invalid_document", "Use valid UTF-8 text.", 400)
+            except ValidationError as error:
+                response = error_response("stale_base", " ".join(error.messages), 409)
+            if response.status_code == 401:
+                response["WWW-Authenticate"] = "Bearer"
+            if response.status_code == 405:
+                response["Allow"] = method
+            response["Cache-Control"] = "no-store"
+            return response
+        return wrapped
+    return decorate
+
+
+def snapshot(submission):
+    return {"hash": submission.hash, "manifest": submission.manifest(), "markdown": submission.markdown,
+            "status": submission.status, "url": reverse("submission", args=[submission.pk])}
+
+
+@endpoint(authenticated=True)
+def me(request):
+    return JsonResponse({"username": request.user.username, "scopes": ["propose"] + (["publish"] if request.api_token.can_publish else []),
+                         "expires_at": request.api_token.expires_at.isoformat()})
+
+
+@endpoint()
+def paper(request, paper_id):
+    item = get_object_or_404(public_papers(), pk=paper_id)
+    return JsonResponse({"paper_id": str(item.pk), "current": snapshot(item.current)})
+
+
+@endpoint()
+def submission(request, submission_id):
+    return JsonResponse(snapshot(get_object_or_404(submission_queryset(), pk=submission_id)))
+
+
+@endpoint(method="POST", authenticated=True)
+@limited("api_push", limit=40, seconds=3600)
+@transaction.atomic
+def push(request):
+    if request.content_type != "application/json":
+        raise APIError("invalid_content_type", "Send application/json.", 415)
+    try:
+        payload = json.loads(request.body)
+        key = uuid.UUID(request.headers.get("Idempotency-Key", ""))
+    except (ValueError, UnicodeDecodeError, RecursionError):
+        raise APIError("invalid_request", "Provide valid JSON and a UUID Idempotency-Key header.")
+    fields = {"paper_id", "base_hash", "title", "authors", "abstract", "markdown", "explanation"}
+    if not isinstance(payload, dict) or set(payload) != fields:
+        raise APIError("invalid_request", "Expected fields: " + ", ".join(sorted(fields)))
+    for field in fields - {"paper_id", "base_hash"}:
+        if not isinstance(payload[field], str):
+            raise APIError("invalid_request", f"{field} must be text.")
+    if len(payload["markdown"].encode("utf-8")) > settings.MAX_MARKDOWN_BYTES:
+        raise APIError("too_large", "Markdown must be 1 MB or smaller.", 413)
+    initial = payload["paper_id"] is None
+    if initial:
+        if payload["base_hash"] is not None:
+            raise APIError("invalid_request", "A new paper cannot have a base hash.")
+        if not request.api_token.can_publish:
+            raise APIError("insufficient_scope", "This token only permits proposals. Enable new-paper publication on a new token.", 403)
+    else:
+        try:
+            uuid.UUID(payload["paper_id"])
+            if not isinstance(payload["base_hash"], str) or len(payload["base_hash"]) != 64:
+                raise ValueError()
+        except (ValueError, TypeError, AttributeError):
+            raise APIError("invalid_request", "Provide a paper UUID and its full base hash.")
+    # Serialize retry checks and creation for the same account, including when
+    # two different access tokens retry an identical push concurrently.
+    User.objects.select_for_update(no_key=True).get(pk=request.user.pk)
+    fingerprint = hashlib.sha256(json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode()).hexdigest()
+    existing = ApiPush.objects.select_related("submission__paper").filter(user=request.user, key=key).first()
+    if existing:
+        if existing.request_hash != fingerprint:
+            raise APIError("idempotency_conflict", "This request ID was already used for different content.", 409)
+        if existing.submission.paper.is_hidden:
+            raise Http404()
+        return JsonResponse(snapshot(existing.submission))
+    item = get_object_or_404(public_papers(), pk=payload["paper_id"]) if not initial else None
+    if item and item.current.hash != payload["base_hash"]:
+        raise APIError("stale_base", "A newer version exists. Fetch it and reconcile your local changes before pushing.", 409)
+    form = UploadForm(
+        {**payload, "base": str(item.current_id) if item else ""},
+        {"file": SimpleUploadedFile("paper.md", payload["markdown"].encode("utf-8"))}, initial_publication=initial,
+    )
+    if not form.is_valid():
+        raise APIError("invalid_document", "Correct the document or metadata before pushing.", details=form.errors.get_json_data())
+    data = form.submission_data()
+    record = publish(request.user, data).current if initial else propose(request.user, item.pk, item.current_id, data)
+    ApiPush.objects.create(user=request.user, key=key, request_hash=fingerprint, submission=record)
+    return JsonResponse(snapshot(record), status=201)
+
+
+urlpatterns = [path("me/", me), path("papers/<uuid:paper_id>/", paper),
+               path("submissions/<uuid:submission_id>/", submission), path("push/", push)]

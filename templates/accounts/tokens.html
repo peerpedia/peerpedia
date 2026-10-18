@@ -1,0 +1,13 @@
+{% extends 'base.html' %}
+{% block title %}Access tokens · Peerpedia{% endblock %}
+{% block content %}
+<div class="form-layout"><h1>Access tokens</h1>
+<p class="lede">Connect your command-line client or local AI assistant.</p>
+<p>Tokens can submit public proposals on your behalf. They cannot accept submissions, manage your account, or use administrator tools.</p>
+{% if new_token %}<section class="notice"><h2>Copy your token now</h2><p>It will not be shown again. Store it outside your paper folder.</p><pre style="white-space:pre-wrap;overflow-wrap:anywhere"><code id="new-token">{{ new_token }}</code></pre><p>Run <code>peerpedia login https://peerpedia.dev</code> and paste the token at the hidden prompt. Use your own server address for local testing.</p></section>{% endif %}
+<div class="form-panel"><h2>Create a token</h2><form method="post">{% csrf_token %}{% include 'includes/form.html' %}<button class="button">Create token</button></form></div>
+<h2>Your tokens</h2>
+{% for token in tokens %}<article class="review"><h3>{{ token.name }}</h3><p><code>{{ token.prefix }}…</code> · Proposals{% if token.can_publish %} and new papers{% endif %} · Expires {{ token.expires_at|date:'j M Y, H:i' }} UTC</p>
+{% if token.revoked_at %}<p>Revoked</p>{% elif token.expires_at <= now %}<p>Expired</p>{% else %}<form method="post" action="{% url 'revoke_token' token.pk %}">{% csrf_token %}<button class="button danger">Revoke {{ token.name }}</button></form>{% endif %}</article>{% empty %}<p>No access tokens yet.</p>{% endfor %}
+</div>
+{% endblock %}

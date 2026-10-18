@@ -1,0 +1,11 @@
+[Unit]
+Description=Peerpedia daily database backup
+Requires=docker.service
+After=docker.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/peerpedia
+UMask=0077
+ExecStart=/bin/sh /opt/peerpedia/scripts/backup.sh
+ExecStart=/usr/bin/docker compose exec -T web python manage.py clearsessions

@@ -1,0 +1,116 @@
+{% extends 'base.html' %}
+{% block title %}Help · Peerpedia{% endblock %}
+{% block content %}
+<header class="page-heading">
+  <div class="eyebrow">USING PEERPEDIA</div>
+  <h1>Research, one improvement at a time.</h1>
+  <p class="lede">Publish a paper or note, propose a correction, and follow how the work develops. Each submission preserves a complete version of the document.</p>
+</header>
+<div class="help-layout">
+  <nav class="help-contents" aria-label="On this page">
+    <strong>On this page</strong>
+    <a href="#read">Read and discover</a>
+    <a href="#publish">Publish a paper or note</a>
+    <a href="#contribute">Propose a change</a>
+    <a href="#review">Review and discuss</a>
+    <a href="#history">Understand the history</a>
+    <a href="#local-tools">Use local files and AI tools</a>
+    <a href="#account">Manage your account</a>
+    <a href="#about">About Peerpedia</a>
+  </nav>
+  <div class="help-content">
+    <section id="read">
+      <h2>Read and discover</h2>
+      <p>Anyone can read without an account. On <a href="{% url 'browse' %}">Browse</a>, search by title, author name, or words in a paper, then sort by latest acceptance or average rating.</p>
+      <p>Click a <strong>title</strong> for its abstract, reviews, submissions, and history. Click <strong>Read paper</strong> to open the latest accepted version in a full-width reader. Use your browser’s Back button to return.</p>
+    </section>
+    <section id="publish">
+      <h2>Publish a paper or note</h2>
+      <ol>
+        <li><a href="{% url 'signup' %}">Create an account</a> and verify your email.</li>
+        <li>Prepare one UTF-8 <code>.md</code> file, up to 1 MB, in your own editor. Papers and AI-assisted notes use the same workflow.</li>
+        <li>Choose <a href="{% url 'publish' %}">Upload a paper</a>. Enter the title, abstract, and author names manually, one author per line in publication order.</li>
+        <li>Preview the rendered document and metadata, then confirm publication. You become the corresponding author who decides on future changes.</li>
+      </ol>
+      <p>Markdown headings, lists, tables, links, code blocks, and mathematical equations are supported. Use <code>$x^2$</code> for inline mathematics or <code>$$x^2$$</code> for a display equation. Include your references in the document.</p>
+      <p>Images, PDF uploads, and multiple-file submissions are not supported yet. There is no online editor or saved private draft. Check the content and attribution of AI-assisted notes before publishing.</p>
+      <div class="notice"><strong>Publication is public and permanent in the history.</strong> Once confirmed, a submission’s document and metadata are frozen. To correct them, submit a new version.</div>
+    </section>
+    <section id="contribute">
+      <h2>Propose a change</h2>
+      <p>Any verified account can propose an improvement to any paper. No invitation is needed. The same process applies when you update your own paper.</p>
+      <ol>
+        <li>Open the paper’s details and choose <strong>Download Markdown</strong> to get the latest accepted version.</li>
+        <li>Edit the document locally. A submission contains the <strong>whole revised document</strong>, not just the changed paragraphs.</li>
+        <li>Choose <strong>Submit a change</strong>, upload your revised file, and describe what changed. Preview the document and differences, then confirm.</li>
+        <li>Discuss the public proposal on its submission page. Only the corresponding author can accept or reject it; its contributor can withdraw it while it is pending.</li>
+      </ol>
+      <p>Acceptance makes the proposed document the current version. If another change is accepted first, your proposal has an old base and cannot be accepted. Download the newest version, incorporate your changes, and submit a new proposal.</p>
+      <p>An accepted contribution appears in the contribution history. It does not automatically add the contributor to the paper’s author list.</p>
+    </section>
+    <section id="review">
+      <h2>Review and discuss</h2>
+      <p>On a paper’s <strong>Reviews</strong> tab, choose 1–5 stars and write your assessment. Both are required. Each account has one editable review per paper, and authors may review their own work.</p>
+      <p>Reviews apply to the paper as a whole, across its versions. The displayed rating is the average of visible reviews. Reviews are listed newest first by their original posting time.</p>
+      <p>For a particular proposed change, use its submission conversation. Comments form a simple chronological discussion; replies, likes, and inline annotations are not available.</p>
+    </section>
+    <section id="history">
+      <h2>Understand the history</h2>
+      <p>The <strong>History</strong> tab lists accepted versions. Open an older version to read it, download its Markdown, or compare it with another accepted version. The <strong>Submissions</strong> tab also includes pending, rejected, and withdrawn proposals.</p>
+      <p>Every confirmed submission has a SHA-256 hash covering its document and submission metadata. Accepting or rejecting a submission does not change that hash. Reviews and comments are separate from the frozen document.</p>
+      <p>You can download a verification manifest alongside the Markdown. The <a href="{{ repository_url }}#content-verification">repository’s verification instructions</a> explain how to check them locally. A matching hash verifies content; it does not prove that a claim is correct or establish authorship.</p>
+      <p>Administrators can hide inappropriate content from public view. Hiding does not rewrite a frozen submission.</p>
+    </section>
+    <section id="local-tools">
+      <h2>Use local files and AI tools</h2>
+      <p>The optional command-line client lets you work in your own editor or with a local AI assistant, then upload the result. It uses the same publication and review rules as the website.</p>
+      <details>
+        <summary>Install the client and submit from your computer</summary>
+        <div class="help-details">
+          <p>You need Python 3.12 or newer and Git. Install the client in a virtual environment:</p>
+          <pre><code>python3 -m venv .venv
+# macOS / Linux
+source .venv/bin/activate
+# Windows PowerShell: .venv\Scripts\Activate.ps1
+python -m pip install "git+{{ repository_url }}.git#subdirectory=cli"</code></pre>
+          <p>Sign in on the website, open <a href="{% url 'access_tokens' %}">Access tokens</a>, and create a token. Then run:</p>
+          <pre><code>peerpedia login {{ site_url }}</code></pre>
+          <p>Paste the token at the hidden prompt. Use a token rather than your account password. Tokens allow proposals by default; select <strong>Also allow publishing new papers</strong> only if needed. They cannot accept changes or grant administrator access.</p>
+          <h3>Improve an existing paper</h3>
+          <p>Replace <code>PAPER_UUID</code> with the identifier in the paper’s address, between <code>/papers/</code> and the final slash.</p>
+          <pre><code>peerpedia clone PAPER_UUID my-paper --server {{ site_url }}
+cd my-paper
+# Edit paper.md and, if needed, paper.json.
+peerpedia diff
+peerpedia push -m "Explain your changes"
+peerpedia status</code></pre>
+          <p><code>paper.md</code> is your document. <code>paper.json</code> holds its title, authors, and abstract. A push creates a public, frozen proposal. The corresponding author accepts it on the website.</p>
+          <h3>Publish a new paper</h3>
+          <pre><code>peerpedia init my-new-paper --server {{ site_url }}
+cd my-new-paper
+# Fill in paper.md and all three fields in paper.json.
+peerpedia push -m "Initial publication"</code></pre>
+          <p>An initial push publishes immediately; check the files before running it.</p>
+          <h3>Stay up to date</h3>
+          <p>Use <code>peerpedia pull</code> after a proposal is accepted. It refuses to overwrite local edits. If your base is stale, use <code>peerpedia fetch</code>, reconcile your files with the downloaded version, then run <code>peerpedia rebase --acknowledge</code> before pushing again.</p>
+          <p>If a push loses its connection before you get a result, use <code>peerpedia push --retry</code>. This resends the saved submission, even if you edited your files afterward, without creating a duplicate.</p>
+          <h3>Work with a local AI assistant</h3>
+          <p>Let the assistant edit your local files, inspect the diff, and use the same client to submit. For an automated runner, supply <code>PEERPEDIA_TOKEN</code> securely and set <code>PEERPEDIA_SERVER</code> to <code>{{ site_url }}</code>. Commands support <code>--json</code> for structured output. Keep tokens out of paper files and public repositories.</p>
+          <p>See the <a href="{{ repository_url }}#local-editing-and-command-line-pushes">full CLI guide</a> for retry behavior, conflict handling, and credential storage.</p>
+        </div>
+      </details>
+    </section>
+    <section id="account">
+      <h2>Manage your account</h2>
+      <p>Sign in with your username or email address. You must verify your email before publishing, proposing changes, reviewing, or commenting.</p>
+      <p>If a verification email is missing, check your spam folder and use <a href="{% url 'verification_needed' %}">Verify email</a> to request another. Verification links expire after 24 hours.</p>
+      <p>Use <a href="{% url 'password_reset' %}">Forgot password?</a> to receive a recovery link, or <a href="{% url 'password_change' %}">Password</a> to change your password while signed in. Manage or revoke tool credentials under <a href="{% url 'access_tokens' %}">Access tokens</a>.</p>
+    </section>
+    <section id="about">
+      <h2>About Peerpedia</h2>
+      <p>Peerpedia is developed by <a href="{{ developer_url }}">{{ developer_name }}</a>. It is a place for researchers to improve papers and notes together while retaining the history of their work.</p>
+      <p><a href="{{ repository_url }}">View the source on GitHub</a> to explore the software, or <a href="{{ repository_url }}/issues">report a bug or suggest an improvement</a>. Include steps to reproduce a problem; leave out passwords, access tokens, and private information.</p>
+    </section>
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,12 @@
+{% extends 'base.html' %}{% load static %}
+{% block title %}Review your upload · Peerpedia{% endblock %}
+{% block head %}<link rel="stylesheet" href="{% static 'reader.css' %}"><script defer src="{% static 'math.js' %}"></script><script defer src="{% static 'vendor/mathjax/tex-svg.js' %}"></script>{% endblock %}
+{% block content %}
+<div class="eyebrow"><span class="muted">01 UPLOAD / </span>02 PREVIEW <span class="muted">/ 03 PUBLISH</span></div>
+<h1>Review your upload</h1><p class="lede">Nothing has been published yet. This preview expires after one hour.</p>
+<div class="preview-metadata"><h2>{{ data.title }}</h2><p class="author-list">{{ data.authors|linebreaksbr }}</p><h3>Abstract</h3><p>{{ data.abstract|linebreaksbr }}</p>{% if paper %}<h3>Change description</h3><p>{{ data.explanation|linebreaksbr }}</p>{% endif %}</div>
+{% if paper %}<details class="diff-details" open><summary>Markdown and metadata changes</summary>{% include 'includes/diff.html' %}</details>{% endif %}
+<details class="render-preview" {% if not paper %}open{% endif %}><summary>Rendered document</summary><div class="markdown-body">{{ body }}</div></details>
+<div class="publish-confirm"><h2>Ready to publish?</h2><p>This {% if paper %}submission{% else %}paper{% endif %} will become <strong>public and immutable</strong>. Corrections require a new submission. {% if paper %}It will remain a proposal until the corresponding author accepts it.{% endif %}</p>
+<form method="post">{% csrf_token %}<input type="hidden" name="action" value="confirm"><input type="hidden" name="token" value="{{ token }}"><div class="actions"><button class="button">Publish {% if paper %}submission{% else %}paper{% endif %}</button><a class="button secondary" href="{% if paper %}{% url 'propose' paper.pk %}{% else %}{% url 'publish' %}{% endif %}">Start over</a></div></form></div>
+{% endblock %}

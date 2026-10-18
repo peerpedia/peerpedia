@@ -1,0 +1,402 @@
+"""Dependency-free client. Every push is a full frozen document, not a Git push."""
+import argparse
+from contextlib import contextmanager
+import difflib
+import getpass
+import hashlib
+import json
+import os
+from pathlib import Path
+import sys
+import tempfile
+from urllib.error import HTTPError, URLError
+from urllib.parse import urlsplit
+from urllib.request import HTTPRedirectHandler, Request, build_opener
+import uuid
+
+
+class ClientError(Exception):
+    def __init__(self, code, message, details=None):
+        self.code, self.message, self.details = code, message, details
+
+
+def read_json(path):
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def write_json(path, data):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, temporary = tempfile.mkstemp(dir=path.parent)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as output:
+            json.dump(data, output, ensure_ascii=False, indent=2)
+            output.write("\n")
+        os.replace(temporary, path)
+    finally:
+        if os.path.exists(temporary):
+            os.unlink(temporary)
+
+
+def origin(value):
+    parts = urlsplit(value)
+    if (parts.scheme not in {"https", "http"} or not parts.hostname or parts.username or parts.password
+            or parts.path not in {"", "/"} or parts.query or parts.fragment):
+        raise ClientError("invalid_server", "Use a server origin such as https://peerpedia.dev (no path or credentials).")
+    if parts.scheme == "http" and parts.hostname not in {"localhost", "127.0.0.1", "::1"}:
+        raise ClientError("https_required", "Remote servers require HTTPS. HTTP is only permitted on loopback for development.")
+    return f"{parts.scheme}://{parts.netloc.lower()}"
+
+
+def config_path():
+    directory = Path(os.environ.get("PEERPEDIA_CONFIG_DIR", Path.home() / ".config" / "peerpedia"))
+    return directory / "credentials.json"
+
+
+def credentials():
+    path = config_path()
+    if not path.exists():
+        return {"servers": {}}
+    if os.name == "posix" and path.stat().st_mode & 0o077:
+        raise ClientError("unsafe_credentials", f"Restrict credential-file permissions: chmod 600 {path}")
+    return read_json(path)
+
+
+def save_credentials(data):
+    path = config_path()
+    path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+    write_json(path, data)  # Atomic replacement with a mode-0600 temporary file.
+
+
+def server_for(args):
+    value = args.server or os.environ.get("PEERPEDIA_SERVER") or credentials().get("default_server")
+    if not value:
+        raise ClientError("server_required", "Use --server or run peerpedia login SERVER first.")
+    return origin(value)
+
+
+def token_for(server):
+    raw = os.environ.get("PEERPEDIA_TOKEN")
+    if raw:
+        # Bind injected credentials to an explicit origin, never to an untrusted
+        # project's state file alone.
+        configured = os.environ.get("PEERPEDIA_SERVER")
+        if not configured or origin(configured) != server:
+            raise ClientError("token_origin_mismatch", "Set PEERPEDIA_SERVER to the token's server when using PEERPEDIA_TOKEN.")
+        return raw
+    raw = credentials().get("servers", {}).get(server)
+    if not raw:
+        raise ClientError("login_required", f"Run peerpedia login {server} first.")
+    return raw
+
+
+class NoRedirect(HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
+
+
+def request(server, route, token=None, payload=None, key=None):
+    headers = {"Accept": "application/json", "User-Agent": "peerpedia-cli/0.1"}
+    if token:
+        headers["Authorization"] = "Bearer " + token
+    data = None
+    if payload is not None:
+        headers["Content-Type"] = "application/json"
+        headers["Idempotency-Key"] = key
+        data = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+    req = Request(server + route, data=data, headers=headers)
+    try:
+        with build_opener(NoRedirect()).open(req, timeout=30) as response:
+            body = response.read(12 * 1024 * 1024 + 1)
+        if len(body) > 12 * 1024 * 1024:
+            raise ClientError("invalid_response", "Server response exceeds the size limit.")
+        return json.loads(body)
+    except HTTPError as error:
+        try:
+            detail = json.loads(error.read(65536))["error"]
+            raise ClientError(detail["code"], detail["message"], detail.get("details"))
+        except (ValueError, KeyError, TypeError):
+            raise ClientError("http_error", f"Server returned HTTP {error.code}. Redirects are not followed.")
+    except (URLError, TimeoutError, ConnectionError):
+        raise ClientError("network_error", "Could not complete the request. A pending push can be retried with push --retry.")
+    except (ValueError, UnicodeError):
+        raise ClientError("invalid_response", "Server did not return valid JSON.")
+
+
+def verify(record):
+    try:
+        manifest = record["manifest"]
+        if manifest["format"] != "peerpedia-submission-v1":
+            raise ValueError()
+        uuid.UUID(manifest["paper_id"])
+        uuid.UUID(manifest["submission_id"])
+        source = record["markdown"].encode("utf-8")
+        canonical = json.dumps(manifest, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
+        if hashlib.sha256(source).hexdigest() != manifest["markdown_sha256"] or hashlib.sha256(canonical).hexdigest() != record["hash"]:
+            raise ValueError()
+        if not all(isinstance(manifest[k], str) for k in ("title", "authors", "abstract")):
+            raise ValueError()
+    except (KeyError, TypeError, ValueError, AttributeError, UnicodeError):
+        raise ClientError("verification_failed", "Document or manifest does not match its submission hash.")
+    return record
+
+
+def metadata(record):
+    return {key: record["manifest"][key] for key in ("title", "authors", "abstract")}
+
+
+def local_document(root):
+    source = (root / "paper.md").read_bytes()
+    if len(source) > 1024 * 1024:
+        raise ClientError("too_large", "Markdown must be 1 MB or smaller.")
+    data = read_json(root / "paper.json")
+    if not isinstance(data, dict) or set(data) != {"title", "authors", "abstract"} or not all(isinstance(v, str) for v in data.values()):
+        raise ClientError("invalid_metadata", "paper.json must contain text fields: title, authors, abstract. Separate author names with newlines.")
+    return {**data, "markdown": source.decode("utf-8")}
+
+
+def project():
+    for directory in (Path.cwd(), *Path.cwd().parents):
+        if (directory / ".peerpedia/state.json").is_file():
+            state = read_json(directory / ".peerpedia/state.json")
+            state["server"] = origin(state["server"])
+            if state["paper_id"]:
+                uuid.UUID(state["paper_id"])
+            if state.get("last_submission"):
+                uuid.UUID(state["last_submission"])
+            return directory, state
+    raise ClientError("not_a_project", "Run this inside a Peerpedia directory created by clone or init.")
+
+
+@contextmanager
+def locked(root):
+    lock = root / ".peerpedia/lock"
+    try:
+        fd = os.open(lock, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+    except FileExistsError:
+        raise ClientError("project_busy", "Another command owns .peerpedia/lock. If it crashed, remove the lock only after confirming it has stopped.")
+    os.close(fd)
+    try:
+        yield
+    finally:
+        lock.unlink()
+
+
+def base_record(root):
+    path = root / ".peerpedia/base.json"
+    return verify(read_json(path)) if path.exists() else None
+
+
+def changed(root, base):
+    return not base or local_document(root) != {**metadata(base), "markdown": base["markdown"]}
+
+
+def save_base(root, state, record, replace_working=False):
+    verify(record)
+    if state["paper_id"] and state["paper_id"] != record["manifest"]["paper_id"]:
+        raise ClientError("wrong_paper", "Remote document belongs to a different paper.")
+    if replace_working:
+        (root / "paper.md").write_bytes(record["markdown"].encode("utf-8"))
+        write_json(root / "paper.json", metadata(record))
+    write_json(root / ".peerpedia/base.json", record)
+    state.update(paper_id=record["manifest"]["paper_id"], base_hash=record["hash"])
+    write_json(root / ".peerpedia/state.json", state)
+
+
+def remote_current(state):
+    if not state["paper_id"]:
+        raise ClientError("unpublished", "Push this new paper first.")
+    record = verify(request(state["server"], f'/api/v1/papers/{state["paper_id"]}/')["current"])
+    if record["manifest"]["paper_id"] != state["paper_id"]:
+        raise ClientError("wrong_paper", "Remote returned a different paper.")
+    return record
+
+
+def login(args):
+    server = origin(args.server)
+    raw = sys.stdin.readline().strip() if args.token_stdin else getpass.getpass("Access token: ").strip()
+    identity = request(server, "/api/v1/me/", token=raw)
+    data = credentials()
+    data["servers"][server] = raw
+    data["default_server"] = server
+    save_credentials(data)
+    return {"server": server, **identity}
+
+
+def initialize(args):
+    server = server_for(args)
+    record = None
+    if args.command == "clone":
+        paper_id = str(uuid.UUID(args.paper_id))
+        record = verify(request(server, f"/api/v1/papers/{paper_id}/")["current"])
+        if record["manifest"]["paper_id"] != paper_id:
+            raise ClientError("wrong_paper", "Remote returned a different paper.")
+    root = Path(args.directory or ("paper-" + paper_id[:8])).absolute()
+    # Never overwrite an existing folder, even if it looks empty.
+    root.mkdir()
+    (root / ".peerpedia").mkdir()
+    state = {"server": server, "paper_id": None, "base_hash": None}
+    if record:
+        save_base(root, state, record, replace_working=True)
+    else:
+        (root / "paper.md").write_text("# Your paper\n", encoding="utf-8")
+        write_json(root / "paper.json", {"title": "", "authors": "", "abstract": ""})
+        write_json(root / ".peerpedia/state.json", state)
+    (root / ".gitignore").write_text(".peerpedia/\n", encoding="utf-8")
+    return {"directory": str(root), "server": server, "paper_id": state["paper_id"], "base_hash": state["base_hash"]}
+
+
+def push(root, state, args):
+    pending_path = root / ".peerpedia/pending.json"
+    pending = read_json(pending_path) if pending_path.exists() else None
+    if args.retry:
+        if not pending:
+            raise ClientError("no_pending_push", "There is no interrupted push to retry.")
+        if pending["server"] != state["server"]:
+            raise ClientError("server_changed", "Restore the original server before retrying.")
+    else:
+        if not args.message or not args.message.strip():
+            raise ClientError("message_required", "Describe the change using -m.")
+        if pending:
+            raise ClientError("pending_push", "Resolve the previous push with push --retry before starting another.")
+        base = base_record(root)
+        if base and base["hash"] != state["base_hash"]:
+            raise ClientError("invalid_state", "Stored base and state do not agree.")
+        if not changed(root, base):
+            return {"status": "unchanged", "message": "No local changes to push."}
+        pending = {"server": state["server"], "key": str(uuid.uuid4()), "payload": {
+            "paper_id": state["paper_id"], "base_hash": state["base_hash"],
+            **local_document(root), "explanation": args.message,
+        }}
+        previous_path = root / ".peerpedia/last-push.json"
+        if previous_path.exists():
+            previous = read_json(previous_path)
+            if previous["request"]["server"] == state["server"] and previous["request"]["payload"] == pending["payload"]:
+                # Reuse the server's idempotency receipt even after a successful
+                # local completion. A repeated command must not create a copy.
+                pending = previous["request"]
+        # Save the exact payload before sending: lost responses cannot turn a
+        # retry into another publication, even if the user edits files meanwhile.
+        write_json(pending_path, pending)
+    try:
+        record = verify(request(state["server"], "/api/v1/push/", token=token_for(state["server"]), payload=pending["payload"], key=pending["key"]))
+    except ClientError as error:
+        if error.code in {"stale_base", "invalid_document", "invalid_request", "too_large", "insufficient_scope", "not_found"}:
+            pending_path.unlink()  # Definitive rejection: safe to fix and submit anew.
+        raise
+    submitted = pending["payload"]
+    if (record["markdown"] != submitted["markdown"] or
+            (submitted["paper_id"] and record["manifest"]["paper_id"] != submitted["paper_id"]) or
+            record["manifest"]["base_hash"] != submitted["base_hash"] or
+            any(record["manifest"][field] != submitted[field].strip() for field in ("title", "authors", "abstract", "explanation"))):
+        raise ClientError("verification_failed", "Server receipt does not match the pushed document or base.")
+    state["paper_id"] = record["manifest"]["paper_id"]
+    state["last_submission"] = record["manifest"]["submission_id"]
+    write_json(root / ".peerpedia/last-push.json", {"request": pending, "receipt": record})
+    if submitted["paper_id"] is None:
+        save_base(root, state, record)
+    else:
+        write_json(root / ".peerpedia/state.json", state)
+    pending_path.unlink()
+    return {"submission_id": record["manifest"]["submission_id"], "hash": record["hash"], "status": record["status"],
+            "url": state["server"] + f'/submissions/{record["manifest"]["submission_id"]}/'}
+
+
+def run(args):
+    if args.command == "login":
+        return login(args)
+    if args.command == "logout":
+        server = server_for(args)
+        data = credentials()
+        data["servers"].pop(server, None)
+        if data.get("default_server") == server:
+            data.pop("default_server")
+        save_credentials(data)
+        return {"message": "Local credential removed. Revoke the token on the website to disable other copies."}
+    if args.command in {"init", "clone"}:
+        return initialize(args)
+    root, state = project()
+    with locked(root):
+        if args.command == "push":
+            return push(root, state, args)
+        base = base_record(root)
+        if args.command == "diff":
+            data = local_document(root)
+            before = {**metadata(base), "markdown": base["markdown"]} if base else dict.fromkeys(data, "")
+            diffs = {key: "".join(difflib.unified_diff(before[key].splitlines(keepends=True), value.splitlines(keepends=True), fromfile="base/" + key, tofile="local/" + key)) for key, value in data.items() if before[key] != value}
+            return {"changed": bool(diffs), "diffs": diffs}
+        if args.command == "status":
+            remote = remote_current(state) if state["paper_id"] else None
+            last = request(state["server"], f'/api/v1/submissions/{state["last_submission"]}/') if state.get("last_submission") else None
+            return {"paper_id": state["paper_id"], "base_hash": state["base_hash"], "local_changes": changed(root, base),
+                    "remote_hash": remote["hash"] if remote else None, "remote_changed": bool(remote and remote["hash"] != state["base_hash"]),
+                    "pending_retry": (root / ".peerpedia/pending.json").exists(),
+                    "last_submission": {"id": state["last_submission"], "status": last["status"], "hash": last["hash"]} if last else None}
+        if (root / ".peerpedia/pending.json").exists():
+            raise ClientError("pending_push", "Resolve the previous push with push --retry first.")
+        if args.command == "fetch":
+            remote = remote_current(state)
+            write_json(root / ".peerpedia/incoming.json", remote)
+            (root / ".peerpedia/incoming.md").write_bytes(remote["markdown"].encode("utf-8"))
+            write_json(root / ".peerpedia/incoming-metadata.json", metadata(remote))
+            return {"hash": remote["hash"], "message": "Fetched into .peerpedia/incoming.md and incoming-metadata.json. Working files are unchanged. Reconcile them, then run rebase --acknowledge."}
+        if args.command == "rebase":
+            if not args.acknowledge:
+                raise ClientError("reconciliation_required", "Reconcile your document and metadata with the fetched version, then run rebase --acknowledge.")
+            incoming = verify(read_json(root / ".peerpedia/incoming.json"))
+            latest = remote_current(state)
+            if incoming["hash"] != latest["hash"]:
+                raise ClientError("stale_base", "Another version was accepted. Fetch and reconcile again.")
+            save_base(root, state, incoming)
+            return {"base_hash": incoming["hash"], "message": "Base updated; working files preserved. Inspect diff before pushing."}
+        if args.command == "pull":
+            remote = remote_current(state)
+            data = local_document(root)
+            matches_remote = data == {**metadata(remote), "markdown": remote["markdown"]}
+            if changed(root, base) and not matches_remote:
+                raise ClientError("local_changes", "Pull would overwrite local work. Use fetch, reconcile the files, then rebase --acknowledge.")
+            save_base(root, state, remote, replace_working=not matches_remote)
+            return {"base_hash": remote["hash"], "message": "Local base is now the latest accepted version."}
+
+
+def main(argv=None):
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--json", action="store_true", help="Machine-readable output")
+    commands = parser.add_subparsers(dest="command", required=True)
+    for command in ("login", "logout", "init", "clone", "diff", "status", "push", "pull", "fetch", "rebase"):
+        child = commands.add_parser(command)
+        child.add_argument("--json", action="store_true", default=argparse.SUPPRESS)
+        if command == "login":
+            child.add_argument("server")
+            child.add_argument("--token-stdin", action="store_true")
+        if command in {"init", "clone", "logout"}:
+            child.add_argument("--server")
+        if command == "clone":
+            child.add_argument("paper_id")
+            child.add_argument("directory", nargs="?")
+        if command == "init":
+            child.add_argument("directory")
+        if command == "push":
+            child.add_argument("-m", "--message")
+            child.add_argument("--retry", action="store_true")
+        if command == "rebase":
+            child.add_argument("--acknowledge", action="store_true")
+    args = parser.parse_args(argv)
+    try:
+        result = run(args)
+        if args.json:
+            print(json.dumps(result, ensure_ascii=False))
+        elif args.command == "diff":
+            print("\n".join(result["diffs"].values()) or "No local changes.")
+        else:
+            for key, value in result.items():
+                print(f"{key}: {value}")
+    except (ClientError, OSError, ValueError, KeyError, TypeError) as error:
+        if not isinstance(error, ClientError):
+            error = ClientError("local_error", "Check the local files and command arguments: " + str(error))
+        if args.json:
+            print(json.dumps({"error": {"code": error.code, "message": error.message, "details": error.details}}))
+        else:
+            print(f"{error.code}: {error.message}", file=sys.stderr)
+            if error.details:
+                print(json.dumps(error.details), file=sys.stderr)
+        raise SystemExit(1)

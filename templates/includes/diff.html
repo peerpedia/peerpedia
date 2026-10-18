@@ -1,0 +1,9 @@
+{% if metadata_changes %}
+<div class="metadata-diff">
+{% for change in metadata_changes %}<section><h3>{{ change.label }}</h3><div class="diff-before"><span aria-label="Removed">−</span> {{ change.before|linebreaksbr }}</div><div class="diff-after"><span aria-label="Added">+</span> {{ change.after|linebreaksbr }}</div></section>{% endfor %}
+</div>
+{% endif %}
+<div class="diff-panel" tabindex="0" role="region" aria-label="Markdown source differences">
+{% if diff %}<pre class="source-diff">{% for line in diff %}<span class="diff-line {% if line|slice:':1' == '+' %}addition{% elif line|slice:':1' == '-' %}deletion{% elif line|slice:':2' == '@@' %}hunk{% endif %}">{{ line }}</span>{% endfor %}</pre>
+{% else %}<p class="muted diff-empty">No changes to the Markdown source.</p>{% endif %}
+</div>
