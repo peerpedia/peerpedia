@@ -12,7 +12,7 @@ from django.urls import reverse
 from accounts.models import User
 from .forms import UploadForm
 from .models import Comment, Decision, ModerationEvent, Paper, Review, Submission
-from .rendering import render_markdown
+from .rendering import render_markdown, render_reader
 from .services import decide, propose, publish
 from .views import diff_lines
 
@@ -58,7 +58,7 @@ class PublishingTests(TestCase):
 
     def test_reader_has_no_platform_chrome(self):
         response = self.client.get(reverse("read_paper", args=[self.paper.pk]))
-        self.assertContains(response, "<h1>A test paper</h1>", html=True)
+        self.assertContains(response, '<h1 id="section-a-test-paper">A test paper</h1>', html=True)
         for forbidden in ["site-header", "site-footer", "Go back", "Sign in"]:
             self.assertNotContains(response, forbidden)
 
@@ -291,6 +291,32 @@ class PublishingTests(TestCase):
         self.assertNotIn("<img", rendered)
         self.assertNotIn('href="javascript:', rendered)
         self.assertIn("&lt;script&gt;", rendered)
+
+    def test_reader_outline_unique_anchors_and_safe_labels(self):
+        source = '# Title\n\n## A *proof*\n\n### Detail\n\n## A proof\n\n## A proof-2\n\n## <script>bad()</script>\n\n```md\n## Not a section\n```'
+        body, contents = render_reader(source)
+        self.assertEqual([item['id'] for item in contents[:4]], [
+            'section-a-proof', 'section-detail', 'section-a-proof-2', 'section-a-proof-2-2',
+        ])
+        self.assertEqual([item['depth'] for item in contents[:3]], [0, 1, 0])
+        self.assertEqual(len(contents), 5)
+        self.assertNotIn('<script>', body)
+        paper = publish(self.owner, document(markdown=source))
+        response = self.client.get(reverse('read_paper', args=[paper.pk]))
+        self.assertContains(response, 'aria-label="Table of contents"')
+        self.assertNotContains(response, '<script>bad()')
+        self.assertContains(response, '&lt;script&gt;bad()&lt;/script&gt;')
+        self.assertContains(response, 'href="#section-a-proof-2-2"')
+        paper.current.refresh_from_db()
+        self.assertEqual(paper.current.markdown, source)
+        self.assertEqual(paper.current.hash, paper.current.calculate_hash())
+
+    def test_reader_without_section_headings_has_no_empty_sidebar(self):
+        for source in ('Plain note.', '# Just a title\n\nA note.'):
+            body, contents = render_reader(source)
+            self.assertEqual(contents, [])
+        _, contents = render_reader('## First section\n\n# Another top-level section')
+        self.assertEqual(len(contents), 2)
 
     def test_equations_and_code_are_distinct(self):
         result = render_markdown("Inline $x^2$.\n\n$$\nx=1\n$$\n\n```python\nx = '$notmath$'\n```\n")

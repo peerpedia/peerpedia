@@ -7,7 +7,7 @@ class SecurityHeadersMiddleware:
         if not request.path.startswith("/admin/"):
             response["Content-Security-Policy"] = (
                 "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; "
-                "img-src 'none'; font-src 'self'; connect-src 'self'; "
+                "img-src 'self'; font-src 'self'; connect-src 'self'; "
                 "object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'"
             )
         response["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"

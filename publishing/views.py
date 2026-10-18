@@ -15,7 +15,7 @@ from django.views.decorators.http import require_POST
 from accounts.security import limited, verified_required
 from .forms import CommentForm, ReviewForm, UploadForm
 from .models import Comment, Decision, Paper, Review, Submission
-from .rendering import render_markdown
+from .rendering import render_markdown, render_reader
 from .services import decide, propose, publish
 
 
@@ -80,7 +80,8 @@ def read_submission(request, submission_id):
 
 
 def reader(request, submission):
-    return render(request, "publishing/reader.html", {"submission": submission, "body": mark_safe(render_markdown(submission.markdown))})
+    body, contents = render_reader(submission.markdown)
+    return render(request, "publishing/reader.html", {"submission": submission, "body": mark_safe(body), "contents": contents})
 
 
 def download(request, submission_id):

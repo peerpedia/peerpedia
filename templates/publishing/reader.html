@@ -1,2 +1,28 @@
 {% load static %}<!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>{{ submission.title }}</title><link rel="stylesheet" href="{% static 'reader.css' %}"><script defer src="{% static 'math.js' %}"></script><script defer src="{% static 'vendor/mathjax/tex-svg.js' %}"></script></head><body class="reader"><main class="markdown-body">{{ body }}</main></body></html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ submission.title }} · Peerpedia</title>
+  {% include "includes/icons.html" %}
+  <link rel="stylesheet" href="{% static 'reader.css' %}">
+  <script defer src="{% static 'reader.js' %}"></script>
+  <script defer src="{% static 'math.js' %}"></script>
+  <script defer src="{% static 'vendor/mathjax/tex-svg.js' %}"></script>
+</head>
+<body class="reader{% if contents %} has-contents{% endif %}">
+  <a class="reader-skip" href="#paper-text">Skip to paper</a>
+  {% if contents %}
+  <aside class="reader-sidebar" aria-label="Paper navigation">
+    <details class="reader-contents" open>
+      <summary><span>Contents</span><span class="reader-current" aria-hidden="true"></span></summary>
+      <nav aria-label="Table of contents">
+        <ol>
+          {% for item in contents %}<li class="toc-depth-{{ item.depth }}"><a href="#{{ item.id }}" data-section="{{ item.id }}">{{ item.label }}</a></li>{% endfor %}
+        </ol>
+      </nav>
+    </details>
+  </aside>
+  {% endif %}
+  <main id="paper-text" class="markdown-body" tabindex="-1">{{ body }}</main>
+</body>
+</html>

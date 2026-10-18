@@ -257,6 +257,58 @@ class BrowserJourneys(StaticLiveServerTestCase):
         self.page.get_by_role("button", name="Search", exact=True).click()
         expect(self.page.get_by_role("heading", name="No papers found")).to_be_visible()
 
+    def test_reader_contents_scroll_mobile_keyboard_and_icons(self):
+        paragraph = 'A paragraph long enough to give each section a real reading position.\n\n'
+        source = '# Reading test\n\nIntroduction.\n\n## First section\n\n' + paragraph * 18
+        source += '### A proof\n\n' + paragraph * 18 + '## Last section\n\n'
+        source += '| Group | Field |\n| --- | --- |\n| C2 | Q |\n\n' + paragraph * 18
+        paper = self.database_call(lambda: publish(self.owner, {"title": "Reading test", "authors": "Ada", "abstract": "Reader navigation test.", "markdown": source, "explanation": "Initial publication."}))
+        reader_url = f'{self.live_server_url}/papers/{paper.pk}/read/'
+        self.page.goto(reader_url)
+        navigation = self.page.get_by_role('navigation', name='Table of contents')
+        expect(navigation).to_be_visible()
+        expect(navigation.get_by_role('link')).to_have_count(3)
+        first = navigation.get_by_role('link', name='First section', exact=True)
+        first.click()
+        expect(first).to_have_attribute('aria-current', 'location')
+        self.page.locator('#section-a-proof').evaluate('element => element.scrollIntoView()')
+        expect(navigation.get_by_role('link', name='A proof', exact=True)).to_have_attribute('aria-current', 'location')
+        self.page.reload()
+        # Reload restores the scroll position, which may differ from the URL fragment.
+        expect(navigation.get_by_role('link', name='A proof', exact=True)).to_have_attribute('aria-current', 'location')
+        self.assertTrue(self.page.locator('table').evaluate('element => { const table = element.getBoundingClientRect(); const main = element.closest("main").getBoundingClientRect(); return Math.abs((table.left + table.right) - (main.left + main.right)) < 2; }'))
+        icon = self.page.locator('link[rel="icon"][type="image/svg+xml"]').get_attribute('href')
+        self.assertEqual(self.context.request.get(self.live_server_url + icon).status, 200)
+        self.assertIn("img-src 'self'", self.context.request.get(reader_url).headers['content-security-policy'])
+        self.page.set_viewport_size({'width': 390, 'height': 844})
+        expect(navigation).not_to_be_visible()
+        self.page.locator('.reader-contents summary').click()
+        expect(navigation).to_be_visible()
+        self.page.keyboard.press('Escape')
+        expect(navigation).not_to_be_visible()
+        self.page.keyboard.press('Enter')
+        last = navigation.get_by_role('link', name='Last section', exact=True)
+        last.click()
+        expect(navigation).not_to_be_visible()
+        expect(self.page.locator('[data-section="section-last-section"]')).to_have_attribute('aria-current', 'location')
+        expect(self.page.locator('#section-last-section')).to_be_focused()
+        self.assertGreaterEqual(self.page.locator('#section-last-section').bounding_box()['y'], 60)
+        self.assert_no_page_overflow()
+        self.page.set_viewport_size({'width': 320, 'height': 740})
+        self.assert_no_page_overflow()
+        self.page.emulate_media(media='print')
+        expect(self.page.locator('.reader-sidebar')).not_to_be_visible()
+        self.page.emulate_media(media='screen')
+        no_script = self.browser.new_context(java_script_enabled=False)
+        try:
+            page = no_script.new_page()
+            page.goto(reader_url)
+            page.get_by_role('link', name='Last section', exact=True).click()
+            expect(page).to_have_url(reader_url + '#section-last-section')
+            expect(page.locator('#section-last-section')).to_be_in_viewport()
+        finally:
+            no_script.close()
+
     def test_access_token_creation_one_time_display_and_revocation(self):
         self.login()
         self.page.get_by_role("link", name="Access tokens", exact=True).click()

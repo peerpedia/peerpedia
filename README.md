@@ -9,7 +9,7 @@ Developed by [Chenqi Meng](https://github.com/Chenqitrg).
 ## What is implemented
 
 - Public paper list with title, authors, average rating, search, and latest-acceptance/rating sorting.
-- Separate metadata pages, full-width HTML readers without platform navigation, and downloadable Markdown.
+- Separate metadata pages, Palatino-style HTML readers with a section outline that follows your reading position, and downloadable Markdown. Contents collapse on small screens; tables are centered and wide equations scroll within the page.
 - Username or email sign-in, email verification, password changes, and emailed password-reset links.
 - Upload → preview → publish. One UTF-8 Markdown file per submission; no images or online editor.
 - SHA-256 submission hashes, independent verification manifests, permanent source snapshots, and database triggers preventing updates/deletions of historical records.
