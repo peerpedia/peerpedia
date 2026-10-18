@@ -15,7 +15,7 @@ from django.utils.safestring import mark_safe
 from django.views.decorators.http import require_POST
 from accounts.security import limited, verified_required
 from .forms import CommentForm, ReviewForm, UploadForm
-from .models import Comment, Decision, Paper, Review, Submission
+from .models import Comment, Decision, Paper, Review, Submission, PullRequest, PullRequestCommit
 from .rendering import render_markdown, render_reader
 from .services import decide, propose, publish
 from .subjects import CATEGORIES, METADATA_FIELDS, equivalent_codes, filter_choices, filter_codes, label, subject_links
@@ -83,7 +83,7 @@ def paper_detail(request, paper_id):
     tab = request.GET.get("tab", "reviews")
     if tab not in {"reviews", "submissions", "history"}:
         tab = "reviews"
-    proposals = paper.submissions.filter(base__isnull=False).select_related("decision", "base")
+    proposals = paper.submissions.filter(base__isnull=False, head_of__isnull=False).select_related("decision", "base")
     history = paper.submissions.filter(decision__action="accepted").select_related("decision").order_by("-decision__created_at")
     return render(request, "publishing/paper.html", {
         "paper": paper, "stats": stats, "review_page": Paginator(reviews, 20).get_page(request.GET.get("page")),
@@ -208,13 +208,22 @@ def confirm_upload(request, paper):
 def submission_detail(request, submission_id):
     submission = get_object_or_404(submission_queryset(), pk=submission_id)
     base = submission.base
+    commit = PullRequestCommit.objects.filter(submission=submission).select_related("request__head").first()
+    pr = commit.request if commit else None
+    comments = Comment.objects.filter(submission__pr_commit__request=pr) if pr else submission.comments.all()
     return render(request, "publishing/submission.html", {
         "submission": submission, "paper": submission.paper,
         "diff": diff_lines(base.markdown if base else "", submission.markdown),
         "metadata_changes": metadata_diff(base, {key: getattr(submission, key) for key in METADATA_FIELDS}),
         "stale": submission.status == "pending" and submission.base_id != submission.paper.current_id,
-        "comments": submission.comments.filter(is_hidden=False).select_related("user"), "comment_form": CommentForm(),
+        "comments": comments.filter(is_hidden=False).select_related("user", "submission"), "comment_form": CommentForm(),
+        "pr": pr, "commits": pr.commits.select_related("submission") if pr else [],
     })
+
+
+def pull_request_detail(request, pr_id):
+    pr = get_object_or_404(PullRequest, pk=pr_id, paper__is_hidden=False)
+    return submission_detail(request, pr.head_id)
 
 
 @verified_required

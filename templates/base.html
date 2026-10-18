@@ -16,7 +16,7 @@
       <a href="{% url 'publish' %}">Upload a paper</a>
       <a href="{% url 'help' %}">Help</a>
       {% if user.is_authenticated %}
-        <span class="account-name">{{ user.username }}</span>
+        <a href="{% url 'drafts' %}">My drafts</a><span class="account-name">{{ user.username }}</span>
         {% if user.is_staff %}<a href="{% url 'admin:index' %}">Admin</a>{% endif %}
         <a href="{% url 'password_change' %}" class="quiet-link">Password</a>
         <a href="{% url 'access_tokens' %}" class="quiet-link">Access tokens</a>

@@ -85,3 +85,7 @@
   .markdown-body pre,.markdown-body blockquote,.markdown-body tr { break-inside:avoid; }
   .markdown-body :is(h1,h2,h3,h4,h5,h6) { break-after:avoid; }
 }
+
+.reader-edit{display:inline-flex;align-items:center;gap:6px;margin:10px 0 18px;color:#3d5c51;text-decoration:none;font:14px system-ui;padding:5px;border-radius:4px}.reader-edit:hover,.reader-edit:focus-visible{background:#e9eee9}.status.superseded{color:#626c70}
+
+.reader-sidebar{position:relative}.reader-edit{position:absolute;right:18px;top:37px;margin:0}.reader-home{margin-right:65px}@media(max-width:1049px){.reader-sidebar{grid-template-columns:112px minmax(0,1fr)}.reader-edit{right:auto;left:64px;top:20px}.reader-edit span{display:none}}@media(min-width:1050px){.reader.has-contents .reader-sidebar{position:fixed}.reader:not(.has-contents) .reader-edit{top:18px}}

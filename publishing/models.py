@@ -90,6 +90,11 @@ class Submission(FrozenRecord):
         try:
             return self.decision.action
         except Decision.DoesNotExist:
+            try:
+                if self.pr_commit.request.head_id != self.pk:
+                    return "superseded"
+            except PullRequestCommit.DoesNotExist:
+                pass
             return "pending"
 
     @property
@@ -160,3 +165,44 @@ class ApiPush(models.Model):
 
     class Meta:
         constraints = [models.UniqueConstraint(fields=["user", "key"], name="unique_api_push_per_user")]
+
+
+class PullRequest(models.Model):
+    """A conversation whose head points at an immutable submitted snapshot."""
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    paper = models.ForeignKey(Paper, on_delete=models.PROTECT, related_name="pull_requests")
+    contributor = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT)
+    head = models.OneToOneField(Submission, on_delete=models.PROTECT, related_name="head_of")
+    created_at = models.DateTimeField(default=timezone.now)
+
+
+class PullRequestCommit(FrozenRecord):
+    request = models.ForeignKey(PullRequest, on_delete=models.PROTECT, related_name="commits")
+    submission = models.OneToOneField(Submission, on_delete=models.PROTECT, related_name="pr_commit")
+    number = models.PositiveIntegerField()
+
+    class Meta:
+        ordering = ["number"]
+        constraints = [models.UniqueConstraint(fields=["request", "number"], name="unique_pr_commit_number")]
+
+
+class Draft(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    owner = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="drafts")
+    paper = models.ForeignKey(Paper, null=True, blank=True, on_delete=models.PROTECT)
+    base = models.ForeignKey(Submission, null=True, blank=True, on_delete=models.PROTECT, related_name="draft_bases")
+    pull_request = models.ForeignKey(PullRequest, null=True, blank=True, on_delete=models.PROTECT)
+    pr_head = models.ForeignKey(Submission, null=True, blank=True, on_delete=models.PROTECT, related_name="draft_pr_heads")
+    data = models.JSONField(default=dict)
+    markdown = models.TextField(blank=True)
+    revision = models.PositiveIntegerField(default=1)
+    updated_at = models.DateTimeField(auto_now=True)
+    submitted = models.ForeignKey(Submission, null=True, blank=True, on_delete=models.PROTECT, related_name="source_drafts")
+
+    class Meta:
+        ordering = ["-updated_at"]
+        constraints = [models.UniqueConstraint(fields=["owner", "paper"], condition=models.Q(submitted__isnull=True, paper__isnull=False), name="one_active_paper_draft")]
+
+    @property
+    def title(self):
+        return self.data.get("title") or "Untitled paper"

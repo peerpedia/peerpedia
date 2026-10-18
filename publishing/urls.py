@@ -1,8 +1,20 @@
 from django.urls import path
 from django.views.generic import TemplateView
-from . import views
+from . import views, drafts
 
 urlpatterns = [
+    path("write/", drafts.start, name="write"),
+    path("papers/<uuid:paper_id>/edit/", drafts.start, name="edit_paper"),
+    path("prs/<uuid:pr_id>/edit/", drafts.start, name="edit_pr"),
+    path("prs/<uuid:pr_id>/", views.pull_request_detail, name="pull_request"),
+    path("drafts/", drafts.listing, name="drafts"),
+    path("drafts/<uuid:draft_id>/", drafts.editor, name="editor"),
+    path("drafts/<uuid:draft_id>/save/", drafts.save, name="draft_save"),
+    path("drafts/<uuid:draft_id>/preview/", drafts.preview, name="draft_preview"),
+    path("drafts/<uuid:draft_id>/rebase/", drafts.rebase, name="draft_rebase"),
+    path("drafts/<uuid:draft_id>/review/", drafts.review, name="draft_review"),
+    path("drafts/<uuid:draft_id>/submit/", drafts.submit, name="draft_submit"),
+    path("drafts/<uuid:draft_id>/discard/", drafts.discard, name="draft_discard"),
     path("", views.browse, name="browse"), path("health/", views.health, name="health"),
     path("help/", TemplateView.as_view(template_name="publishing/help.html"), name="help"),
     path("publish/", views.upload, name="publish"),

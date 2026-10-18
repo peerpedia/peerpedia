@@ -9,7 +9,7 @@
   <div class="meta-line"><span>Corresponding author: <strong>{{ paper.owner.username }}</strong></span><span>Latest acceptance: {{ paper.accepted_at|date:'j M Y, H:i' }} UTC</span></div>
   {% include 'includes/subjects.html' with subjects=paper.current.subjects %}
   <section class="abstract"><h2>Abstract</h2><p>{{ paper.current.abstract|linebreaksbr }}</p></section>
-  <div class="actions"><a class="button" href="{% url 'read_paper' paper.pk %}">Read paper <span aria-hidden="true">↗</span></a><a class="button secondary" href="{% url 'download' paper.current_id %}">Download Markdown</a><a class="button secondary" href="{% url 'propose' paper.pk %}">Submit a change</a></div>
+  <div class="actions"><a class="button" href="{% url 'read_paper' paper.pk %}">Read paper <span aria-hidden="true">↗</span></a><a class="button secondary" href="{% url 'download' paper.current_id %}">Download Markdown</a><a class="button secondary" href="{% url 'edit_paper' paper.pk %}">Edit paper</a><a class="button secondary" href="{% url 'propose' paper.pk %}">Upload a change</a></div>
 </article>
 <nav class="tabs" aria-label="Paper details"><a {% if tab == 'reviews' %}class="active" aria-current="page"{% endif %} href="?tab=reviews">Reviews <span>{{ stats.count }}</span></a><a {% if tab == 'submissions' %}class="active" aria-current="page"{% endif %} href="?tab=submissions">Submissions</a><a {% if tab == 'history' %}class="active" aria-current="page"{% endif %} href="?tab=history">History</a></nav>
 {% if tab == 'reviews' %}

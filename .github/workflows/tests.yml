@@ -27,6 +27,13 @@ jobs:
       - run: pip install -r requirements.lock
       - run: pip install ./cli
       - run: peerpedia --help
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: editor/package-lock.json
+      - run: npm ci --ignore-scripts --prefix editor
+      - run: npm run build --prefix editor
       - run: python scripts/fetch_mathjax.py
       - run: python manage.py collectstatic --noinput
       - run: python manage.py makemigrations --check --dry-run
@@ -58,6 +65,13 @@ jobs:
             requirements-browser.txt
       - run: pip install -r requirements.lock -r requirements-browser.txt
       - run: python -m playwright install --with-deps chromium
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: editor/package-lock.json
+      - run: npm ci --ignore-scripts --prefix editor
+      - run: npm run build --prefix editor
       - run: python scripts/fetch_mathjax.py
       - run: python scripts/test_browser.py
       - uses: actions/upload-artifact@v4

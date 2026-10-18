@@ -1,7 +1,7 @@
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.db import transaction
 from django.utils import timezone
-from .models import Decision, Paper, Submission
+from .models import Decision, Paper, Submission, PullRequest, PullRequestCommit
 
 
 def require_verified(user):
@@ -22,12 +22,28 @@ def publish(user, data):
 
 
 @transaction.atomic
-def propose(user, paper_id, base_id, data):
+def propose(user, paper_id, base_id, data, *, pull_request_id=None, expected_head=None):
     require_verified(user)
     paper = Paper.objects.select_for_update().get(pk=paper_id, is_hidden=False)
     if str(paper.current_id) != str(base_id):
         raise ValidationError("This paper has a newer accepted version. Download it and prepare a new submission; your upload has not been published.")
-    return Submission.objects.create(paper=paper, contributor=user, contributor_name=user.username, base_id=base_id, **data)
+    pr = None
+    if pull_request_id:
+        pr = PullRequest.objects.select_for_update().select_related("head").get(pk=pull_request_id, paper=paper)
+        if pr.contributor_id != user.pk:
+            raise PermissionDenied("Only the PR contributor can add snapshots.")
+        if str(pr.head_id) != str(expected_head) or pr.head.status != "pending":
+            raise ValidationError("This PR has changed or closed. Your draft has been preserved. Open the PR to review its latest state.")
+    submission = Submission.objects.create(paper=paper, contributor=user, contributor_name=user.username, base_id=base_id, **data)
+    if pr:
+        number = pr.commits.count() + 1
+        pr.head = submission
+        pr.save(update_fields=["head"])
+    else:
+        pr = PullRequest.objects.create(paper=paper, contributor=user, head=submission)
+        number = 1
+    PullRequestCommit.objects.create(request=pr, submission=submission, number=number)
+    return submission
 
 
 @transaction.atomic
@@ -35,6 +51,11 @@ def decide(user, submission_id, action):
     require_verified(user)
     proposal = Submission.objects.select_related("paper").get(pk=submission_id, paper__is_hidden=False)
     paper = Paper.objects.select_for_update().get(pk=proposal.paper_id)
+    commit = PullRequestCommit.objects.filter(submission=proposal).first()
+    if commit:
+        pr = PullRequest.objects.select_for_update().get(pk=commit.request_id)
+        if pr.head_id != proposal.pk:
+            raise ValidationError("This snapshot has been superseded. Review the latest snapshot before making a decision.")
     if action not in {"accepted", "rejected", "withdrawn"}:
         raise ValidationError("Unknown decision.")
     if action == "withdrawn":

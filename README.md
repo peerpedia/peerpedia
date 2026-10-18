@@ -12,7 +12,7 @@ Developed by [Chenqi Meng](https://github.com/Chenqitrg).
 - One primary arXiv subject and optional cross-lists per new submission. Search recognizes category codes, names, and arXiv aliases.
 - Separate metadata pages, Palatino-style HTML readers with a section outline that follows your reading position, and downloadable Markdown. Contents collapse on small screens; tables are centered and wide equations scroll within the page.
 - Username or email sign-in, email verification, password changes, and emailed password-reset links.
-- Upload → preview → publish. One UTF-8 Markdown file per submission; no images or online editor.
+- Upload → preview → publish. One UTF-8 Markdown document per submission, with file upload or an online editor; no images.
 - SHA-256 submission hashes, independent verification manifests, permanent source snapshots, and database triggers preventing updates/deletions of historical records.
 - Whole-submission acceptance by the corresponding author only. Stale proposals require a new submission.
 - Public accepted/rejected/withdrawn history, Markdown and metadata diffs, arbitrary accepted-version comparisons, and separate contribution credit.
@@ -174,7 +174,7 @@ Markdown source is stored directly in the database, preserving its UTF-8 bytes, 
 
 Equations accept `$...$` and `\(...\)` inline, or `$$...$$` and `\[...\]` as display blocks. Fenced code stays literal. Markdown tables are supported.
 
-Preview content is carried in a signed, expiring form value in the browser, bound to the submitting account and target paper. It is not persisted as a private draft. Confirmation is idempotent: retrying the same preview cannot create duplicate papers or submissions.
+Preview content is carried in a signed, expiring form value in the browser, bound to the submitting account and target paper. This file-upload preview is not persisted as a private draft. The online editor uses separate private working copies. Confirmation is idempotent: retrying the same preview cannot create duplicate papers or submissions.
 
 Acceptance locks the paper row in a PostgreSQL transaction, verifies ownership and the current base, then records the decision and changes the current pointer atomically. Two proposals based on the same version cannot both be accepted.
 
@@ -293,5 +293,28 @@ For actual disaster recovery, stop writes and restore the chosen backup into a *
 - Search is PostgreSQL full-text search with substring matching for titles, names, and content. It is not semantic search or Google-scale ranking.
 - Ratings are the ordinary arithmetic mean of visible reviews, with review count shown. Self-reviews are permitted as requested.
 - SMTP failures are logged; users can request another verification/reset message. There is no email queue yet.
-- No Git hosting, notifications feed, nested discussion, profile pages, private drafts, or automated AI generation.
+- No Git hosting, notifications feed, nested discussion, profile pages, or automated AI generation.
 - Self-hosted installations require verified domain and SMTP configuration, an administrator account, system security updates, and off-server backups.
+
+
+### Online editor and private drafts
+
+Build the pinned, self-hosted CodeMirror bundle before running the site:
+
+```sh
+npm ci --ignore-scripts --prefix editor
+npm run build --prefix editor
+python manage.py migrate
+```
+
+Node is a build dependency only. Docker uses a separate asset build stage. The bundle and third-party license notices are generated under `static/vendor/editor/`; production browsers make no CDN requests.
+
+The reader's Edit link opens a private draft at the current section. New papers can also be written online from the upload page. Drafts autosave under My drafts and support Markdown import/download, a live preview using the publication renderer and MathJax, resizable panes, full-pane and mobile modes, and section-following scroll. Preview content is never published by saving or rendering it.
+
+Draft access is owner-only, including for administrators through the application views. Saves compare a monotonically increasing revision while holding a row lock. A conflict never silently overwrites the other copy. Browser recovery uses per-user, per-draft, per-tab keys for unsaved changes; recovery remains subject to the browser's storage availability and can be removed by clearing site data. Successful saves remove that tab's recovery copy. One active revision draft per user per paper is enforced by a database constraint. New-paper drafts may be multiple.
+
+Review binds the draft ID, owner, and saved revision in an expiring signed token. Submission locks the draft, revalidates permissions and the accepted base, creates a frozen snapshot, and clears the working contents. Repeat confirmation returns the existing submission. Another edit after preview invalidates that preview. Drafts never alter accepted documents or existing manifests.
+
+A PullRequest groups immutable PullRequestCommit membership records. Existing revision submissions migrate to one-snapshot PRs without changing any submission, hash, decision, or comment. Update PR starts from its current head and appends a snapshot. Only the PR contributor can append, only the latest snapshot can receive a decision, and only the corresponding author can accept/reject. Comments from all snapshots appear in the common conversation, labeled with their source snapshot. The CLI continues to create separate proposals; it does not read or write online drafts in this release. PR membership is protected by database triggers; the grouping migration refuses downgrade once PRs or drafts exist to prevent accidental historical deletion.
+
+To verify editor changes, run `python manage.py test publishing.test_drafts`; use the PostgreSQL test helper for real row-lock concurrency coverage. Preview rendering, autosave, recovery, conflict resolution, mobile layout, and the submission journey also require browser verification. Existing published hashes can be checked with `python manage.py verify_history`.

@@ -1,0 +1,4 @@
+{% extends 'base.html' %}{% load static %}
+{% block title %}Open editor · Peerpedia{% endblock %}
+{% block head %}<script defer src="{% static 'editor-start.js' %}"></script>{% endblock %}
+{% block content %}<h1>Opening your private draft…</h1><form method="post" id="start-editor">{% csrf_token %}<button class="button">Start editing</button></form>{% endblock %}

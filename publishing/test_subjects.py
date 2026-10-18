@@ -158,7 +158,7 @@ from django.test import TransactionTestCase
 class SubjectMigrationTests(TransactionTestCase):
     def test_populated_v1_upgrade_preserves_hash_and_guards(self):
         before = [('publishing', '0003_apipush')]
-        after = [('publishing', '0004_submission_subjects')]
+        after = [('publishing', '0006_group_submission_history')]
         executor = MigrationExecutor(connection)
         executor.migrate(before)
         try:

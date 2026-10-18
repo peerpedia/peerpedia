@@ -1,0 +1,4 @@
+{% extends 'base.html' %}
+{% block title %}My drafts · Peerpedia{% endblock %}
+{% block content %}<div class="section-heading"><div><h1>My drafts</h1><p class="muted">Only you can see these. Saved across your devices.</p></div><a class="button" href="{% url 'write' %}">Write a new paper</a></div>
+{% for draft in drafts %}<article class="history-row"><div><a class="entry-title" href="{% url 'editor' draft.pk %}">{{ draft.title }}</a><p class="muted">{% if draft.pull_request_id %}PR update{% elif draft.paper_id %}Proposed change{% else %}New paper{% endif %} · Saved {{ draft.updated_at|date:'j M Y, H:i' }} UTC</p></div></article>{% empty %}<p class="empty-inline">No unfinished drafts. While reading a paper, select Edit to start a correction.</p>{% endfor %}{% endblock %}

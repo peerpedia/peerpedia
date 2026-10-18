@@ -28,7 +28,7 @@ def render_markdown(source):
     return parser().render(source)
 
 
-def render_reader(source):
+def render_reader(source, source_lines=False):
     """Build section links from parsed headings without changing stored Markdown."""
     md = parser()
     tokens = md.parse(source)
@@ -51,10 +51,12 @@ def render_reader(source):
             suffix += 1
         used_ids.add(anchor)
         token.attrSet("id", anchor)
+        if source_lines:
+            token.attrSet("data-source-line", str(token.map[0] + 1))
         level = int(token.tag[1])
         # The opening title is not a section; later H1s still belong in the outline.
         if label and not (first_heading and level == 1):
-            contents.append({"id": anchor, "label": label, "level": level})
+            contents.append({"id": anchor, "label": label, "level": level, "line": token.map[0] + 1})
         first_heading = False
     if contents:
         base_level = min(item["level"] for item in contents)
