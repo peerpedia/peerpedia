@@ -9,6 +9,7 @@
 <div class="help-layout">
   <nav class="help-contents" aria-label="On this page">
     <strong>On this page</strong>
+    <a href="#subjects">Find papers by subject</a>
     <a href="#read">Read and discover</a>
     <a href="#publish">Publish a paper or note</a>
     <a href="#contribute">Propose a change</a>
@@ -19,6 +20,12 @@
     <a href="#about">About Peerpedia</a>
   </nav>
   <div class="help-content">
+    <section id="subjects">
+      <h2>Find papers by subject</h2>
+<p>Use the <strong>Subject</strong> filter on the browse page to choose an arXiv category, a broad subject, or a physics archive. Combine it with a search and either sort order. Cross-listed papers appear in each of their subjects. Searching a category code or name also finds classified papers.</p>
+<p>Uploads require one primary subject from the <a href="https://arxiv.org/category_taxonomy">arXiv taxonomy</a>. Expand <strong>Cross-list subjects</strong> to select other relevant subjects. Classification changes follow the usual submission and acceptance process; old snapshots keep their original hashes. Older papers appear under <strong>Unclassified</strong> until an author accepts a classified revision.</p>
+<p>For CLI 0.2 or newer, set <code>"primary_category": "cond-mat.str-el"</code> and optionally <code>"secondary_categories": ["hep-th"]</code> in <code>paper.json</code>. List supported subjects with <code>peerpedia categories --server https://peerpedia.dev --json</code>. Both v1 and v2 verification manifests are supported.</p>
+</section>
     <section id="read">
       <h2>Read and discover</h2>
       <p>Anyone can read without an account. On <a href="{% url 'browse' %}">Browse</a>, search by title, author name, or words in a paper, then sort by latest acceptance or average rating.</p>
@@ -88,7 +95,7 @@ peerpedia status</code></pre>
           <h3>Publish a new paper</h3>
           <pre><code>peerpedia init my-new-paper --server {{ site_url }}
 cd my-new-paper
-# Fill in paper.md and all three fields in paper.json.
+# Fill in paper.md and title, authors, abstract, and primary_category in paper.json.
 peerpedia push -m "Initial publication"</code></pre>
           <p>An initial push publishes immediately; check the files before running it.</p>
           <h3>Stay up to date</h3>

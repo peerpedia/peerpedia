@@ -8,7 +8,8 @@ Developed by [Chenqi Meng](https://github.com/Chenqitrg).
 
 ## What is implemented
 
-- Public paper list with title, authors, average rating, search, and latest-acceptance/rating sorting.
+- Public paper list with title, authors, average rating, search, arXiv subject filtering, and latest-acceptance/rating sorting.
+- One primary arXiv subject and optional cross-lists per new submission. Search recognizes category codes, names, and arXiv aliases.
 - Separate metadata pages, Palatino-style HTML readers with a section outline that follows your reading position, and downloadable Markdown. Contents collapse on small screens; tables are centered and wide equations scroll within the page.
 - Username or email sign-in, email verification, password changes, and emailed password-reset links.
 - Upload → preview → publish. One UTF-8 Markdown file per submission; no images or online editor.
@@ -93,12 +94,17 @@ For a new paper:
 peerpedia init my-new-paper --server https://peerpedia.dev
 cd my-new-paper
 # Replace paper.md with your completed Markdown file.
-# Fill in title, authors, and abstract in paper.json.
+# Fill in title, authors, abstract, and primary_category in paper.json.
+# Optionally add secondary_categories, e.g. ["hep-th"].
 peerpedia diff
 peerpedia push -m "Initial publication"
 ```
 
-`paper.json` contains exactly three strings: `title`, `authors`, and `abstract`. Separate author names with `\n` inside the authors string. `paper.md` preserves UTF-8 bytes and original line endings. Existing directories are never overwritten by init/clone. `.peerpedia/` stores the verified base, server, paper ID, and local receipts; it is automatically ignored by Git. Keep this directory when moving a working copy. It contains document snapshots but never login tokens.
+`paper.json` contains the strings `title`, `authors`, `abstract`, and `primary_category`, plus a `secondary_categories` list (which may be empty). For example, use `"primary_category": "cond-mat.str-el"` and `"secondary_categories": ["hep-th"]`. Run `peerpedia categories --server https://peerpedia.dev --json` to list the supported category codes and names. Upgrade the CLI to 0.2 or newer before working with classified submissions.
+
+The taxonomy is pinned from [arXiv](https://arxiv.org/category_taxonomy) in `publishing/data/arxiv_categories.json` (retrieved 2026-10-18); there is no live dependency on arXiv. Classification follows the latest **accepted** submission, including cross-lists. It can be revised through the same proposal/acceptance workflow as other metadata. Existing unclassified submissions retain their v1 manifests and hashes; new submissions use v2, which includes subject codes in the hash. No migration guesses subjects or rewrites historical content. Both manifest formats remain verifiable. Once v2 submissions exist, the subject migration refuses a downgrade that would delete their hashed metadata.
+
+Separate author names with `\n` inside the authors string. `paper.md` preserves UTF-8 bytes and original line endings. Existing directories are never overwritten by init/clone. `.peerpedia/` stores the verified base, server, paper ID, and local receipts; it is automatically ignored by Git. Keep this directory when moving a working copy. It contains document snapshots but never login tokens.
 
 An initial push publishes a new paper immediately, matching the website's initial-publication behavior. Later pushes create **public, frozen proposals**, including when the corresponding author submits them. Review and accept proposals on the website. Push prints the submission URL and full hash. There is no CLI acceptance command or automatic acceptance.
 
@@ -143,12 +149,13 @@ For an AI runner, inject `PEERPEDIA_TOKEN` through its secret-management mechani
 
 | Endpoint | Authentication | Purpose |
 |---|---|---|
+| `GET /api/v1/categories/` | Public | Pinned arXiv codes, names, and groups |
 | `GET /api/v1/me/` | Bearer token | Username, scopes, expiry |
 | `GET /api/v1/papers/<uuid>/` | Public | Current accepted snapshot and metadata |
 | `GET /api/v1/submissions/<uuid>/` | Public | Frozen snapshot and decision status |
 | `POST /api/v1/push/` | Bearer token | Publish a new paper or propose a change |
 
-Push requires `Content-Type: application/json`, `Authorization: Bearer TOKEN`, and a UUID `Idempotency-Key`. The JSON fields are `paper_id`, `base_hash`, `title`, `authors`, `abstract`, `markdown`, and `explanation`. For new papers, set paper_id/base_hash to null; for proposals, supply the paper UUID and complete current submission hash. Normal browser cookies cannot authenticate this endpoint. Markdown restrictions and metadata validation are shared with website uploads. Responses contain the frozen `manifest`, `hash`, `markdown`, `status`, and submission `url`. Clients verify the manifest and source hashes before recording success.
+Push requires `Content-Type: application/json`, `Authorization: Bearer TOKEN`, and a UUID `Idempotency-Key`. The JSON fields are `paper_id`, `base_hash`, `title`, `authors`, `abstract`, `markdown`, `explanation`, `primary_category` (code), and `secondary_categories` (list of codes). If an older client omits subject fields on a proposal, the server inherits them from the accepted base. New papers and revisions of unclassified papers must supply a valid primary subject. For new papers, set paper_id/base_hash to null; for proposals, supply the paper UUID and complete current submission hash. Normal browser cookies cannot authenticate this endpoint. Markdown restrictions and metadata validation are shared with website uploads. Responses contain the frozen `manifest`, `hash`, `markdown`, `status`, and submission `url`. Clients verify the manifest and source hashes before recording success.
 
 Creation returns 201, an identical retry returns 200, and a stale base or changed payload reusing the same key returns 409. Other errors include 400 invalid input, 401 invalid/expired/revoked credentials, 403 insufficient scope, 404 missing/hidden content, 413 oversized input, and 429 rate limiting with Retry-After. Error responses use `{ "error": { "code": "...", "message": "...", "details": null } }`. API pushes are limited to 40 attempts per account per hour. Duplicate request IDs are scoped to the account and work across replacement tokens with sufficient permissions.
 
@@ -179,7 +186,7 @@ Download a submission's Markdown and verification manifest from its page, then r
 python3 scripts/verify_submission.py submission.json submission.md
 ```
 
-The versioned `peerpedia-submission-v1` manifest includes the Markdown's SHA-256, source metadata, stable record identifiers, contributor identity at submission, base hash, explanation, and timestamp. The submission hash is SHA-256 of that manifest encoded as UTF-8 JSON with sorted keys, compact separators, and unescaped Unicode. Accepted status and subsequent conversations are outside this hash.
+The versioned manifest (`peerpedia-submission-v1` for old snapshots, `peerpedia-submission-v2` for new ones) includes the Markdown's SHA-256, source metadata, stable record identifiers, contributor identity at submission, base hash, explanation, and timestamp. The submission hash is SHA-256 of that manifest encoded as UTF-8 JSON with sorted keys, compact separators, and unescaped Unicode. Accepted status and subsequent conversations are outside this hash.
 
 Check the complete database with:
 

@@ -3,7 +3,12 @@
   {% if field.is_hidden %}{{ field }}{% if field.errors %}<div class="field-errors">{{ field.errors }}</div>{% endif %}
   {% else %}
   <div class="field {% if field.errors %}has-error{% endif %}">
-    {{ field.label_tag }}{{ field }}
+    {% if field.name == 'secondary_categories' %}
+    <details class="cross-list-picker" {% if field.value or field.errors %}open{% endif %}><summary>{{ field.label }} (optional)</summary>
+      <label for="subject-search">Find a cross-list subject</label><input type="search" id="subject-search" placeholder="Filter by name or code" data-subject-search>
+      <div class="subject-checkboxes">{{ field }}</div>
+    </details>
+    {% else %}{{ field.label_tag }}{{ field }}{% endif %}
     {% if field.help_text %}<div class="help" id="{{ field.auto_id }}_helptext">{{ field.help_text|safe }}</div>{% endif %}
     {% if field.errors %}<div class="field-errors" role="alert">{{ field.errors }}</div>{% endif %}
   </div>

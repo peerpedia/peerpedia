@@ -95,7 +95,7 @@ class NoRedirect(HTTPRedirectHandler):
 
 
 def request(server, route, token=None, payload=None, key=None):
-    headers = {"Accept": "application/json", "User-Agent": "peerpedia-cli/0.1"}
+    headers = {"Accept": "application/json", "User-Agent": "peerpedia-cli/0.2"}
     if token:
         headers["Authorization"] = "Bearer " + token
     data = None
@@ -125,8 +125,13 @@ def request(server, route, token=None, payload=None, key=None):
 def verify(record):
     try:
         manifest = record["manifest"]
-        if manifest["format"] != "peerpedia-submission-v1":
+        if manifest["format"] not in {"peerpedia-submission-v1", "peerpedia-submission-v2"}:
             raise ValueError()
+        if manifest["format"] == "peerpedia-submission-v2":
+            if not isinstance(manifest["primary_category"], str) or not manifest["primary_category"]:
+                raise ValueError()
+            if not isinstance(manifest["secondary_categories"], list) or not all(isinstance(code, str) for code in manifest["secondary_categories"]):
+                raise ValueError()
         uuid.UUID(manifest["paper_id"])
         uuid.UUID(manifest["submission_id"])
         source = record["markdown"].encode("utf-8")
@@ -141,7 +146,9 @@ def verify(record):
 
 
 def metadata(record):
-    return {key: record["manifest"][key] for key in ("title", "authors", "abstract")}
+    return {**{key: record["manifest"][key] for key in ("title", "authors", "abstract")},
+            "primary_category": record["manifest"].get("primary_category", ""),
+            "secondary_categories": record["manifest"].get("secondary_categories", [])}
 
 
 def local_document(root):
@@ -149,8 +156,15 @@ def local_document(root):
     if len(source) > 1024 * 1024:
         raise ClientError("too_large", "Markdown must be 1 MB or smaller.")
     data = read_json(root / "paper.json")
-    if not isinstance(data, dict) or set(data) != {"title", "authors", "abstract"} or not all(isinstance(v, str) for v in data.values()):
-        raise ClientError("invalid_metadata", "paper.json must contain text fields: title, authors, abstract. Separate author names with newlines.")
+    required = {"title", "authors", "abstract"}
+    optional = {"primary_category", "secondary_categories"}
+    if not isinstance(data, dict) or not required <= set(data) or set(data) - required - optional or not all(isinstance(data[k], str) for k in required):
+        raise ClientError("invalid_metadata", "paper.json requires title, authors, abstract, and supports primary_category and secondary_categories.")
+    data.setdefault("primary_category", "")
+    data.setdefault("secondary_categories", [])
+    if not isinstance(data["primary_category"], str) or not isinstance(data["secondary_categories"], list) or not all(isinstance(code, str) for code in data["secondary_categories"]):
+        raise ClientError("invalid_metadata", "primary_category must be a subject code; secondary_categories must be a list of subject codes.")
+    data["secondary_categories"] = sorted(data["secondary_categories"])
     return {**data, "markdown": source.decode("utf-8")}
 
 
@@ -239,7 +253,7 @@ def initialize(args):
         save_base(root, state, record, replace_working=True)
     else:
         (root / "paper.md").write_text("# Your paper\n", encoding="utf-8")
-        write_json(root / "paper.json", {"title": "", "authors": "", "abstract": ""})
+        write_json(root / "paper.json", {"title": "", "authors": "", "abstract": "", "primary_category": "", "secondary_categories": []})
         write_json(root / ".peerpedia/state.json", state)
     (root / ".gitignore").write_text(".peerpedia/\n", encoding="utf-8")
     return {"directory": str(root), "server": server, "paper_id": state["paper_id"], "base_hash": state["base_hash"]}
@@ -289,6 +303,9 @@ def push(root, state, args):
             record["manifest"]["base_hash"] != submitted["base_hash"] or
             any(record["manifest"][field] != submitted[field].strip() for field in ("title", "authors", "abstract", "explanation"))):
         raise ClientError("verification_failed", "Server receipt does not match the pushed document or base.")
+    for field in ("primary_category", "secondary_categories"):
+        if field in submitted and record["manifest"].get(field) != submitted[field]:
+            raise ClientError("verification_failed", "Server receipt does not match the pushed subjects.")
     state["paper_id"] = record["manifest"]["paper_id"]
     state["last_submission"] = record["manifest"]["submission_id"]
     write_json(root / ".peerpedia/last-push.json", {"request": pending, "receipt": record})
@@ -302,6 +319,8 @@ def push(root, state, args):
 
 
 def run(args):
+    if args.command == "categories":
+        return request(server_for(args), "/api/v1/categories/")
     if args.command == "login":
         return login(args)
     if args.command == "logout":
@@ -322,7 +341,9 @@ def run(args):
         if args.command == "diff":
             data = local_document(root)
             before = {**metadata(base), "markdown": base["markdown"]} if base else dict.fromkeys(data, "")
-            diffs = {key: "".join(difflib.unified_diff(before[key].splitlines(keepends=True), value.splitlines(keepends=True), fromfile="base/" + key, tofile="local/" + key)) for key, value in data.items() if before[key] != value}
+            def lines(value):
+                return (json.dumps(value, ensure_ascii=False, indent=2) + "\n" if isinstance(value, list) else value).splitlines(keepends=True)
+            diffs = {key: "".join(difflib.unified_diff(lines(before[key]), lines(value), fromfile="base/" + key, tofile="local/" + key)) for key, value in data.items() if before[key] != value}
             return {"changed": bool(diffs), "diffs": diffs}
         if args.command == "status":
             remote = remote_current(state) if state["paper_id"] else None
@@ -362,13 +383,13 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--json", action="store_true", help="Machine-readable output")
     commands = parser.add_subparsers(dest="command", required=True)
-    for command in ("login", "logout", "init", "clone", "diff", "status", "push", "pull", "fetch", "rebase"):
+    for command in ("login", "logout", "init", "clone", "diff", "status", "push", "pull", "fetch", "rebase", "categories"):
         child = commands.add_parser(command)
         child.add_argument("--json", action="store_true", default=argparse.SUPPRESS)
         if command == "login":
             child.add_argument("server")
             child.add_argument("--token-stdin", action="store_true")
-        if command in {"init", "clone", "logout"}:
+        if command in {"init", "clone", "logout", "categories"}:
             child.add_argument("--server")
         if command == "clone":
             child.add_argument("paper_id")

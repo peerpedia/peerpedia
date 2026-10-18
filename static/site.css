@@ -205,3 +205,15 @@
   @media(max-width:620px) { .header-inner { padding:14px 20px; flex-wrap:wrap; gap:10px; } .header-inner nav { width:100%; justify-content:space-between; gap:8px; } .main-shell { padding-top:28px; margin-left:20px; margin-right:20px; } .site-footer { margin:0 20px; } .page-heading h1 { font-size:34px; } .paper-table-head { display:none; } .paper-row { grid-template-columns:1fr auto; padding:22px 4px; gap:12px; } .paper-title-cell { grid-column:1/-1; } .authors-cell { grid-column:1; } .rating-cell { grid-column:2; grid-row:2; } .paper-title { font-size:21px; } .sort-control { width:100%; justify-content:space-between; } .section-heading { align-items:flex-start; flex-direction:column; gap:12px; } .form-panel { padding:18px; } .actions .button { flex-grow:1; } .review-heading time { margin-left:0; } .tabs { gap:22px; } .auth-panel { margin-top:5px; } .hash-info { grid-template-columns:1fr; gap:4px; } .hash-info dd { margin-bottom:10px; } .compare-form { flex-direction:column; align-items:stretch; } .history-row { gap:12px; } .history-row .inline-links { gap:10px; } .site-footer { font-size:11px; } }
   @media(prefers-reduced-motion:reduce) { html { scroll-behavior:auto; } }
 }
+
+/* arXiv subjects remain outside the distraction-free reader. */
+.search-bar { flex-wrap: wrap; }
+.subject-filter { display: flex; align-items: center; gap: .7rem; min-width: 0; }
+.subject-filter select { max-width: 26rem; min-width: 0; width: 100%; }
+.subject-tags { display: flex; flex-wrap: wrap; gap: .5rem; margin: 1rem 0; }
+.subject-tags a { padding: .35rem .65rem; border: 1px solid var(--line); border-radius: .3rem; font-size: .88rem; }
+.cross-list-picker summary { cursor: pointer; font-weight: 600; margin-bottom: .7rem; }
+.subject-checkboxes { max-height: 20rem; overflow: auto; padding: .7rem; margin-top: .5rem; border: 1px solid var(--line); border-radius: .3rem; }
+.subject-checkboxes label { display: flex; align-items: baseline; gap: .5rem; font-size: .9rem; font-weight: normal; margin: .45rem 0; }
+.subject-checkboxes input[type=checkbox] { width: auto; flex-shrink: 0; }
+@media (max-width: 650px) { .subject-filter { width: 100%; } .subject-filter select { max-width: 100%; } }

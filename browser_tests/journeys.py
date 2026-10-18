@@ -81,7 +81,7 @@ class BrowserJourneys(StaticLiveServerTestCase):
         expect(self.page.get_by_role("button", name="Sign out")).to_be_visible()
 
     def fixture_paper(self):
-        return self.database_call(lambda: publish(self.owner, {"title": "Browser paper", "authors": "Ada Example", "abstract": "A private-to-metadata abstract.", "markdown": SOURCE, "explanation": "Initial publication."}))
+        return self.database_call(lambda: publish(self.owner, {"primary_category": "math.NT", "secondary_categories": [], "title": "Browser paper", "authors": "Ada Example", "abstract": "A private-to-metadata abstract.", "markdown": SOURCE, "explanation": "Initial publication."}))
 
     def database_call(self, function):
         # Keep synchronous ORM work outside Playwright's asyncio thread, without
@@ -98,6 +98,7 @@ class BrowserJourneys(StaticLiveServerTestCase):
         self.page.get_by_label("Title:", exact=True).fill("Browser paper")
         self.page.get_by_label("Authors:", exact=True).fill("Ada Example")
         self.page.get_by_label("Abstract:", exact=True).fill("A private-to-metadata abstract.")
+        self.page.get_by_label("Primary subject:", exact=True).select_option("math.NT")
         self.page.get_by_label("Markdown document").set_input_files({"name": "paper.md", "mimeType": "text/markdown", "buffer": source.encode()})
         if proposal:
             self.page.get_by_label("What changed?").fill("Correct the proof.")
@@ -232,7 +233,7 @@ class BrowserJourneys(StaticLiveServerTestCase):
 
     def test_mobile_search_reader_math_and_expandable_diff(self):
         paper = self.fixture_paper()
-        change = self.database_call(lambda: propose(self.contributor, paper.pk, paper.current_id, {"title": "Browser paper", "authors": "Ada Example", "abstract": "A private-to-metadata abstract.", "markdown": REVISED, "explanation": "Correct the proof."}))
+        change = self.database_call(lambda: propose(self.contributor, paper.pk, paper.current_id, {"primary_category": "math.NT", "secondary_categories": [], "title": "Browser paper", "authors": "Ada Example", "abstract": "A private-to-metadata abstract.", "markdown": REVISED, "explanation": "Correct the proof."}))
         self.page.set_viewport_size({"width": 390, "height": 844})
         self.page.goto(self.live_server_url + "/")
         self.page.get_by_role("searchbox", name="Search papers", exact=True).fill("Ada")
@@ -262,7 +263,7 @@ class BrowserJourneys(StaticLiveServerTestCase):
         source = '# Reading test\n\nIntroduction.\n\n## First section\n\n' + paragraph * 18
         source += '### A proof\n\n' + paragraph * 18 + '## Last section\n\n'
         source += '| Group | Field |\n| --- | --- |\n| C2 | Q |\n\n' + paragraph * 18
-        paper = self.database_call(lambda: publish(self.owner, {"title": "Reading test", "authors": "Ada", "abstract": "Reader navigation test.", "markdown": source, "explanation": "Initial publication."}))
+        paper = self.database_call(lambda: publish(self.owner, {"primary_category": "math.NT", "secondary_categories": [], "title": "Reading test", "authors": "Ada", "abstract": "Reader navigation test.", "markdown": source, "explanation": "Initial publication."}))
         reader_url = f'{self.live_server_url}/papers/{paper.pk}/read/'
         self.page.goto(reader_url)
         navigation = self.page.get_by_role('navigation', name='Table of contents')
@@ -325,3 +326,31 @@ class BrowserJourneys(StaticLiveServerTestCase):
         self.page.get_by_role("button", name="Revoke Local assistant", exact=True).click()
         expect(self.page.get_by_role("status")).to_contain_text("Access token revoked")
         self.assertEqual(self.context.request.get(self.live_server_url + "/api/v1/me/", headers={"Authorization": "Bearer " + raw}).status, 401)
+
+    def test_subject_upload_cross_list_filter_and_mobile(self):
+        self.login()
+        self.page.goto(self.live_server_url + '/publish/')
+        self.page.get_by_text('Cross-list subjects (optional)', exact=True).click()
+        self.page.get_by_label('Find a cross-list subject').fill('hep-th')
+        expect(self.page.get_by_label('math.GR — Group Theory', exact=True)).not_to_be_visible()
+        self.page.get_by_label('hep-th — High Energy Physics - Theory', exact=True).check()
+        self.page.get_by_label('Find a cross-list subject').fill('unmatched-filter')
+        expect(self.page.get_by_label('hep-th — High Energy Physics - Theory', exact=True)).to_be_visible()
+        self.upload()
+        expect(self.page.get_by_role('link', name='math.NT — Number Theory · Primary')).to_be_visible()
+        expect(self.page.get_by_role('link', name='hep-th — High Energy Physics - Theory', exact=True)).to_be_visible()
+        self.page.get_by_role('button', name='Publish paper', exact=True).click()
+        expect(self.page.get_by_role('link', name='hep-th — High Energy Physics - Theory', exact=True)).to_be_visible()
+        self.page.get_by_role('link', name='hep-th — High Energy Physics - Theory', exact=True).click()
+        expect(self.page.get_by_label('Subject', exact=True)).to_have_value('hep-th')
+        expect(self.page.get_by_role('link', name='Browser paper', exact=True)).to_be_visible()
+        self.page.set_viewport_size({'width': 390, 'height': 844})
+        self.page.get_by_role('searchbox', name='Search papers', exact=True).fill('Ada')
+        self.page.get_by_label('Sort by').select_option('rating')
+        self.page.get_by_role('button', name='Search', exact=True).click()
+        expect(self.page.get_by_label('Subject', exact=True)).to_have_value('hep-th')
+        expect(self.page.get_by_role('link', name='Browser paper', exact=True)).to_be_visible()
+        self.assertFalse(self.page.evaluate('document.documentElement.scrollWidth > window.innerWidth'))
+        self.page.get_by_label('Subject', exact=True).select_option('math.PR')
+        self.page.get_by_role('button', name='Apply', exact=True).click()
+        expect(self.page.get_by_role('heading', name='No papers found')).to_be_visible()

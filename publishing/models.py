@@ -49,9 +49,18 @@ class Submission(FrozenRecord):
     class Meta:
         ordering = ["-created_at"]
 
+    manifest_version = models.PositiveSmallIntegerField(default=2, editable=False)
+    primary_category = models.CharField(max_length=32, blank=True, default="", db_index=True)
+    secondary_categories = models.JSONField(default=list, blank=True)
+
+    @property
+    def subjects(self):
+        from .subjects import subject_links
+        return subject_links(self.primary_category, self.secondary_categories)
+
     def manifest(self):
-        return {
-            "format": "peerpedia-submission-v1", "submission_id": str(self.pk), "paper_id": str(self.paper_id),
+        manifest = {
+            "format": f"peerpedia-submission-v{self.manifest_version}", "submission_id": str(self.pk), "paper_id": str(self.paper_id),
             "contributor_id": self.contributor_id, "contributor_name": self.contributor_name,
             "base_hash": self.base.hash if self.base_id else None,
             "title": self.title, "authors": self.authors, "abstract": self.abstract,
@@ -59,12 +68,20 @@ class Submission(FrozenRecord):
             "explanation": self.explanation, "submitted_at": self.created_at.isoformat(),
         }
 
+        if self.manifest_version >= 2:
+            manifest.update(primary_category=self.primary_category, secondary_categories=self.secondary_categories)
+        return manifest
+
     def calculate_hash(self):
         payload = json.dumps(self.manifest(), sort_keys=True, separators=(",", ":"), ensure_ascii=False)
         return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
     def save(self, *args, **kwargs):
         if self._state.adding:
+            if self.manifest_version == 2:
+                from .subjects import validate_subjects
+                validate_subjects(self.primary_category, self.secondary_categories)
+                self.secondary_categories = sorted(self.secondary_categories)
             self.hash = self.calculate_hash()
         return super().save(*args, **kwargs)
 

@@ -10,7 +10,7 @@ parser.add_argument("markdown", type=Path)
 args = parser.parse_args()
 record = json.loads(args.manifest.read_text(encoding="utf-8"))
 manifest = record["manifest"]
-if manifest.get("format") != "peerpedia-submission-v1":
+if manifest.get("format") not in {"peerpedia-submission-v1", "peerpedia-submission-v2"}:
     raise SystemExit("Unknown manifest format")
 if hashlib.sha256(args.markdown.read_bytes()).hexdigest() != manifest["markdown_sha256"]:
     raise SystemExit("FAIL: Markdown does not match the manifest")

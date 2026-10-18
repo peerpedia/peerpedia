@@ -27,10 +27,11 @@ class Command(BaseCommand):
             ("A reading note on conditional probability", "Morgan Park\nAlex Chen", "An introductory demonstration of conditional probability, with a distinction between an event and a hypothesis.", "# A reading note on conditional probability\n\n*Demonstration document — not a research publication.*\n\n## Definition\n\nFor events $A$ and $B$ with $P(B)>0$,\n\n$$\nP(A \\mid B) = \\frac{P(A \\cap B)}{P(B)}.\n$$\n\n## Interpretation\n\nConditioning restricts the space of possibilities. It does not by itself establish a causal relationship.\n\n> A probability statement is meaningful only after its conditioning information is clear.\n"),
         ]
         for i, (title, authors, abstract, markdown) in enumerate(examples):
-            paper = publish(author, {"title": title, "authors": authors, "abstract": abstract, "markdown": markdown, "explanation": "Initial demonstration publication."})
+            category = ("math.OC", "cs.DL", "math.PR")[i]
+            paper = publish(author, {"primary_category": category, "secondary_categories": [], "title": title, "authors": authors, "abstract": abstract, "markdown": markdown, "explanation": "Initial demonstration publication."})
             Review.objects.create(paper=paper, user=reviewer, score=4 if i != 1 else 5, text="Demonstration review: the argument is readable and the assumptions are stated clearly. A worked example would make this note more useful.")
             if i == 0:
-                data = {"title": title, "authors": authors, "abstract": abstract, "markdown": markdown + "\n## A one-dimensional example\n\nFor $f(x)=x^2/2$ and $\\eta=1/2$, the iterates satisfy $x_{t+1}=x_t/2$.\n", "explanation": "Add a one-dimensional worked example."}
+                data = {"primary_category": category, "secondary_categories": [], "title": title, "authors": authors, "abstract": abstract, "markdown": markdown + "\n## A one-dimensional example\n\nFor $f(x)=x^2/2$ and $\\eta=1/2$, the iterates satisfy $x_{t+1}=x_t/2$.\n", "explanation": "Add a one-dimensional worked example."}
                 accepted = propose(contributor, paper.pk, paper.current_id, data)
                 decide(author, accepted.pk, "accepted")
                 paper.refresh_from_db()

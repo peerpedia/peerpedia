@@ -3,6 +3,7 @@
 {% block content %}
 <a class="breadcrumb" href="{% url 'paper' paper.pk %}?tab=submissions">← {{ paper.current.title }}</a>
 <div class="submission-heading"><div class="eyebrow">FROZEN SUBMISSION</div><h1>{{ submission.title }}</h1><div class="meta-line"><span class="status {{ submission.status }}">{{ submission.status|title }}</span><span>Submitted by <strong>{{ submission.contributor_name }}</strong></span><span>{{ submission.created_at|date:'j M Y, H:i' }} UTC</span></div></div>
+{% include 'includes/subjects.html' with subjects=submission.subjects %}
 <div class="submission-info"><p>{{ submission.explanation|linebreaksbr }}</p><dl class="hash-info"><dt>Submission hash</dt><dd><code>{{ submission.hash }}</code></dd>{% if submission.base %}<dt>Base version</dt><dd><a href="{% url 'submission' submission.base_id %}"><code>{{ submission.base.short_hash }}</code></a></dd>{% endif %}</dl><div class="inline-links"><a href="{% url 'read_submission' submission.pk %}">Read submitted document ↗</a><a href="{% url 'download' submission.pk %}">Download Markdown</a><a href="{% url 'manifest' submission.pk %}">Verification manifest</a></div></div>
 {% if stale %}<div class="notice warning">A newer version has been accepted. This proposal remains public, but accepting it requires a new submission based on the latest version.</div>{% endif %}
 <details class="diff-details"><summary>View Markdown changes</summary>{% include 'includes/diff.html' %}</details>

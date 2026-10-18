@@ -1,4 +1,5 @@
-{% extends 'base.html' %}
+{% extends 'base.html' %}{% load static %}
+{% block head %}<script defer src="{% static 'subjects.js' %}"></script>{% endblock %}
 {% block title %}{% if paper %}Submit a change{% else %}Upload a paper{% endif %} · Peerpedia{% endblock %}
 {% block content %}
 <div class="form-layout"><a class="breadcrumb" href="{% if paper %}{% url 'paper' paper.pk %}{% else %}{% url 'browse' %}{% endif %}">← {% if paper %}Back to paper{% else %}All papers{% endif %}</a>

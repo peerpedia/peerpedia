@@ -1,0 +1,3 @@
+<div class="subject-tags" aria-label="Paper subjects">
+{% for subject in subjects %}<a href="{% url 'browse' %}?subject={{ subject.code|urlencode }}">{{ subject.label }}{% if subject.primary %}<span class="muted"> · Primary</span>{% endif %}</a>{% empty %}<span class="muted">Unclassified · add subjects in a new submission.</span>{% endfor %}
+</div>

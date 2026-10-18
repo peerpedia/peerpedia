@@ -1,6 +1,7 @@
 import difflib
 import uuid
 from django.conf import settings
+from django import forms
 from django.contrib import messages
 from django.core import signing
 from django.core.exceptions import ValidationError
@@ -17,6 +18,7 @@ from .forms import CommentForm, ReviewForm, UploadForm
 from .models import Comment, Decision, Paper, Review, Submission
 from .rendering import render_markdown, render_reader
 from .services import decide, propose, publish
+from .subjects import CATEGORIES, METADATA_FIELDS, equivalent_codes, filter_choices, filter_codes, label, subject_links
 
 
 def public_papers():
@@ -27,6 +29,17 @@ def submission_queryset():
     return Submission.objects.filter(paper__is_hidden=False).select_related("paper__owner", "base", "decision", "contributor")
 
 
+def category_match(codes):
+    match = Q(current__primary_category__in=codes)
+    for code in codes:
+        if connection.vendor == "postgresql":
+            match |= Q(current__secondary_categories__contains=[code])
+        else:
+            # Exact quoted identifiers in the JSON array; SQLite has no JSON contains.
+            match |= Q(current__secondary_categories__icontains='"' + code + '"')
+    return match
+
+
 def browse(request):
     papers = public_papers().annotate(
         average=Avg("reviews__score", filter=Q(reviews__is_hidden=False)),
@@ -34,8 +47,19 @@ def browse(request):
     )
     query = request.GET.get("q", "").strip()[:200]
     sort = request.GET.get("sort", "latest")
+    subject = request.GET.get("subject", "")
+    codes = filter_codes(subject)
+    if subject == "unclassified":
+        papers = papers.filter(current__primary_category="")
+    elif codes:
+        papers = papers.filter(category_match(codes))
+    elif subject:
+        raise Http404("Unknown subject")
     if query:
         matching = Q(current__title__icontains=query) | Q(current__authors__icontains=query) | Q(current__abstract__icontains=query) | Q(current__markdown__icontains=query)
+        matching_codes = [code for code, row in CATEGORIES.items() if query.casefold() in (code + " " + row["name"]).casefold()]
+        if matching_codes:
+            matching |= category_match(equivalent_codes(matching_codes))
         if connection.vendor == "postgresql":
             from django.contrib.postgres.search import SearchQuery, SearchVector
             papers = papers.annotate(search=SearchVector("current__title", "current__authors", "current__abstract", "current__markdown", config="simple"))
@@ -46,7 +70,8 @@ def browse(request):
     else:
         sort = "latest"
         papers = papers.order_by("-accepted_at", "-pk")
-    return render(request, "publishing/browse.html", {"page": Paginator(papers, 25).get_page(request.GET.get("page")), "query": query, "sort": sort})
+    return render(request, "publishing/browse.html", {"page": Paginator(papers, 25).get_page(request.GET.get("page")), "query": query, "sort": sort, "subject": subject,
+        "subject_select": forms.Select(choices=filter_choices(), attrs={"id": "subject"}).render("subject", subject)})
 
 
 def paper_detail(request, paper_id):
@@ -113,7 +138,15 @@ def diff_lines(base, proposed):
 def metadata_diff(base, data):
     if not base:
         return []
-    return [{"label": key.title(), "before": getattr(base, key), "after": data[key]} for key in ("title", "authors", "abstract") if getattr(base, key) != data[key]]
+    def display(key, value):
+        if key == "primary_category":
+            return label(value)
+        if key == "secondary_categories":
+            return "; ".join(label(code) for code in value) or "None"
+        return value
+    return [{"label": {"primary_category": "Primary subject", "secondary_categories": "Cross-list subjects"}.get(key, key.title()),
+             "before": display(key, getattr(base, key)), "after": display(key, data[key])}
+            for key in METADATA_FIELDS if getattr(base, key) != data[key]]
 
 
 @verified_required
@@ -122,7 +155,7 @@ def upload(request, paper_id=None):
     paper = get_object_or_404(public_papers(), pk=paper_id) if paper_id else None
     if request.method == "POST" and request.POST.get("action") == "confirm":
         return confirm_upload(request, paper)
-    initial = {"title": paper.current.title, "authors": paper.current.authors, "abstract": paper.current.abstract, "base": paper.current_id} if paper else {}
+    initial = {**{key: getattr(paper.current, key) for key in METADATA_FIELDS}, "base": paper.current_id} if paper else {}
     form = UploadForm(request.POST or None, request.FILES or None, initial=initial, initial_publication=paper is None)
     if request.method == "POST" and form.is_valid():
         base_id = form.cleaned_data.get("base")
@@ -135,6 +168,7 @@ def upload(request, paper_id=None):
             token = signing.dumps(payload, salt="upload-preview", compress=True)
             response = render(request, "publishing/preview.html", {
                 "paper": paper, "data": data, "token": token,
+                "subjects": subject_links(data["primary_category"], data["secondary_categories"]),
                 "diff": diff_lines(paper.current.markdown, data["markdown"]) if paper else [],
                 "metadata_changes": metadata_diff(paper.current if paper else None, data),
                 "body": mark_safe(render_markdown(data["markdown"])),
@@ -161,7 +195,7 @@ def confirm_upload(request, paper):
             return redirect("submission", submission_id=submission.pk)
         new_paper = publish(request.user, payload["data"])
     except ValidationError as error:
-        return render(request, "error.html", {"heading": "A new base version is required", "detail": " ".join(error.messages)}, status=409)
+        return render(request, "error.html", {"heading": "Submission could not be published", "detail": " ".join(error.messages)}, status=409)
     except IntegrityError:
         existing = Submission.objects.filter(pk=payload["data"]["id"], contributor=request.user).first()
         if existing:
@@ -177,7 +211,7 @@ def submission_detail(request, submission_id):
     return render(request, "publishing/submission.html", {
         "submission": submission, "paper": submission.paper,
         "diff": diff_lines(base.markdown if base else "", submission.markdown),
-        "metadata_changes": metadata_diff(base, {key: getattr(submission, key) for key in ("title", "authors", "abstract")}),
+        "metadata_changes": metadata_diff(base, {key: getattr(submission, key) for key in METADATA_FIELDS}),
         "stale": submission.status == "pending" and submission.base_id != submission.paper.current_id,
         "comments": submission.comments.filter(is_hidden=False).select_related("user"), "comment_form": CommentForm(),
     })
@@ -237,7 +271,7 @@ def compare(request, paper_id):
     return render(request, "publishing/compare.html", {
         "paper": paper, "versions": versions, "before": before, "after": after,
         "diff": diff_lines(before.markdown, after.markdown),
-        "metadata_changes": metadata_diff(before, {key: getattr(after, key) for key in ("title", "authors", "abstract")}),
+        "metadata_changes": metadata_diff(before, {key: getattr(after, key) for key in METADATA_FIELDS}),
     })
 
 

@@ -19,6 +19,7 @@ from accounts.security import limited
 from accounts.tokens import authenticate_token
 from .forms import UploadForm
 from .models import ApiPush
+from .subjects import TAXONOMY
 from .services import propose, publish
 from .views import public_papers, submission_queryset
 
@@ -87,6 +88,11 @@ def me(request):
 
 
 @endpoint()
+def categories(request):
+    return JsonResponse(TAXONOMY)
+
+
+@endpoint()
 def paper(request, paper_id):
     item = get_object_or_404(public_papers(), pk=paper_id)
     return JsonResponse({"paper_id": str(item.pk), "current": snapshot(item.current)})
@@ -109,11 +115,16 @@ def push(request):
     except (ValueError, UnicodeDecodeError, RecursionError):
         raise APIError("invalid_request", "Provide valid JSON and a UUID Idempotency-Key header.")
     fields = {"paper_id", "base_hash", "title", "authors", "abstract", "markdown", "explanation"}
-    if not isinstance(payload, dict) or set(payload) != fields:
+    optional = {"primary_category", "secondary_categories"}
+    if not isinstance(payload, dict) or not fields <= set(payload) or set(payload) - fields - optional:
         raise APIError("invalid_request", "Expected fields: " + ", ".join(sorted(fields)))
     for field in fields - {"paper_id", "base_hash"}:
         if not isinstance(payload[field], str):
             raise APIError("invalid_request", f"{field} must be text.")
+    if "primary_category" in payload and not isinstance(payload["primary_category"], str):
+        raise APIError("invalid_request", "primary_category must be an arXiv category code.")
+    if "secondary_categories" in payload and (not isinstance(payload["secondary_categories"], list) or not all(isinstance(code, str) for code in payload["secondary_categories"])):
+        raise APIError("invalid_request", "secondary_categories must be a list of arXiv category codes.")
     if len(payload["markdown"].encode("utf-8")) > settings.MAX_MARKDOWN_BYTES:
         raise APIError("too_large", "Markdown must be 1 MB or smaller.", 413)
     initial = payload["paper_id"] is None
@@ -143,8 +154,13 @@ def push(request):
     item = get_object_or_404(public_papers(), pk=payload["paper_id"]) if not initial else None
     if item and item.current.hash != payload["base_hash"]:
         raise APIError("stale_base", "A newer version exists. Fetch it and reconcile your local changes before pushing.", 409)
+    # Old clients may omit subjects when editing: inherit the accepted snapshot.
+    # Explicit empty/invalid values still fail validation. Retries above retain
+    # their original request fingerprint, even across the schema upgrade.
+    form_payload = {"primary_category": item.current.primary_category if item else "",
+                    "secondary_categories": item.current.secondary_categories if item else [], **payload}
     form = UploadForm(
-        {**payload, "base": str(item.current_id) if item else ""},
+        {**form_payload, "base": str(item.current_id) if item else ""},
         {"file": SimpleUploadedFile("paper.md", payload["markdown"].encode("utf-8"))}, initial_publication=initial,
     )
     if not form.is_valid():
@@ -155,5 +171,5 @@ def push(request):
     return JsonResponse(snapshot(record), status=201)
 
 
-urlpatterns = [path("me/", me), path("papers/<uuid:paper_id>/", paper),
+urlpatterns = [path("categories/", categories), path("me/", me), path("papers/<uuid:paper_id>/", paper),
                path("submissions/<uuid:submission_id>/", submission), path("push/", push)]

@@ -18,7 +18,7 @@ from .views import diff_lines
 
 
 def document(**changes):
-    data = {"title": "A test paper", "authors": "Ada Example\nBo Example", "abstract": "An abstract for testing.", "markdown": "# A test paper\n\nAn equation: $x^2$.\n", "explanation": "Initial publication."}
+    data = {"primary_category": "math.NT", "secondary_categories": [], "title": "A test paper", "authors": "Ada Example\nBo Example", "abstract": "An abstract for testing.", "markdown": "# A test paper\n\nAn equation: $x^2$.\n", "explanation": "Initial publication."}
     data.update(changes)
     return data
 
