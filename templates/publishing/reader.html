@@ -11,8 +11,9 @@
 </head>
 <body class="reader{% if contents %} has-contents{% endif %}">
   <a class="reader-skip" href="#paper-text">Skip to paper</a>
-  {% if contents %}
   <aside class="reader-sidebar" aria-label="Paper navigation">
+    <a class="reader-home" href="{% url 'browse' %}" aria-label="Peerpedia home" title="Peerpedia home"><img src="{% static 'favicon.svg' %}" width="32" height="32" alt=""><span>Peerpedia</span></a>
+    {% if contents %}
     <details class="reader-contents" open>
       <summary><span>Contents</span><span class="reader-current" aria-hidden="true"></span></summary>
       <nav aria-label="Table of contents">
@@ -21,8 +22,8 @@
         </ol>
       </nav>
     </details>
+    {% endif %}
   </aside>
-  {% endif %}
   <main id="paper-text" class="markdown-body" tabindex="-1">{{ body }}</main>
 </body>
 </html>

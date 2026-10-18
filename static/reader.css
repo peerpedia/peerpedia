@@ -32,6 +32,9 @@
 .reader-skip { position:fixed; top:8px; left:12px; z-index:10; transform:translateY(-160%); padding:10px 16px; background:#23514b; color:white; font:14px/1.5 system-ui,sans-serif; border-radius:4px; }
 .reader-skip:focus { transform:translateY(0); }
 .reader-sidebar { font:13px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; color:var(--reader-muted); }
+.reader-home { display:flex; align-items:center; gap:10px; min-height:44px; margin:0 20px 8px; padding:6px; width:fit-content; color:var(--reader-accent); text-decoration:none; border-radius:6px; font:600 19px/1.3 Palatino,"Palatino Linotype",Georgia,serif; }
+.reader-home:hover { background:#e8eee2; }
+.reader-home img { display:block; flex-shrink:0; }
 .reader-contents summary { display:flex; align-items:center; gap:12px; padding:18px 22px; font-size:12px; font-weight:650; list-style:none; cursor:pointer; }
 .reader-contents summary::-webkit-details-marker { display:none; }
 .reader-contents summary::after { content:'+'; margin-left:auto; font-size:18px; font-weight:400; }
@@ -51,11 +54,17 @@
   .reader-sidebar { position:fixed; inset:0 auto 0 0; width:256px; background:#f7f8f3; border-right:1px solid var(--reader-line); padding-top:32px; }
   .reader-contents summary { cursor:default; text-transform:uppercase; letter-spacing:.12em; padding:20px 26px; }
   .reader-contents summary::after,.reader-current { display:none; }
-  .reader-contents nav { max-height:calc(100dvh - 100px); }
+  .reader-contents nav { max-height:calc(100dvh - 160px); }
+  .reader:not(.has-contents) .reader-sidebar { position:sticky; top:0; width:auto; padding:0; border-right:0; border-bottom:1px solid var(--reader-line); z-index:5; }
+  .reader:not(.has-contents) .reader-home { margin:8px 20px; }
+  .reader:not(.has-contents) .markdown-body :is(h1,h2,h3,h4,h5,h6) { scroll-margin-top:85px; }
 }
 @media(max-width:1049px) {
-  .reader-sidebar { position:sticky; top:0; z-index:5; background:#f7f8f3; border-bottom:1px solid var(--reader-line); }
-  .reader-contents nav { max-height:55vh; }
+  .reader-sidebar { position:sticky; top:0; z-index:5; display:grid; grid-template-columns:64px minmax(0,1fr); align-items:start; background:#f7f8f3; border-bottom:1px solid var(--reader-line); }
+  .reader-home { margin:8px 10px; }
+  .reader-home span { display:none; }
+  .reader-contents summary { padding-left:4px; }
+  .reader-contents nav { position:absolute; top:100%; left:0; right:0; max-height:55vh; background:#f7f8f3; border-bottom:1px solid var(--reader-line); }
   .reader .markdown-body { padding-top:32px; }
   .markdown-body :is(h1,h2,h3,h4,h5,h6) { scroll-margin-top:85px; }
 }
