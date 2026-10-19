@@ -1,4 +1,5 @@
 """Dependency-free client. Every push is a full frozen document, not a Git push."""
+
 import argparse
 from contextlib import contextmanager
 import difflib
@@ -39,11 +40,24 @@ def write_json(path, data):
 
 def origin(value):
     parts = urlsplit(value)
-    if (parts.scheme not in {"https", "http"} or not parts.hostname or parts.username or parts.password
-            or parts.path not in {"", "/"} or parts.query or parts.fragment):
-        raise ClientError("invalid_server", "Use a server origin such as https://peerpedia.dev (no path or credentials).")
+    if (
+        parts.scheme not in {"https", "http"}
+        or not parts.hostname
+        or parts.username
+        or parts.password
+        or parts.path not in {"", "/"}
+        or parts.query
+        or parts.fragment
+    ):
+        raise ClientError(
+            "invalid_server",
+            "Use a server origin such as https://peerpedia.dev (no path or credentials).",
+        )
     if parts.scheme == "http" and parts.hostname not in {"localhost", "127.0.0.1", "::1"}:
-        raise ClientError("https_required", "Remote servers require HTTPS. HTTP is only permitted on loopback for development.")
+        raise ClientError(
+            "https_required",
+            "Remote servers require HTTPS. HTTP is only permitted on loopback for development.",
+        )
     return f"{parts.scheme}://{parts.netloc.lower()}"
 
 
@@ -57,7 +71,9 @@ def credentials():
     if not path.exists():
         return {"servers": {}}
     if os.name == "posix" and path.stat().st_mode & 0o077:
-        raise ClientError("unsafe_credentials", f"Restrict credential-file permissions: chmod 600 {path}")
+        raise ClientError(
+            "unsafe_credentials", f"Restrict credential-file permissions: chmod 600 {path}"
+        )
     return read_json(path)
 
 
@@ -81,7 +97,10 @@ def token_for(server):
         # project's state file alone.
         configured = os.environ.get("PEERPEDIA_SERVER")
         if not configured or origin(configured) != server:
-            raise ClientError("token_origin_mismatch", "Set PEERPEDIA_SERVER to the token's server when using PEERPEDIA_TOKEN.")
+            raise ClientError(
+                "token_origin_mismatch",
+                "Set PEERPEDIA_SERVER to the token's server when using PEERPEDIA_TOKEN.",
+            )
         return raw
     raw = credentials().get("servers", {}).get(server)
     if not raw:
@@ -115,9 +134,14 @@ def request(server, route, token=None, payload=None, key=None):
             detail = json.loads(error.read(65536))["error"]
             raise ClientError(detail["code"], detail["message"], detail.get("details"))
         except (ValueError, KeyError, TypeError):
-            raise ClientError("http_error", f"Server returned HTTP {error.code}. Redirects are not followed.")
+            raise ClientError(
+                "http_error", f"Server returned HTTP {error.code}. Redirects are not followed."
+            )
     except (URLError, TimeoutError, ConnectionError):
-        raise ClientError("network_error", "Could not complete the request. A pending push can be retried with push --retry.")
+        raise ClientError(
+            "network_error",
+            "Could not complete the request. A pending push can be retried with push --retry.",
+        )
     except (ValueError, UnicodeError):
         raise ClientError("invalid_response", "Server did not return valid JSON.")
 
@@ -128,27 +152,41 @@ def verify(record):
         if manifest["format"] not in {"peerpedia-submission-v1", "peerpedia-submission-v2"}:
             raise ValueError()
         if manifest["format"] == "peerpedia-submission-v2":
-            if not isinstance(manifest["primary_category"], str) or not manifest["primary_category"]:
+            if (
+                not isinstance(manifest["primary_category"], str)
+                or not manifest["primary_category"]
+            ):
                 raise ValueError()
-            if not isinstance(manifest["secondary_categories"], list) or not all(isinstance(code, str) for code in manifest["secondary_categories"]):
+            if not isinstance(manifest["secondary_categories"], list) or not all(
+                isinstance(code, str) for code in manifest["secondary_categories"]
+            ):
                 raise ValueError()
         uuid.UUID(manifest["paper_id"])
         uuid.UUID(manifest["submission_id"])
         source = record["markdown"].encode("utf-8")
-        canonical = json.dumps(manifest, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
-        if hashlib.sha256(source).hexdigest() != manifest["markdown_sha256"] or hashlib.sha256(canonical).hexdigest() != record["hash"]:
+        canonical = json.dumps(
+            manifest, sort_keys=True, separators=(",", ":"), ensure_ascii=False
+        ).encode("utf-8")
+        if (
+            hashlib.sha256(source).hexdigest() != manifest["markdown_sha256"]
+            or hashlib.sha256(canonical).hexdigest() != record["hash"]
+        ):
             raise ValueError()
         if not all(isinstance(manifest[k], str) for k in ("title", "authors", "abstract")):
             raise ValueError()
     except (KeyError, TypeError, ValueError, AttributeError, UnicodeError):
-        raise ClientError("verification_failed", "Document or manifest does not match its submission hash.")
+        raise ClientError(
+            "verification_failed", "Document or manifest does not match its submission hash."
+        )
     return record
 
 
 def metadata(record):
-    return {**{key: record["manifest"][key] for key in ("title", "authors", "abstract")},
-            "primary_category": record["manifest"].get("primary_category", ""),
-            "secondary_categories": record["manifest"].get("secondary_categories", [])}
+    return {
+        **{key: record["manifest"][key] for key in ("title", "authors", "abstract")},
+        "primary_category": record["manifest"].get("primary_category", ""),
+        "secondary_categories": record["manifest"].get("secondary_categories", []),
+    }
 
 
 def local_document(root):
@@ -158,12 +196,27 @@ def local_document(root):
     data = read_json(root / "paper.json")
     required = {"title", "authors", "abstract"}
     optional = {"primary_category", "secondary_categories"}
-    if not isinstance(data, dict) or not required <= set(data) or set(data) - required - optional or not all(isinstance(data[k], str) for k in required):
-        raise ClientError("invalid_metadata", "paper.json requires title, authors, abstract, and supports primary_category and secondary_categories.")
+    if (
+        not isinstance(data, dict)
+        or not required <= set(data)
+        or set(data) - required - optional
+        or not all(isinstance(data[k], str) for k in required)
+    ):
+        raise ClientError(
+            "invalid_metadata",
+            "paper.json requires title, authors, abstract, and supports primary_category and secondary_categories.",
+        )
     data.setdefault("primary_category", "")
     data.setdefault("secondary_categories", [])
-    if not isinstance(data["primary_category"], str) or not isinstance(data["secondary_categories"], list) or not all(isinstance(code, str) for code in data["secondary_categories"]):
-        raise ClientError("invalid_metadata", "primary_category must be a subject code; secondary_categories must be a list of subject codes.")
+    if (
+        not isinstance(data["primary_category"], str)
+        or not isinstance(data["secondary_categories"], list)
+        or not all(isinstance(code, str) for code in data["secondary_categories"])
+    ):
+        raise ClientError(
+            "invalid_metadata",
+            "primary_category must be a subject code; secondary_categories must be a list of subject codes.",
+        )
     data["secondary_categories"] = sorted(data["secondary_categories"])
     return {**data, "markdown": source.decode("utf-8")}
 
@@ -178,7 +231,9 @@ def project():
             if state.get("last_submission"):
                 uuid.UUID(state["last_submission"])
             return directory, state
-    raise ClientError("not_a_project", "Run this inside a Peerpedia directory created by clone or init.")
+    raise ClientError(
+        "not_a_project", "Run this inside a Peerpedia directory created by clone or init."
+    )
 
 
 @contextmanager
@@ -187,7 +242,10 @@ def locked(root):
     try:
         fd = os.open(lock, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
     except FileExistsError:
-        raise ClientError("project_busy", "Another command owns .peerpedia/lock. If it crashed, remove the lock only after confirming it has stopped.")
+        raise ClientError(
+            "project_busy",
+            "Another command owns .peerpedia/lock. If it crashed, remove the lock only after confirming it has stopped.",
+        )
     os.close(fd)
     try:
         yield
@@ -219,7 +277,7 @@ def save_base(root, state, record, replace_working=False):
 def remote_current(state):
     if not state["paper_id"]:
         raise ClientError("unpublished", "Push this new paper first.")
-    record = verify(request(state["server"], f'/api/v1/papers/{state["paper_id"]}/')["current"])
+    record = verify(request(state["server"], f"/api/v1/papers/{state['paper_id']}/")["current"])
     if record["manifest"]["paper_id"] != state["paper_id"]:
         raise ClientError("wrong_paper", "Remote returned a different paper.")
     return record
@@ -227,7 +285,11 @@ def remote_current(state):
 
 def login(args):
     server = origin(args.server)
-    raw = sys.stdin.readline().strip() if args.token_stdin else getpass.getpass("Access token: ").strip()
+    raw = (
+        sys.stdin.readline().strip()
+        if args.token_stdin
+        else getpass.getpass("Access token: ").strip()
+    )
     identity = request(server, "/api/v1/me/", token=raw)
     data = credentials()
     data["servers"][server] = raw
@@ -253,21 +315,41 @@ def initialize(args):
         save_base(root, state, record, replace_working=True)
     else:
         (root / "paper.md").write_text("# Your paper\n", encoding="utf-8")
-        write_json(root / "paper.json", {"title": "", "authors": "", "abstract": "", "primary_category": "", "secondary_categories": []})
+        write_json(
+            root / "paper.json",
+            {
+                "title": "",
+                "authors": "",
+                "abstract": "",
+                "primary_category": "",
+                "secondary_categories": [],
+            },
+        )
         write_json(root / ".peerpedia/state.json", state)
     (root / ".gitignore").write_text(".peerpedia/\n", encoding="utf-8")
-    return {"directory": str(root), "server": server, "paper_id": state["paper_id"], "base_hash": state["base_hash"]}
+    return {
+        "directory": str(root),
+        "server": server,
+        "paper_id": state["paper_id"],
+        "base_hash": state["base_hash"],
+    }
 
 
 def push(root, state, args):
-    pr_id = getattr(args,'pr',None)
-    expected_head = getattr(args,'expected_head',None)
-    discussion_ids = getattr(args,'address',[]) or []
-    ai_assisted = getattr(args,'ai_assisted',False)
+    pr_id = getattr(args, "pr", None)
+    expected_head = getattr(args, "expected_head", None)
+    discussion_ids = getattr(args, "address", []) or []
+    ai_assisted = getattr(args, "ai_assisted", False)
     if args.retry and (pr_id or expected_head or discussion_ids or ai_assisted):
-        raise ClientError("invalid_arguments","Retry reuses the saved request. Do not add PR, discussion, or AI flags.")
+        raise ClientError(
+            "invalid_arguments",
+            "Retry reuses the saved request. Do not add PR, discussion, or AI flags.",
+        )
     if bool(pr_id) != bool(expected_head):
-        raise ClientError("invalid_arguments","Updating a PR needs both --pr and --expected-head (the current full hash).")
+        raise ClientError(
+            "invalid_arguments",
+            "Updating a PR needs both --pr and --expected-head (the current full hash).",
+        )
     pending_path = root / ".peerpedia/pending.json"
     pending = read_json(pending_path) if pending_path.exists() else None
     if args.retry:
@@ -279,26 +361,42 @@ def push(root, state, args):
         if not args.message or not args.message.strip():
             raise ClientError("message_required", "Describe the change using -m.")
         if pending:
-            raise ClientError("pending_push", "Resolve the previous push with push --retry before starting another.")
+            raise ClientError(
+                "pending_push",
+                "Resolve the previous push with push --retry before starting another.",
+            )
         base = base_record(root)
         if base and base["hash"] != state["base_hash"]:
             raise ClientError("invalid_state", "Stored base and state do not agree.")
         if not changed(root, base) and not pr_id:
             return {"status": "unchanged", "message": "No local changes to push."}
-        pending = {"server": state["server"], "key": str(uuid.uuid4()), "payload": {
-            "paper_id": state["paper_id"], "base_hash": state["base_hash"],
-            **local_document(root), "explanation": args.message,
-        }}
+        pending = {
+            "server": state["server"],
+            "key": str(uuid.uuid4()),
+            "payload": {
+                "paper_id": state["paper_id"],
+                "base_hash": state["base_hash"],
+                **local_document(root),
+                "explanation": args.message,
+            },
+        }
         if pr_id:
-            pending['payload'].update(pull_request_id=str(uuid.UUID(pr_id)),expected_head=expected_head)
+            pending["payload"].update(
+                pull_request_id=str(uuid.UUID(pr_id)), expected_head=expected_head
+            )
         if discussion_ids:
-            pending['payload']['discussion_ids'] = [str(uuid.UUID(value)) for value in discussion_ids]
+            pending["payload"]["discussion_ids"] = [
+                str(uuid.UUID(value)) for value in discussion_ids
+            ]
         if ai_assisted:
-            pending['payload']['ai_assisted'] = True
+            pending["payload"]["ai_assisted"] = True
         previous_path = root / ".peerpedia/last-push.json"
         if previous_path.exists():
             previous = read_json(previous_path)
-            if previous["request"]["server"] == state["server"] and previous["request"]["payload"] == pending["payload"]:
+            if (
+                previous["request"]["server"] == state["server"]
+                and previous["request"]["payload"] == pending["payload"]
+            ):
                 # Reuse the server's idempotency receipt even after a successful
                 # local completion. A repeated command must not create a copy.
                 pending = previous["request"]
@@ -306,20 +404,47 @@ def push(root, state, args):
         # retry into another publication, even if the user edits files meanwhile.
         write_json(pending_path, pending)
     try:
-        record = verify(request(state["server"], "/api/v1/push/", token=token_for(state["server"]), payload=pending["payload"], key=pending["key"]))
+        record = verify(
+            request(
+                state["server"],
+                "/api/v1/push/",
+                token=token_for(state["server"]),
+                payload=pending["payload"],
+                key=pending["key"],
+            )
+        )
     except ClientError as error:
-        if error.code in {"stale_base", "invalid_document", "invalid_request", "too_large", "insufficient_scope", "not_found", "stale_pr", "invalid_discussion", "forbidden"}:
+        if error.code in {
+            "stale_base",
+            "invalid_document",
+            "invalid_request",
+            "too_large",
+            "insufficient_scope",
+            "not_found",
+            "stale_pr",
+            "invalid_discussion",
+            "forbidden",
+        }:
             pending_path.unlink()  # Definitive rejection: safe to fix and submit anew.
         raise
     submitted = pending["payload"]
-    if (record["markdown"] != submitted["markdown"] or
-            (submitted["paper_id"] and record["manifest"]["paper_id"] != submitted["paper_id"]) or
-            record["manifest"]["base_hash"] != submitted["base_hash"] or
-            any(record["manifest"][field] != submitted[field].strip() for field in ("title", "authors", "abstract", "explanation"))):
-        raise ClientError("verification_failed", "Server receipt does not match the pushed document or base.")
+    if (
+        record["markdown"] != submitted["markdown"]
+        or (submitted["paper_id"] and record["manifest"]["paper_id"] != submitted["paper_id"])
+        or record["manifest"]["base_hash"] != submitted["base_hash"]
+        or any(
+            record["manifest"][field] != submitted[field].strip()
+            for field in ("title", "authors", "abstract", "explanation")
+        )
+    ):
+        raise ClientError(
+            "verification_failed", "Server receipt does not match the pushed document or base."
+        )
     for field in ("primary_category", "secondary_categories"):
         if field in submitted and record["manifest"].get(field) != submitted[field]:
-            raise ClientError("verification_failed", "Server receipt does not match the pushed subjects.")
+            raise ClientError(
+                "verification_failed", "Server receipt does not match the pushed subjects."
+            )
     state["paper_id"] = record["manifest"]["paper_id"]
     state["last_submission"] = record["manifest"]["submission_id"]
     write_json(root / ".peerpedia/last-push.json", {"request": pending, "receipt": record})
@@ -328,63 +453,91 @@ def push(root, state, args):
     else:
         write_json(root / ".peerpedia/state.json", state)
     pending_path.unlink()
-    return {"pull_request": record.get("pull_request"), "via_cli":record.get("via_cli",True),
-            "ai_assisted":record.get("ai_assisted",False),
-            "submission_id": record["manifest"]["submission_id"], "hash": record["hash"], "status": record["status"],
-            "url": state["server"] + f'/submissions/{record["manifest"]["submission_id"]}/'}
+    return {
+        "pull_request": record.get("pull_request"),
+        "via_cli": record.get("via_cli", True),
+        "ai_assisted": record.get("ai_assisted", False),
+        "submission_id": record["manifest"]["submission_id"],
+        "hash": record["hash"],
+        "status": record["status"],
+        "url": state["server"] + f"/submissions/{record['manifest']['submission_id']}/",
+    }
 
 
-READ_COMMANDS = {"feedback","discussion","replies","comment-history","reviews","pr","pr-comments"}
+READ_COMMANDS = {
+    "feedback",
+    "discussion",
+    "replies",
+    "comment-history",
+    "reviews",
+    "pr",
+    "pr-comments",
+}
 
 
 def read_feedback(args):
     if args.server:
         server = server_for(args)
-        paper_id = getattr(args,'paper',None)
+        paper_id = getattr(args, "paper", None)
     else:
         _, state = project()
-        server, paper_id = state['server'], getattr(args,'paper',None) or state['paper_id']
+        server, paper_id = state["server"], getattr(args, "paper", None) or state["paper_id"]
     if args.offset < 0:
-        raise ClientError("invalid_arguments","Offset must be nonnegative.")
+        raise ClientError("invalid_arguments", "Offset must be nonnegative.")
+
     def uid(value):
         if not value:
-            raise ClientError("paper_required","Use --paper with --server, or run inside a published paper directory.")
+            raise ClientError(
+                "paper_required",
+                "Use --paper with --server, or run inside a published paper directory.",
+            )
         return str(uuid.UUID(value))
-    if args.command == 'feedback':
-        submission_id = getattr(args,'submission',None)
-        path = f'/api/v1/submissions/{uid(submission_id)}/feedback/' if submission_id else f'/api/v1/papers/{uid(paper_id)}/feedback/'
-        key = 'passages'
-    elif args.command == 'reviews':
-        path, key = f'/api/v1/papers/{uid(paper_id)}/reviews/', 'reviews'
+
+    if args.command == "feedback":
+        submission_id = getattr(args, "submission", None)
+        path = (
+            f"/api/v1/submissions/{uid(submission_id)}/feedback/"
+            if submission_id
+            else f"/api/v1/papers/{uid(paper_id)}/feedback/"
+        )
+        key = "passages"
+    elif args.command == "reviews":
+        path, key = f"/api/v1/papers/{uid(paper_id)}/reviews/", "reviews"
     else:
         target = uid(args.target)
         path, key = {
-            'discussion':(f'/api/v1/passages/{target}/','threads'),
-            'replies':(f'/api/v1/discussion-comments/{target}/replies/','replies'),
-            'comment-history':(f'/api/v1/discussion-comments/{target}/history/','revisions'),
-            'pr':(f'/api/v1/prs/{target}/','snapshots'),
-            'pr-comments':(f'/api/v1/prs/{target}/comments/','comments'),
+            "discussion": (f"/api/v1/passages/{target}/", "threads"),
+            "replies": (f"/api/v1/discussion-comments/{target}/replies/", "replies"),
+            "comment-history": (f"/api/v1/discussion-comments/{target}/history/", "revisions"),
+            "pr": (f"/api/v1/prs/{target}/", "snapshots"),
+            "pr-comments": (f"/api/v1/prs/{target}/comments/", "comments"),
         }[args.command]
-    def pages(path,key,offset=0):
-        result = request(server,path+'?offset='+str(offset))
+
+    def pages(path, key, offset=0):
+        result = request(server, path + "?offset=" + str(offset))
         seen = {offset}
-        while args.all and result.get('next') is not None:
-            at = result['next']
+        while args.all and result.get("next") is not None:
+            at = result["next"]
             if type(at) is not int or at <= offset or at in seen:
-                raise ClientError("invalid_response","The server returned an invalid page cursor.")
+                raise ClientError("invalid_response", "The server returned an invalid page cursor.")
             seen.add(at)
             offset = at
-            page = request(server,path+'?offset='+str(at))
+            page = request(server, path + "?offset=" + str(at))
             result[key].extend(page[key])
-            result['next'] = page.get('next')
+            result["next"] = page.get("next")
         return result
-    result = pages(path,key,args.offset)
-    if args.all and args.command=='discussion':
-        for thread in result['threads']:
-            if thread['next_replies'] is not None:
-                extra=pages(f"/api/v1/discussion-comments/{uid(thread['id'])}/replies/",'replies',thread['next_replies'])
-                thread['replies'].extend(extra['replies'])
-                thread['next_replies']=None
+
+    result = pages(path, key, args.offset)
+    if args.all and args.command == "discussion":
+        for thread in result["threads"]:
+            if thread["next_replies"] is not None:
+                extra = pages(
+                    f"/api/v1/discussion-comments/{uid(thread['id'])}/replies/",
+                    "replies",
+                    thread["next_replies"],
+                )
+                thread["replies"].extend(extra["replies"])
+                thread["next_replies"] = None
     return result
 
 
@@ -402,7 +555,9 @@ def run(args):
         if data.get("default_server") == server:
             data.pop("default_server")
         save_credentials(data)
-        return {"message": "Local credential removed. Revoke the token on the website to disable other copies."}
+        return {
+            "message": "Local credential removed. Revoke the token on the website to disable other copies."
+        }
     if args.command in {"init", "clone"}:
         return initialize(args)
     root, state = project()
@@ -412,18 +567,54 @@ def run(args):
         base = base_record(root)
         if args.command == "diff":
             data = local_document(root)
-            before = {**metadata(base), "markdown": base["markdown"]} if base else dict.fromkeys(data, "")
+            before = (
+                {**metadata(base), "markdown": base["markdown"]}
+                if base
+                else dict.fromkeys(data, "")
+            )
+
             def lines(value):
-                return (json.dumps(value, ensure_ascii=False, indent=2) + "\n" if isinstance(value, list) else value).splitlines(keepends=True)
-            diffs = {key: "".join(difflib.unified_diff(lines(before[key]), lines(value), fromfile="base/" + key, tofile="local/" + key)) for key, value in data.items() if before[key] != value}
+                return (
+                    json.dumps(value, ensure_ascii=False, indent=2) + "\n"
+                    if isinstance(value, list)
+                    else value
+                ).splitlines(keepends=True)
+
+            diffs = {
+                key: "".join(
+                    difflib.unified_diff(
+                        lines(before[key]),
+                        lines(value),
+                        fromfile="base/" + key,
+                        tofile="local/" + key,
+                    )
+                )
+                for key, value in data.items()
+                if before[key] != value
+            }
             return {"changed": bool(diffs), "diffs": diffs}
         if args.command == "status":
             remote = remote_current(state) if state["paper_id"] else None
-            last = request(state["server"], f'/api/v1/submissions/{state["last_submission"]}/') if state.get("last_submission") else None
-            return {"paper_id": state["paper_id"], "base_hash": state["base_hash"], "local_changes": changed(root, base),
-                    "remote_hash": remote["hash"] if remote else None, "remote_changed": bool(remote and remote["hash"] != state["base_hash"]),
-                    "pending_retry": (root / ".peerpedia/pending.json").exists(),
-                    "last_submission": {"id": state["last_submission"], "status": last["status"], "hash": last["hash"]} if last else None}
+            last = (
+                request(state["server"], f"/api/v1/submissions/{state['last_submission']}/")
+                if state.get("last_submission")
+                else None
+            )
+            return {
+                "paper_id": state["paper_id"],
+                "base_hash": state["base_hash"],
+                "local_changes": changed(root, base),
+                "remote_hash": remote["hash"] if remote else None,
+                "remote_changed": bool(remote and remote["hash"] != state["base_hash"]),
+                "pending_retry": (root / ".peerpedia/pending.json").exists(),
+                "last_submission": {
+                    "id": state["last_submission"],
+                    "status": last["status"],
+                    "hash": last["hash"],
+                }
+                if last
+                else None,
+            }
         if (root / ".peerpedia/pending.json").exists():
             raise ClientError("pending_push", "Resolve the previous push with push --retry first.")
         if args.command == "fetch":
@@ -431,31 +622,61 @@ def run(args):
             write_json(root / ".peerpedia/incoming.json", remote)
             (root / ".peerpedia/incoming.md").write_bytes(remote["markdown"].encode("utf-8"))
             write_json(root / ".peerpedia/incoming-metadata.json", metadata(remote))
-            return {"hash": remote["hash"], "message": "Fetched into .peerpedia/incoming.md and incoming-metadata.json. Working files are unchanged. Reconcile them, then run rebase --acknowledge."}
+            return {
+                "hash": remote["hash"],
+                "message": "Fetched into .peerpedia/incoming.md and incoming-metadata.json. Working files are unchanged. Reconcile them, then run rebase --acknowledge.",
+            }
         if args.command == "rebase":
             if not args.acknowledge:
-                raise ClientError("reconciliation_required", "Reconcile your document and metadata with the fetched version, then run rebase --acknowledge.")
+                raise ClientError(
+                    "reconciliation_required",
+                    "Reconcile your document and metadata with the fetched version, then run rebase --acknowledge.",
+                )
             incoming = verify(read_json(root / ".peerpedia/incoming.json"))
             latest = remote_current(state)
             if incoming["hash"] != latest["hash"]:
-                raise ClientError("stale_base", "Another version was accepted. Fetch and reconcile again.")
+                raise ClientError(
+                    "stale_base", "Another version was accepted. Fetch and reconcile again."
+                )
             save_base(root, state, incoming)
-            return {"base_hash": incoming["hash"], "message": "Base updated; working files preserved. Inspect diff before pushing."}
+            return {
+                "base_hash": incoming["hash"],
+                "message": "Base updated; working files preserved. Inspect diff before pushing.",
+            }
         if args.command == "pull":
             remote = remote_current(state)
             data = local_document(root)
             matches_remote = data == {**metadata(remote), "markdown": remote["markdown"]}
             if changed(root, base) and not matches_remote:
-                raise ClientError("local_changes", "Pull would overwrite local work. Use fetch, reconcile the files, then rebase --acknowledge.")
+                raise ClientError(
+                    "local_changes",
+                    "Pull would overwrite local work. Use fetch, reconcile the files, then rebase --acknowledge.",
+                )
             save_base(root, state, remote, replace_working=not matches_remote)
-            return {"base_hash": remote["hash"], "message": "Local base is now the latest accepted version."}
+            return {
+                "base_hash": remote["hash"],
+                "message": "Local base is now the latest accepted version.",
+            }
 
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--json", action="store_true", help="Machine-readable output")
     commands = parser.add_subparsers(dest="command", required=True)
-    for command in ("login", "logout", "init", "clone", "diff", "status", "push", "pull", "fetch", "rebase", "categories", *sorted(READ_COMMANDS)):
+    for command in (
+        "login",
+        "logout",
+        "init",
+        "clone",
+        "diff",
+        "status",
+        "push",
+        "pull",
+        "fetch",
+        "rebase",
+        "categories",
+        *sorted(READ_COMMANDS),
+    ):
         child = commands.add_parser(command)
         child.add_argument("--json", action="store_true", default=argparse.SUPPRESS)
         if command == "login":
@@ -470,20 +691,32 @@ def main(argv=None):
             child.add_argument("directory")
         if command in READ_COMMANDS:
             child.add_argument("--server")
-            child.add_argument("--offset",type=int,default=0)
-            child.add_argument("--all",action="store_true",help="Read all pages; discussion also includes all replies")
-            if command in {"feedback","reviews"}:
-                targets=child.add_mutually_exclusive_group()
+            child.add_argument("--offset", type=int, default=0)
+            child.add_argument(
+                "--all",
+                action="store_true",
+                help="Read all pages; discussion also includes all replies",
+            )
+            if command in {"feedback", "reviews"}:
+                targets = child.add_mutually_exclusive_group()
                 targets.add_argument("--paper")
-                if command=="feedback":
+                if command == "feedback":
                     targets.add_argument("--submission")
             else:
-                child.add_argument("target",help="Passage, comment, or PR UUID")
+                child.add_argument("target", help="Passage, comment, or PR UUID")
         if command == "push":
-            child.add_argument("--pr",help="Append an immutable snapshot to your existing PR")
-            child.add_argument("--expected-head",help="Full hash currently at the PR head")
-            child.add_argument("--address",action="append",default=[],metavar="THREAD_ID",help="Link a top-level discussion; repeat for several")
-            child.add_argument("--ai-assisted",action="store_true",help="Declare AI assistance on this snapshot")
+            child.add_argument("--pr", help="Append an immutable snapshot to your existing PR")
+            child.add_argument("--expected-head", help="Full hash currently at the PR head")
+            child.add_argument(
+                "--address",
+                action="append",
+                default=[],
+                metavar="THREAD_ID",
+                help="Link a top-level discussion; repeat for several",
+            )
+            child.add_argument(
+                "--ai-assisted", action="store_true", help="Declare AI assistance on this snapshot"
+            )
             child.add_argument("-m", "--message")
             child.add_argument("--retry", action="store_true")
         if command == "rebase":
@@ -500,9 +733,21 @@ def main(argv=None):
                 print(f"{key}: {value}")
     except (ClientError, OSError, ValueError, KeyError, TypeError) as error:
         if not isinstance(error, ClientError):
-            error = ClientError("local_error", "Check the local files and command arguments: " + str(error))
+            error = ClientError(
+                "local_error", "Check the local files and command arguments: " + str(error)
+            )
         if args.json:
-            print(json.dumps({"error": {"code": error.code, "message": error.message, "details": error.details}}))
+            print(
+                json.dumps(
+                    {
+                        "error": {
+                            "code": error.code,
+                            "message": error.message,
+                            "details": error.details,
+                        }
+                    }
+                )
+            )
         else:
             print(f"{error.code}: {error.message}", file=sys.stderr)
             if error.details:

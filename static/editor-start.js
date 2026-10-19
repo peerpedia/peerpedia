@@ -1,1 +1,1 @@
-document.getElementById('start-editor').requestSubmit();
+document.getElementById("start-editor").requestSubmit();

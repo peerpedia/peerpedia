@@ -3,6 +3,7 @@
 Run: .test-tools/bin/python scripts/test_postgres.py
 The app itself runs with .venv/bin/python. Test databases are isolated and temporary.
 """
+
 import os
 from pathlib import Path
 import subprocess
@@ -12,7 +13,6 @@ import socket
 import time
 import re
 from urllib.request import Request, build_opener, ProxyHandler
-from urllib.parse import urlsplit, urlunsplit
 import pgserver
 
 root = Path(__file__).resolve().parent.parent
@@ -39,21 +39,49 @@ with tempfile.TemporaryDirectory(prefix="peerpedia-pg-", dir="/tmp") as folder:
         run(str(bins / "pg_dump"), "--dbname", uri, "--format=custom", "--file", dump)
         server.psql("CREATE DATABASE peerpedia_restore_check")
         restored_uri = server.get_uri(database="peerpedia_restore_check")
-        run(str(bins / "pg_restore"), "--exit-on-error", "--no-owner", "--dbname", restored_uri, dump)
+        run(
+            str(bins / "pg_restore"),
+            "--exit-on-error",
+            "--no-owner",
+            "--dbname",
+            restored_uri,
+            dump,
+        )
         run(app_python, "manage.py", "verify_history", env=dict(env, DATABASE_URL=restored_uri))
         # Verify production-mode asset manifests and HTTP serving, without Docker.
-        production = dict(env, DEBUG="0", SECRET_KEY=secrets.token_urlsafe(60), ALLOWED_HOSTS="127.0.0.1,localhost", SITE_URL="https://research.example.org")
+        production = dict(
+            env,
+            DEBUG="0",
+            SECRET_KEY=secrets.token_urlsafe(60),
+            ALLOWED_HOSTS="127.0.0.1,localhost",
+            SITE_URL="https://research.example.org",
+        )
         run(app_python, "manage.py", "collectstatic", "--noinput", env=production)
         with socket.socket() as listener:
             listener.bind(("127.0.0.1", 0))
             port = listener.getsockname()[1]
         with tempfile.TemporaryFile() as logs:
-            web = subprocess.Popen([str(root / ".venv/bin/gunicorn"), "config.wsgi:application", "--bind", f"127.0.0.1:{port}", "--workers", "1"], cwd=root, env=production, stdout=logs, stderr=logs)
+            web = subprocess.Popen(
+                [
+                    str(root / ".venv/bin/gunicorn"),
+                    "config.wsgi:application",
+                    "--bind",
+                    f"127.0.0.1:{port}",
+                    "--workers",
+                    "1",
+                ],
+                cwd=root,
+                env=production,
+                stdout=logs,
+                stderr=logs,
+            )
             try:
                 origin = f"http://127.0.0.1:{port}"
                 for attempt in range(50):
                     try:
-                        with local_http.open(Request(origin + "/", headers={"X-Forwarded-Proto": "https"}), timeout=2) as response:
+                        with local_http.open(
+                            Request(origin + "/", headers={"X-Forwarded-Proto": "https"}), timeout=2
+                        ) as response:
                             html = response.read().decode()
                         break
                     except OSError as error:
@@ -71,7 +99,10 @@ with tempfile.TemporaryDirectory(prefix="peerpedia-pg-", dir="/tmp") as folder:
                 css = re.search(r'href="(/static/site\.[a-f0-9]+\.css)"', html)
                 if not css:
                     raise RuntimeError("Production page does not reference a hashed stylesheet")
-                with local_http.open(Request(origin + css.group(1), headers={"X-Forwarded-Proto": "https"}), timeout=3) as response:
+                with local_http.open(
+                    Request(origin + css.group(1), headers={"X-Forwarded-Proto": "https"}),
+                    timeout=3,
+                ) as response:
                     assert response.status == 200 and b".paper-row" in response.read()
                 print("Production-mode Gunicorn and hashed static asset check passed.")
             finally:

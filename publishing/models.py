@@ -9,8 +9,12 @@ from django.utils import timezone
 
 class Paper(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    owner = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="papers")
-    current = models.ForeignKey("Submission", null=True, blank=True, on_delete=models.PROTECT, related_name="current_for")
+    owner = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="papers"
+    )
+    current = models.ForeignKey(
+        "Submission", null=True, blank=True, on_delete=models.PROTECT, related_name="current_for"
+    )
     created_at = models.DateTimeField(default=timezone.now, editable=False)
     accepted_at = models.DateTimeField(default=timezone.now, db_index=True)
     is_hidden = models.BooleanField(default=False, db_index=True)
@@ -35,9 +39,13 @@ class FrozenRecord(models.Model):
 class Submission(FrozenRecord):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     paper = models.ForeignKey(Paper, on_delete=models.PROTECT, related_name="submissions")
-    contributor = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="submissions")
+    contributor = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="submissions"
+    )
     contributor_name = models.CharField(max_length=150)
-    base = models.ForeignKey("self", null=True, blank=True, on_delete=models.PROTECT, related_name="proposals")
+    base = models.ForeignKey(
+        "self", null=True, blank=True, on_delete=models.PROTECT, related_name="proposals"
+    )
     title = models.CharField(max_length=250)
     authors = models.TextField(max_length=2000)
     abstract = models.TextField(max_length=10000)
@@ -71,30 +79,43 @@ class Submission(FrozenRecord):
     @property
     def subjects(self):
         from .subjects import subject_links
+
         return subject_links(self.primary_category, self.secondary_categories)
 
     def manifest(self):
         manifest = {
-            "format": f"peerpedia-submission-v{self.manifest_version}", "submission_id": str(self.pk), "paper_id": str(self.paper_id),
-            "contributor_id": self.contributor_id, "contributor_name": self.contributor_name,
+            "format": f"peerpedia-submission-v{self.manifest_version}",
+            "submission_id": str(self.pk),
+            "paper_id": str(self.paper_id),
+            "contributor_id": self.contributor_id,
+            "contributor_name": self.contributor_name,
             "base_hash": self.base.hash if self.base_id else None,
-            "title": self.title, "authors": self.authors, "abstract": self.abstract,
+            "title": self.title,
+            "authors": self.authors,
+            "abstract": self.abstract,
             "markdown_sha256": hashlib.sha256(self.markdown.encode("utf-8")).hexdigest(),
-            "explanation": self.explanation, "submitted_at": self.created_at.isoformat(),
+            "explanation": self.explanation,
+            "submitted_at": self.created_at.isoformat(),
         }
 
         if self.manifest_version >= 2:
-            manifest.update(primary_category=self.primary_category, secondary_categories=self.secondary_categories)
+            manifest.update(
+                primary_category=self.primary_category,
+                secondary_categories=self.secondary_categories,
+            )
         return manifest
 
     def calculate_hash(self):
-        payload = json.dumps(self.manifest(), sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+        payload = json.dumps(
+            self.manifest(), sort_keys=True, separators=(",", ":"), ensure_ascii=False
+        )
         return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
     def save(self, *args, **kwargs):
         if self._state.adding:
             if self.manifest_version == 2:
                 from .subjects import validate_subjects
+
                 validate_subjects(self.primary_category, self.secondary_categories)
                 self.secondary_categories = sorted(self.secondary_categories)
             self.hash = self.calculate_hash()
@@ -128,7 +149,12 @@ class Decision(FrozenRecord):
     created_at = models.DateTimeField(default=timezone.now)
 
     class Meta:
-        constraints = [models.CheckConstraint(condition=models.Q(action__in=["accepted", "rejected", "withdrawn"]), name="valid_decision")]
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(action__in=["accepted", "rejected", "withdrawn"]),
+                name="valid_decision",
+            )
+        ]
 
 
 class Review(models.Model):
@@ -144,7 +170,9 @@ class Review(models.Model):
         ordering = ["-created_at"]
         constraints = [
             models.UniqueConstraint(fields=["paper", "user"], name="one_review_per_user"),
-            models.CheckConstraint(condition=models.Q(score__gte=1, score__lte=5), name="valid_review_score"),
+            models.CheckConstraint(
+                condition=models.Q(score__gte=1, score__lte=5), name="valid_review_score"
+            ),
             models.CheckConstraint(condition=~models.Q(text=""), name="nonempty_review"),
         ]
 
@@ -162,7 +190,9 @@ class Comment(models.Model):
 
     class Meta:
         ordering = ["created_at"]
-        constraints = [models.CheckConstraint(condition=~models.Q(text=""), name="nonempty_comment")]
+        constraints = [
+            models.CheckConstraint(condition=~models.Q(text=""), name="nonempty_comment")
+        ]
 
 
 class ModerationEvent(FrozenRecord):
@@ -179,11 +209,14 @@ class ApiPush(models.Model):
     submission = models.ForeignKey(Submission, on_delete=models.PROTECT)
 
     class Meta:
-        constraints = [models.UniqueConstraint(fields=["user", "key"], name="unique_api_push_per_user")]
+        constraints = [
+            models.UniqueConstraint(fields=["user", "key"], name="unique_api_push_per_user")
+        ]
 
 
 class PullRequest(models.Model):
     """A conversation whose head points at an immutable submitted snapshot."""
+
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     paper = models.ForeignKey(Paper, on_delete=models.PROTECT, related_name="pull_requests")
     contributor = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT)
@@ -193,33 +226,51 @@ class PullRequest(models.Model):
 
 class PullRequestCommit(FrozenRecord):
     request = models.ForeignKey(PullRequest, on_delete=models.PROTECT, related_name="commits")
-    submission = models.OneToOneField(Submission, on_delete=models.PROTECT, related_name="pr_commit")
+    submission = models.OneToOneField(
+        Submission, on_delete=models.PROTECT, related_name="pr_commit"
+    )
     number = models.PositiveIntegerField()
     section = models.JSONField(default=dict, blank=True)
 
     class Meta:
         ordering = ["number"]
-        constraints = [models.UniqueConstraint(fields=["request", "number"], name="unique_pr_commit_number")]
+        constraints = [
+            models.UniqueConstraint(fields=["request", "number"], name="unique_pr_commit_number")
+        ]
 
 
 class Draft(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    owner = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="drafts")
+    owner = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="drafts"
+    )
     paper = models.ForeignKey(Paper, null=True, blank=True, on_delete=models.PROTECT)
-    base = models.ForeignKey(Submission, null=True, blank=True, on_delete=models.PROTECT, related_name="draft_bases")
+    base = models.ForeignKey(
+        Submission, null=True, blank=True, on_delete=models.PROTECT, related_name="draft_bases"
+    )
     pull_request = models.ForeignKey(PullRequest, null=True, blank=True, on_delete=models.PROTECT)
-    pr_head = models.ForeignKey(Submission, null=True, blank=True, on_delete=models.PROTECT, related_name="draft_pr_heads")
+    pr_head = models.ForeignKey(
+        Submission, null=True, blank=True, on_delete=models.PROTECT, related_name="draft_pr_heads"
+    )
     scope_key = models.CharField(max_length=200, blank=True, default="")
     section = models.JSONField(default=dict, blank=True)
     data = models.JSONField(default=dict)
     markdown = models.TextField(blank=True)
     revision = models.PositiveIntegerField(default=1)
     updated_at = models.DateTimeField(auto_now=True)
-    submitted = models.ForeignKey(Submission, null=True, blank=True, on_delete=models.PROTECT, related_name="source_drafts")
+    submitted = models.ForeignKey(
+        Submission, null=True, blank=True, on_delete=models.PROTECT, related_name="source_drafts"
+    )
 
     class Meta:
         ordering = ["-updated_at"]
-        constraints = [models.UniqueConstraint(fields=["owner", "paper", "scope_key"], condition=models.Q(submitted__isnull=True, paper__isnull=False), name="one_active_scope_draft")]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["owner", "paper", "scope_key"],
+                condition=models.Q(submitted__isnull=True, paper__isnull=False),
+                name="one_active_scope_draft",
+            )
+        ]
 
     @property
     def title(self):
@@ -235,15 +286,21 @@ class Passage(FrozenRecord):
     created_at = models.DateTimeField(default=timezone.now)
 
     class Meta:
-        constraints = [models.UniqueConstraint(fields=['submission', 'key'], name='unique_version_passage')]
+        constraints = [
+            models.UniqueConstraint(fields=["submission", "key"], name="unique_version_passage")
+        ]
 
 
 class PassageComment(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    passage = models.ForeignKey(Passage, on_delete=models.PROTECT, related_name='comments')
+    passage = models.ForeignKey(Passage, on_delete=models.PROTECT, related_name="comments")
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT)
-    parent = models.ForeignKey('self', null=True, blank=True, on_delete=models.PROTECT, related_name='replies')
-    root = models.ForeignKey('self', null=True, blank=True, on_delete=models.PROTECT, related_name='descendants')
+    parent = models.ForeignKey(
+        "self", null=True, blank=True, on_delete=models.PROTECT, related_name="replies"
+    )
+    root = models.ForeignKey(
+        "self", null=True, blank=True, on_delete=models.PROTECT, related_name="descendants"
+    )
     depth = models.PositiveIntegerField(default=0)
     text = models.TextField(max_length=5000)
     score = models.PositiveSmallIntegerField(null=True, blank=True)
@@ -255,15 +312,31 @@ class PassageComment(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
-        ordering = ['created_at', 'pk']
+        ordering = ["created_at", "pk"]
         constraints = [
-            models.CheckConstraint(condition=(models.Q(parent__isnull=True, root__isnull=True, score__gte=1, score__lte=5, score__isnull=False) | models.Q(parent__isnull=False, root__isnull=False, score__isnull=True)), name='passage_root_requires_rating'),
-            models.UniqueConstraint(fields=['passage','user'], condition=models.Q(parent__isnull=True, is_deleted=False), name='one_active_passage_rating'),
+            models.CheckConstraint(
+                condition=(
+                    models.Q(
+                        parent__isnull=True,
+                        root__isnull=True,
+                        score__gte=1,
+                        score__lte=5,
+                        score__isnull=False,
+                    )
+                    | models.Q(parent__isnull=False, root__isnull=False, score__isnull=True)
+                ),
+                name="passage_root_requires_rating",
+            ),
+            models.UniqueConstraint(
+                fields=["passage", "user"],
+                condition=models.Q(parent__isnull=True, is_deleted=False),
+                name="one_active_passage_rating",
+            ),
         ]
 
 
 class PassageCommentRevision(FrozenRecord):
-    comment = models.ForeignKey(PassageComment, on_delete=models.PROTECT, related_name='history')
+    comment = models.ForeignKey(PassageComment, on_delete=models.PROTECT, related_name="history")
     number = models.PositiveIntegerField()
     text = models.TextField()
     score = models.PositiveSmallIntegerField(null=True)
@@ -271,51 +344,70 @@ class PassageCommentRevision(FrozenRecord):
     created_at = models.DateTimeField(default=timezone.now)
 
     class Meta:
-        ordering = ['number']
-        constraints = [models.UniqueConstraint(fields=['comment','number'], name='unique_passage_comment_revision')]
+        ordering = ["number"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["comment", "number"], name="unique_passage_comment_revision"
+            )
+        ]
 
 
 class PassageVote(models.Model):
-    comment = models.ForeignKey(PassageComment, on_delete=models.PROTECT, related_name='votes')
+    comment = models.ForeignKey(PassageComment, on_delete=models.PROTECT, related_name="votes")
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT)
     value = models.SmallIntegerField()
 
     class Meta:
-        constraints = [models.UniqueConstraint(fields=['comment','user'], name='one_passage_vote'),
-                       models.CheckConstraint(condition=models.Q(value__in=[-1,1]), name='valid_passage_vote')]
+        constraints = [
+            models.UniqueConstraint(fields=["comment", "user"], name="one_passage_vote"),
+            models.CheckConstraint(
+                condition=models.Q(value__in=[-1, 1]), name="valid_passage_vote"
+            ),
+        ]
 
 
 class PassageReport(models.Model):
-    comment = models.ForeignKey(PassageComment, on_delete=models.PROTECT, related_name='reports')
+    comment = models.ForeignKey(PassageComment, on_delete=models.PROTECT, related_name="reports")
     reporter = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT)
     reason = models.TextField(max_length=2000)
     created_at = models.DateTimeField(default=timezone.now)
     reviewed = models.BooleanField(default=False)
 
     class Meta:
-        constraints = [models.UniqueConstraint(fields=['comment','reporter'], name='one_passage_report')]
+        constraints = [
+            models.UniqueConstraint(fields=["comment", "reporter"], name="one_passage_report")
+        ]
 
 
 class PassagePRLink(models.Model):
-    thread = models.ForeignKey(PassageComment, on_delete=models.PROTECT, related_name='linked_prs')
-    pull_request = models.ForeignKey(PullRequest, on_delete=models.PROTECT, related_name='linked_threads')
+    thread = models.ForeignKey(PassageComment, on_delete=models.PROTECT, related_name="linked_prs")
+    pull_request = models.ForeignKey(
+        PullRequest, on_delete=models.PROTECT, related_name="linked_threads"
+    )
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT)
     created_at = models.DateTimeField(default=timezone.now)
 
     class Meta:
-        constraints = [models.UniqueConstraint(fields=['thread','pull_request'], name='unique_passage_pr_link')]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["thread", "pull_request"], name="unique_passage_pr_link"
+            )
+        ]
 
 
 class SubmissionSource(FrozenRecord):
     """Tool attribution is append-only metadata, separate from the document hash."""
-    submission = models.OneToOneField(Submission, on_delete=models.PROTECT, related_name='source')
+
+    submission = models.OneToOneField(Submission, on_delete=models.PROTECT, related_name="source")
     ai_assisted = models.BooleanField(default=False)
     created_at = models.DateTimeField(default=timezone.now)
 
 
 class Notification(models.Model):
-    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='notifications')
-    actor = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name='+')
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="notifications"
+    )
+    actor = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="+")
     paper = models.ForeignKey(Paper, on_delete=models.CASCADE)
     thread = models.ForeignKey(PassageComment, null=True, blank=True, on_delete=models.CASCADE)
     pull_request = models.ForeignKey(PullRequest, null=True, blank=True, on_delete=models.CASCADE)
@@ -327,6 +419,10 @@ class Notification(models.Model):
     updated_at = models.DateTimeField(default=timezone.now)
 
     class Meta:
-        ordering = ['-updated_at', '-pk']
-        constraints = [models.UniqueConstraint(fields=['user', 'group_key'], name='unique_notification_group')]
-        indexes = [models.Index(fields=['user','unread','-updated_at'], name='notification_inbox_idx')]
+        ordering = ["-updated_at", "-pk"]
+        constraints = [
+            models.UniqueConstraint(fields=["user", "group_key"], name="unique_notification_group")
+        ]
+        indexes = [
+            models.Index(fields=["user", "unread", "-updated_at"], name="notification_inbox_idx")
+        ]

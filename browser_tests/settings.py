@@ -1,7 +1,7 @@
 """Only used by scripts/test_browser.py, never by a deployed application."""
+
 import os
 from pathlib import Path
-
 from config.settings import *  # noqa: F403
 
 scratch = Path(os.environ["PEERPEDIA_BROWSER_SCRATCH"])

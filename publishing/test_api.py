@@ -4,11 +4,9 @@ from datetime import timedelta
 from concurrent.futures import ThreadPoolExecutor
 import threading
 from unittest import skipUnless
-
 from django.db import connection, connections
 from django.test import Client, TestCase, TransactionTestCase, override_settings
 from django.utils import timezone
-
 from accounts.models import User
 from accounts.tokens import issue_token
 from .models import ApiPush, Paper, Submission
@@ -19,15 +17,28 @@ from .tests import document
 @override_settings(PASSWORD_HASHERS=["django.contrib.auth.hashers.MD5PasswordHasher"])
 class APITests(TestCase):
     def setUp(self):
-        self.owner = User.objects.create_user("owner", "owner@example.org", "password", email_verified=True)
-        self.other = User.objects.create_user("other", "other@example.org", "password", email_verified=True)
+        self.owner = User.objects.create_user(
+            "owner", "owner@example.org", "password", email_verified=True
+        )
+        self.other = User.objects.create_user(
+            "other", "other@example.org", "password", email_verified=True
+        )
         self.paper = publish(self.owner, document())
         self.token, self.raw = issue_token(self.other, "Tests")
-        self.data = {**document(markdown="# Updated\r\n"), "paper_id": str(self.paper.pk), "base_hash": self.paper.current.hash}
+        self.data = {
+            **document(markdown="# Updated\r\n"),
+            "paper_id": str(self.paper.pk),
+            "base_hash": self.paper.current.hash,
+        }
 
     def send(self, data=None, key=None, token=None, client=None):
-        return (client or self.client).post("/api/v1/push/", data=json.dumps(data if data is not None else self.data), content_type="application/json",
-                                          HTTP_AUTHORIZATION="Bearer " + (token or self.raw), HTTP_IDEMPOTENCY_KEY=str(key or uuid.uuid4()))
+        return (client or self.client).post(
+            "/api/v1/push/",
+            data=json.dumps(data if data is not None else self.data),
+            content_type="application/json",
+            HTTP_AUTHORIZATION="Bearer " + (token or self.raw),
+            HTTP_IDEMPOTENCY_KEY=str(key or uuid.uuid4()),
+        )
 
     def test_public_download_contains_verifiable_snapshot(self):
         record = self.client.get(f"/api/v1/papers/{self.paper.pk}/").json()["current"]
@@ -50,8 +61,14 @@ class APITests(TestCase):
         self.assertEqual(response["WWW-Authenticate"], "Bearer")
 
     def test_token_cannot_authenticate_website_or_accept_submissions(self):
-        proposal = propose(self.other, self.paper.pk, self.paper.current_id, document(markdown="Changed"))
-        response = self.client.post(f"/submissions/{proposal.pk}/decision/", {"action": "accepted"}, HTTP_AUTHORIZATION="Bearer " + self.raw)
+        proposal = propose(
+            self.other, self.paper.pk, self.paper.current_id, document(markdown="Changed")
+        )
+        response = self.client.post(
+            f"/submissions/{proposal.pk}/decision/",
+            {"action": "accepted"},
+            HTTP_AUTHORIZATION="Bearer " + self.raw,
+        )
         self.assertEqual(response.status_code, 302)
         self.assertIn("/accounts/login/", response.url)
         self.assertEqual(proposal.status, "pending")
@@ -84,7 +101,9 @@ class APITests(TestCase):
         self.assertEqual(ApiPush.objects.count(), 1)
 
     def test_stale_base_rejected_without_any_new_record(self):
-        proposal = propose(self.owner, self.paper.pk, self.paper.current_id, document(markdown="New base"))
+        proposal = propose(
+            self.owner, self.paper.pk, self.paper.current_id, document(markdown="New base")
+        )
         decide(self.owner, proposal.pk, "accepted")
         response = self.send()
         self.assertEqual(response.status_code, 409)
@@ -93,17 +112,31 @@ class APITests(TestCase):
         self.assertFalse(ApiPush.objects.exists())
 
     def test_shared_upload_validation_and_malformed_requests(self):
-        for change in [{"markdown": "![image](https://example.org/a.png)"}, {"markdown": "\x00"}, {"markdown": "   "},
-                       {"title": ""}, {"authors": []}, {"paper_id": "bad"}, {"base_hash": 123}, {"extra": "field"}]:
+        for change in [
+            {"markdown": "![image](https://example.org/a.png)"},
+            {"markdown": "\x00"},
+            {"markdown": "   "},
+            {"title": ""},
+            {"authors": []},
+            {"paper_id": "bad"},
+            {"base_hash": 123},
+            {"extra": "field"},
+        ]:
             with self.subTest(change=change):
                 self.assertEqual(self.send({**self.data, **change}).status_code, 400)
-        self.assertEqual(self.send({**self.data, "markdown": "x" * (1024 * 1024 + 1)}).status_code, 413)
+        self.assertEqual(
+            self.send({**self.data, "markdown": "x" * (1024 * 1024 + 1)}).status_code, 413
+        )
         self.assertEqual(self.send({**self.data, "markdown": "\ud800"}).status_code, 400)
         self.assertEqual(Submission.objects.count(), 1)
 
     def test_revoked_expired_disabled_and_unverified_tokens_are_denied(self):
-        for token_fields, user_fields in [({"revoked_at": timezone.now()}, {}), ({"expires_at": timezone.now() - timedelta(seconds=1)}, {}),
-                                         ({}, {"is_active": False}), ({}, {"email_verified": False})]:
+        for token_fields, user_fields in [
+            ({"revoked_at": timezone.now()}, {}),
+            ({"expires_at": timezone.now() - timedelta(seconds=1)}, {}),
+            ({}, {"is_active": False}),
+            ({}, {"email_verified": False}),
+        ]:
             token, raw = issue_token(self.other, "Restricted")
             for key, value in token_fields.items():
                 setattr(token, key, value)
@@ -121,7 +154,12 @@ class APITests(TestCase):
         self.paper.is_hidden = True
         self.paper.save()
         self.assertEqual(self.client.get(f"/api/v1/papers/{self.paper.pk}/").status_code, 404)
-        self.assertEqual(self.client.get(result["url"].replace("/submissions/", "/api/v1/submissions/")).status_code, 404)
+        self.assertEqual(
+            self.client.get(
+                result["url"].replace("/submissions/", "/api/v1/submissions/")
+            ).status_code,
+            404,
+        )
         self.assertEqual(self.send(key=key).status_code, 404)
 
     def test_auth_identity_has_no_secret_and_method_errors_are_json(self):
@@ -143,18 +181,28 @@ class APITests(TestCase):
 @override_settings(PASSWORD_HASHERS=["django.contrib.auth.hashers.MD5PasswordHasher"])
 class ConcurrentPushTests(TransactionTestCase):
     def test_concurrent_retries_create_one_submission(self):
-        user = User.objects.create_user("owner", "owner@example.org", "password", email_verified=True)
+        user = User.objects.create_user(
+            "owner", "owner@example.org", "password", email_verified=True
+        )
         _, raw = issue_token(user, "Concurrent", can_publish=True)
         key = str(uuid.uuid4())
         data = {**document(), "paper_id": None, "base_hash": None}
         barrier = threading.Barrier(2)
+
         def send(_):
             try:
                 barrier.wait(timeout=10)
-                response = Client().post("/api/v1/push/", data, content_type="application/json", HTTP_AUTHORIZATION="Bearer " + raw, HTTP_IDEMPOTENCY_KEY=key)
+                response = Client().post(
+                    "/api/v1/push/",
+                    data,
+                    content_type="application/json",
+                    HTTP_AUTHORIZATION="Bearer " + raw,
+                    HTTP_IDEMPOTENCY_KEY=key,
+                )
                 return response.status_code, response.json()["hash"]
             finally:
                 connections.close_all()
+
         with ThreadPoolExecutor(max_workers=2) as pool:
             results = list(pool.map(send, range(2)))
         self.assertCountEqual([r[0] for r in results], [200, 201])

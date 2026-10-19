@@ -1,4 +1,5 @@
 """Verify downloaded submission.json and submission.md using Python's standard library."""
+
 import argparse
 import hashlib
 import json
@@ -14,7 +15,9 @@ if manifest.get("format") not in {"peerpedia-submission-v1", "peerpedia-submissi
     raise SystemExit("Unknown manifest format")
 if hashlib.sha256(args.markdown.read_bytes()).hexdigest() != manifest["markdown_sha256"]:
     raise SystemExit("FAIL: Markdown does not match the manifest")
-canonical = json.dumps(manifest, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
+canonical = json.dumps(manifest, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode(
+    "utf-8"
+)
 if hashlib.sha256(canonical).hexdigest() != record["hash"]:
     raise SystemExit("FAIL: Manifest does not match the submission hash")
 print("Verified:", record["hash"])

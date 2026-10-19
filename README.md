@@ -17,7 +17,7 @@ Developed by [Chenqi Meng](https://github.com/Chenqitrg).
 - Whole-submission acceptance by the corresponding author only. Stale proposals require a new submission.
 - Public accepted/rejected/withdrawn history, Markdown and metadata diffs, arbitrary accepted-version comparisons, and separate contribution credit.
 - One editable rating-and-written-review per user per paper, including the paper's own author. Reviews sort by original posting time.
-- Flat submission conversations, without replies, thumbs, or inline discussions.
+- PR conversations plus passage discussions with ratings, threaded replies, thumbs, preserved edits, and links to proposed fixes.
 - Administrator content hiding/restoration and account disabling.
 - Public usage guide with website workflows, local CLI/AI instructions, and links to the source and developer.
 
@@ -161,22 +161,65 @@ Creation returns 201, an identical retry returns 200, and a stale base or change
 
 ## Architecture
 
-One Django application, with `accounts` and `publishing` modules. Ordinary server-rendered forms handle navigation and mutations. The only application JavaScript initializes local equation rendering.
+Peerpedia is a Django monolith with PostgreSQL. Caddy terminates HTTPS, Gunicorn
+runs the application, and WhiteNoise serves locally bundled static assets. There
+is no separate frontend server or Git hosting service. Browser pages and the CLI
+share publication rules and frozen snapshots.
 
-- `Paper`: stable identity, corresponding author, visibility, latest acceptance time, and current submission pointer.
-- `Submission`: frozen source, metadata, base version, contributor snapshot, explanation, timestamp, and hash. An accepted submission is a published version; there is no duplicate version store.
-- `Decision`: one permanent accepted/rejected/withdrawn decision for a submission.
-- `Review`: one score and required text per account per paper; edits preserve the original posting timestamp.
-- `Comment`: flat text discussion of a submission.
-- `ModerationEvent`: immutable audit record of hiding or restoring content.
+The application has three interfaces:
 
-Markdown source is stored directly in the database, preserving its UTF-8 bytes, including original line endings. Source diffs also expose missing final newlines and carriage returns. Rendering is derived and does not modify the source. Images are rejected; embedded HTML is displayed as text. Unsafe URL schemes are not converted into links. MathJax's HTML and dynamic-require extensions are disabled.
+- Django templates and forms for browsing, accounts, publication, and administration.
+- CodeMirror and browser JavaScript for autosave, preview, recovery, section editing,
+  reader navigation, and passage discussions. Preview and publication use the same
+  safe Markdown renderer and locally served MathJax.
+- A versioned JSON API for public reading and scoped CLI submissions. API tokens
+  cannot accept proposals or write comments, ratings, votes, or inbox state.
 
-Equations accept `$...$` and `\(...\)` inline, or `$$...$$` and `\[...\]` as display blocks. Fenced code stays literal. Markdown tables are supported.
+The module boundaries are explicit:
 
-Preview content is carried in a signed, expiring form value in the browser, bound to the submitting account and target paper. This file-upload preview is not persisted as a private draft. The online editor uses separate private working copies. Confirmation is idempotent: retrying the same preview cannot create duplicate papers or submissions.
+| Module | Responsibility |
+|---|---|
+| `models.py` and migrations | Stored records, constraints, hashes, immutable-history protections |
+| `services.py` | Transactional publication, proposal updates, and author decisions |
+| `discussion_actions.py` | Verified-participant discussion mutations and preserved edit records |
+| `queries.py`, `feedback_queries.py` | Shared visibility rules and paginated data retrieval |
+| `comparisons.py`, `rendering.py`, `sections.py`, `passages.py` | Derived document representations and anchors |
+| `views.py`, `api.py`, `discussions.py`, `drafts.py` | HTTP authentication, request validation, and responses |
+| `notifications.py` | Account-private grouped activity |
 
-Acceptance locks the paper row in a PostgreSQL transaction, verifies ownership and the current base, then records the decision and changes the current pointer atomically. Two proposals based on the same version cannot both be accepted.
+Feedback queries return ordinary data to browser and API handlers. The public API
+passes an anonymous viewer explicitly; it does not rewrite the authenticated
+request or invoke a browser HTTP handler. Passage statistics are aggregated in one
+query, personal votes are fetched with the comments, and thread ranking happens
+in SQL before pagination. Query-budget tests cover 100 annotations and 100 replies.
+
+A `Paper` is a stable identity whose current pointer refers to an accepted
+`Submission`. Each submission stores the entire Markdown document and a versioned
+verification manifest. A `PullRequest` groups immutable snapshots; its head points
+to the only snapshot that can receive a final decision. `Draft` records are private,
+mutable working copies with revision checks. Passage anchors point to frozen source
+versions, and comment revisions and tool attribution are separately preserved.
+
+Acceptance locks the paper row in a PostgreSQL transaction, checks ownership and
+the accepted base, records a decision, and advances the pointer atomically. Draft
+submission revalidates the source and goes through the same publication services.
+Full documents remain in PostgreSQL so source, decisions, and metadata can be
+backed up and restored together.
+
+Rendering never rewrites source bytes. Embedded HTML is displayed as text; images
+are rejected; unsafe URL schemes are not links. MathJax's HTML and dynamic-require
+extensions are disabled. Equations accept `$...$` and `\(...\)` inline, or
+`$$...$$` and `\[...\]` in display blocks. Fenced code stays literal.
+
+File-upload previews use expiring signatures bound to the submitting account and
+target paper. Editor previews use owner-only saved drafts. Both confirmation paths
+are idempotent and preserve existing immutable snapshots.
+
+This is still a small-server architecture. Search constructs PostgreSQL text-search
+expressions at request time, document rendering is not cached, and notification
+fan-out is synchronous. Capacity claims require representative load tests. Introduce
+indexed search, derived-content caching, or a durable job queue when measurements
+justify them; those are independent of the publication-history format.
 
 ## Content verification
 
@@ -226,6 +269,9 @@ The browser suite is separate from the backend/API/CLI tests. It uses Playwright
 - Signup, email verification, participation restrictions, logout, password recovery, and reset-link reuse rejection.
 - Mobile-width search, empty results, metadata/reader navigation, browser back, equation rendering, code blocks, and expandable diffs.
 - Access-token creation, one-time display, scope, and revocation.
+- Online-editor autosave, rendered preview, reload, immutable PR submission, two-tab conflicts, and recovery after failed saves.
+- Sentence selection, passage rating, threaded replies, thumbs, edit history, and mobile discussion layout.
+- Administration navigation, full frozen hashes, and responsive controls.
 
 Install the browser dependencies into the application development environment, and use the optional `.test-tools` PostgreSQL helper described above:
 
@@ -283,7 +329,7 @@ The restore check creates a separate temporary database, restores the dump, and 
 
 Schedule backups daily on the server and copy them to storage outside that server. The scripts do not silently configure a scheduler or an external storage account. Treat backups as private: they include account emails, password hashes, and active sessions. Also run `docker compose exec -T web python manage.py clearsessions` periodically.
 
-For an installation at `/opt/peerpedia`, install the supplied systemd timer with `sudo cp deploy/peerpedia-backup.{service,timer} /etc/systemd/system/`, then `sudo systemctl daemon-reload` and `sudo systemctl enable --now peerpedia-backup.timer`. It runs daily at 03:00 UTC (with up to 15 minutes of jitter), catches missed runs, and clears expired sessions. These backups stay on the same server and are not automatically pruned; monitor disk use and arrange an off-server copy before relying on them for disaster recovery.
+For an installation at `/opt/peerpedia`, install the supplied systemd timer with `sudo cp deploy/peerpedia-backup.{service,timer} /etc/systemd/system/`, then `sudo systemctl daemon-reload` and `sudo systemctl enable --now peerpedia-backup.timer`. It runs daily at 03:00 UTC (with up to 15 minutes of jitter), catches missed runs, and clears expired sessions. Without the optional Mac replication job below, these backups stay on the same server and are not automatically pruned. Configure off-server replication before relying on them for disaster recovery.
 
 For actual disaster recovery, stop writes and restore the chosen backup into a **new** database, verify it, then point the application to that database. Retain the old database until recovery has been confirmed.
 
@@ -397,3 +443,78 @@ Test with the isolated PostgreSQL runner and `publishing.test_feedback`; the CLI
 integration journey covers public reads, linked fixes, stale heads, snapshot updates,
 and explicit reversion to the accepted base. The local preview remains separate
 from the deployed pilot.
+
+
+## Quality and release gates
+
+Install development-only checks with `pip install -r requirements-dev.txt` and
+`npm ci --ignore-scripts --prefix editor`. Run:
+
+```sh
+python -m ruff check accounts publishing config cli/peerpedia_cli cli_tests browser_tests scripts
+python -m ruff format --check accounts publishing config cli/peerpedia_cli cli_tests browser_tests scripts
+editor/node_modules/.bin/prettier --check 'editor/*.js' 'editor/*.mjs' 'static/*.js'
+python -m unittest discover -s scripts -p 'test_*_unit.py'
+```
+
+CI has three required jobs: `test`, `browser`, and `quality`. The hosted repository's
+`main` branch requires a pull request, up-to-date passing checks, and resolved
+conversations, including for administrators. Force pushes and branch deletion are
+blocked. Forks must configure their own equivalent branch protection.
+
+Use the release tool after a PR is merged and the **main push** workflow passes:
+
+```sh
+python scripts/deploy.py FULL_MAIN_COMMIT_SHA \
+  --host admin@YOUR_SERVER \
+  --identity ~/.ssh/YOUR_DEPLOY_KEY \
+  --known-hosts ~/.ssh/YOUR_PINNED_HOSTS
+```
+
+`--check-only` validates the gate without connecting to the server. The tool refuses
+any SHA other than current main, missing or unsuccessful runs, or a missing required
+job. It checks again before deployment, archives that exact Git commit, validates
+the archive checksum, takes and restores a predeployment backup, keeps the previous
+image, applies migrations, and checks health and immutable history. It does not
+upload a working directory or production secrets. Keep using reviewed migration
+plans for changes that cannot safely be reversed.
+
+## Automatic backup copies on a Mac
+
+The existing daily server timer makes atomic PostgreSQL dumps with checksums.
+A Mac with existing pinned SSH access can fetch the newest completed backup every
+six hours while it is awake and online:
+
+```sh
+python scripts/install_mac_backup.py \
+  --host admin@YOUR_SERVER \
+  --identity ~/.ssh/YOUR_DEPLOY_KEY \
+  --known-hosts ~/.ssh/YOUR_PINNED_HOSTS
+```
+
+The installer copies a standard-library-only runner into
+`~/Library/Application Support/PeerpediaBackup/` and registers
+`~/Library/LaunchAgents/dev.peerpedia.backup.plist`. It does not copy private keys
+or require storing database credentials on the Mac. Files and configuration are
+private to the local user. The runner uses strict host-key verification, restores
+new backups into an isolated temporary database on the server, verifies the
+transferred checksum, and only then writes an off-server receipt.
+
+Status is recorded in `backups/status.json`; failures also appear in
+`backup-errors.log` and the launchd job's exit status. A server backup older than
+48 hours is a failure. An offline/sleeping Mac cannot receive backups. For continuous
+coverage, use always-online external storage instead.
+
+Retention keeps at least seven local copies and 30 days locally, and at least three
+copies and seven days on the server. Pruning requires a valid receipt and never
+removes backups newer than the latest acknowledged off-server copy. Legacy dumps
+without managed checksum files remain untouched. Test files and unrelated files
+are never candidates for pruning. Protect the Mac with full-disk encryption because
+backups contain account information and drafts.
+
+Inspect or stop the job with:
+
+```sh
+launchctl print gui/$(id -u)/dev.peerpedia.backup
+launchctl bootout gui/$(id -u)/dev.peerpedia.backup
+```

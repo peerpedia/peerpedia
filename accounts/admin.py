@@ -7,5 +7,6 @@ from .models import User
 class PeerUserAdmin(UserAdmin):
     fieldsets = UserAdmin.fieldsets + (("Email verification", {"fields": ("email_verified",)}),)
     list_display = ("username", "email", "email_verified", "is_active", "is_staff")
+
     def has_delete_permission(self, request, obj=None):
         return False

@@ -6,10 +6,22 @@ from django.urls import reverse
 from .models import User
 
 
-@override_settings(PASSWORD_HASHERS=["django.contrib.auth.hashers.MD5PasswordHasher"], EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend", SITE_URL="http://testserver")
+@override_settings(
+    PASSWORD_HASHERS=["django.contrib.auth.hashers.MD5PasswordHasher"],
+    EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend",
+    SITE_URL="http://testserver",
+)
 class AccountTests(TestCase):
     def signup(self):
-        return self.client.post(reverse("signup"), {"username": "researcher", "email": "person@example.org", "password1": "Strong-Test-Password-721", "password2": "Strong-Test-Password-721"})
+        return self.client.post(
+            reverse("signup"),
+            {
+                "username": "researcher",
+                "email": "person@example.org",
+                "password1": "Strong-Test-Password-721",
+                "password2": "Strong-Test-Password-721",
+            },
+        )
 
     def test_signup_and_email_verification(self):
         response = self.signup()
@@ -26,7 +38,9 @@ class AccountTests(TestCase):
         self.assertTrue(user.email_verified)
 
     def test_invalid_verification_link(self):
-        self.assertEqual(self.client.get(reverse("verify_email", args=["invalid"])).status_code, 400)
+        self.assertEqual(
+            self.client.get(reverse("verify_email", args=["invalid"])).status_code, 400
+        )
 
     def test_verification_token_is_bound_to_email(self):
         user = User.objects.create_user("researcher", "old@example.org", "password")
@@ -39,13 +53,17 @@ class AccountTests(TestCase):
         User.objects.create_user("Researcher", "person@example.org", "Strong-Test-Password-721")
         for name in ["researcher", "PERSON@example.org"]:
             self.client.logout()
-            response = self.client.post(reverse("login"), {"username": name, "password": "Strong-Test-Password-721"})
+            response = self.client.post(
+                reverse("login"), {"username": name, "password": "Strong-Test-Password-721"}
+            )
             self.assertEqual(response.status_code, 302)
             self.assertIn("_auth_user_id", self.client.session)
 
     def test_disabled_accounts_cannot_sign_in(self):
         User.objects.create_user("disabled", "disabled@example.org", "password", is_active=False)
-        response = self.client.post(reverse("login"), {"username": "disabled", "password": "password"})
+        response = self.client.post(
+            reverse("login"), {"username": "disabled", "password": "password"}
+        )
         self.assertEqual(response.status_code, 200)
         self.assertNotIn("_auth_user_id", self.client.session)
 
@@ -56,7 +74,15 @@ class AccountTests(TestCase):
                 User.objects.create_user(username, email, "password")
 
     def test_username_cannot_overlap_email_identifier(self):
-        response = self.client.post(reverse("signup"), {"username": "a@example.org", "email": "person@example.org", "password1": "Strong-Test-Password-721", "password2": "Strong-Test-Password-721"})
+        response = self.client.post(
+            reverse("signup"),
+            {
+                "username": "a@example.org",
+                "email": "person@example.org",
+                "password1": "Strong-Test-Password-721",
+                "password2": "Strong-Test-Password-721",
+            },
+        )
         self.assertContains(response, "Use 3–30 letters")
         self.assertFalse(User.objects.exists())
 
@@ -68,14 +94,22 @@ class AccountTests(TestCase):
         self.assertIn("Retry-After", response)
 
     def test_admin_login_rate_limit_and_staff_access(self):
-        User.objects.create_superuser("administrator", "admin@example.org", "Strong-Test-Password-721")
+        User.objects.create_superuser(
+            "administrator", "admin@example.org", "Strong-Test-Password-721"
+        )
         login_url = reverse("admin:login")
         for _ in range(10):
             self.client.post(login_url, {"username": "administrator", "password": "wrong"})
-        response = self.client.post(login_url, {"username": "administrator", "password": "Strong-Test-Password-721"})
+        response = self.client.post(
+            login_url, {"username": "administrator", "password": "Strong-Test-Password-721"}
+        )
         self.assertEqual(response.status_code, 429)
         self.assertNotIn("_auth_user_id", self.client.session)
-        response = self.client.post(login_url, {"username": "administrator", "password": "Strong-Test-Password-721"}, REMOTE_ADDR="192.0.2.2")
+        response = self.client.post(
+            login_url,
+            {"username": "administrator", "password": "Strong-Test-Password-721"},
+            REMOTE_ADDR="192.0.2.2",
+        )
         self.assertEqual(response.status_code, 302)
         self.assertContains(self.client.get(reverse("admin:index")), "Moderation and accounts")
 
@@ -86,7 +120,10 @@ class AccountTests(TestCase):
         response = self.client.get(link)
         self.assertEqual(response.status_code, 302)
         confirmation_url = response.url
-        response = self.client.post(confirmation_url, {"new_password1": "New-Password-987", "new_password2": "New-Password-987"})
+        response = self.client.post(
+            confirmation_url,
+            {"new_password1": "New-Password-987", "new_password2": "New-Password-987"},
+        )
         self.assertRedirects(response, reverse("password_reset_complete"))
         user.refresh_from_db()
         self.assertTrue(user.check_password("New-Password-987"))
@@ -99,5 +136,8 @@ class AccountTests(TestCase):
 
     def test_safe_login_redirect(self):
         User.objects.create_user("reader", "reader@example.org", "password")
-        response = self.client.post(reverse("login"), {"username": "reader", "password": "password", "next": "https://evil.example"})
+        response = self.client.post(
+            reverse("login"),
+            {"username": "reader", "password": "password", "next": "https://evil.example"},
+        )
         self.assertEqual(response.url, "/")
