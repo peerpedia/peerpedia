@@ -19,7 +19,7 @@
   </div>{% endfor %}
 </div>
 {% else %}
-<div class="empty-state"><span class="empty-mark" aria-hidden="true">¶</span><h2>{% if query or subject %}No papers found{% else %}A place for your next contribution{% endif %}</h2><p>{% if query or subject %}Try another subject, title, author name, or keyword.{% else %}Upload a Markdown paper or note to begin its public history.{% endif %}</p>{% if query or subject %}<a href="{% url 'browse' %}">Browse all papers</a>{% else %}<a class="button" href="{% url 'publish' %}">Upload the first paper</a>{% endif %}</div>
+<div class="empty-state"><span class="empty-mark" aria-hidden="true">¶</span><h2>{% if query or subject %}No papers found{% else %}A place for your next contribution{% endif %}</h2><p>{% if query or subject %}Try another subject, title, author name, or keyword.{% else %}Write a paper or note online, then publish when you are ready.{% endif %}</p>{% if query or subject %}<a href="{% url 'browse' %}">Browse all papers</a>{% else %}<a class="button" href="{% url 'write' %}">Write your first note</a>{% endif %}</div>
 {% endif %}
 {% include 'includes/pagination.html' %}
 {% endblock %}
