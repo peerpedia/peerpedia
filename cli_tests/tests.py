@@ -19,6 +19,20 @@ from publishing.tests import document
 
 
 class ClientSafetyTests(SimpleTestCase):
+    def test_search_does_not_send_credentials(self):
+        import contextlib
+        import io
+
+        with (
+            patch.dict(os.environ, {"PEERPEDIA_TOKEN": "never-send-me"}),
+            patch.object(client, "request", return_value={"papers": [], "next": None}) as read,
+            contextlib.redirect_stdout(io.StringIO()),
+        ):
+            client.main(["search", "a & 中文?", "--server", "https://example.org", "--json"])
+        self.assertEqual(read.call_args.args[0], "https://example.org")
+        self.assertEqual(read.call_args.kwargs, {})
+        self.assertIn("q=a+%26+%E4%B8%AD%E6%96%87%3F", read.call_args.args[1])
+
     def test_remote_requires_https_and_credentials_cannot_be_embedded_in_url(self):
         for server in [
             "http://example.org",
@@ -150,6 +164,25 @@ class CLIJourneys(StaticLiveServerTestCase):
                 text=f"Follow-up {i}",
             )
         # Public reads work before logging in, without writing local project state.
+        found = self.command("search", "Ada", "--server", self.live_server_url)
+        self.assertEqual(found["papers"][0]["paper_id"], str(paper.pk))
+        self.assertEqual(found["papers"][0]["rating_count"], 0)
+        self.assertEqual(
+            self.command("search", "absent & ? 中文", "--server", self.live_server_url)["papers"],
+            [],
+        )
+        self.command(
+            "search", "x" * 201, "--server", self.live_server_url, failure="invalid_arguments"
+        )
+        self.command(
+            "search",
+            "--subject",
+            "invalid",
+            "--server",
+            self.live_server_url,
+            failure="invalid_request",
+        )
+        self.assertFalse((self.root / "credentials").exists())
         feedback = self.command(
             "feedback", "--server", self.live_server_url, "--paper", str(paper.pk), "--all"
         )
@@ -178,6 +211,16 @@ class CLIJourneys(StaticLiveServerTestCase):
         )
         self.assertTrue(first["ai_assisted"])
         pr_id = first["pull_request"]["id"]
+        prs = self.command("prs", "--all", folder=work)
+        self.assertEqual(prs["prs"][0]["id"], pr_id)
+        self.assertEqual(prs["prs"][0]["contributor"], "other")
+        saved_markdown = (work / "paper.md").read_bytes()
+        snapshot = self.command(
+            "snapshot", first["submission_id"], "--server", self.live_server_url
+        )
+        self.assertEqual(snapshot["hash"], first["hash"])
+        self.assertEqual(snapshot["markdown"].encode(), saved_markdown)
+        self.assertEqual((work / "paper.md").read_bytes(), saved_markdown)
         pr = self.command("pr", pr_id, folder=work)
         self.assertEqual(pr["head_hash"], first["hash"])
         self.assertEqual(pr["discussion_ids"], [str(thread.pk)])

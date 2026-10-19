@@ -11,7 +11,7 @@ from pathlib import Path
 import sys
 import tempfile
 from urllib.error import HTTPError, URLError
-from urllib.parse import urlsplit
+from urllib.parse import urlencode, urlsplit
 from urllib.request import HTTPRedirectHandler, Request, build_opener
 import uuid
 
@@ -114,7 +114,7 @@ class NoRedirect(HTTPRedirectHandler):
 
 
 def request(server, route, token=None, payload=None, key=None):
-    headers = {"Accept": "application/json", "User-Agent": "peerpedia-cli/0.2"}
+    headers = {"Accept": "application/json", "User-Agent": "peerpedia-cli/0.5"}
     if token:
         headers["Authorization"] = "Bearer " + token
     data = None
@@ -500,6 +500,7 @@ READ_COMMANDS = {
     "replies",
     "comment-history",
     "reviews",
+    "prs",
     "pr",
     "pr-comments",
 }
@@ -531,8 +532,8 @@ def read_feedback(args):
             else f"/api/v1/papers/{uid(paper_id)}/feedback/"
         )
         key = "passages"
-    elif args.command == "reviews":
-        path, key = f"/api/v1/papers/{uid(paper_id)}/reviews/", "reviews"
+    elif args.command in {"reviews", "prs"}:
+        path, key = f"/api/v1/papers/{uid(paper_id)}/{args.command}/", args.command
     else:
         target = uid(args.target)
         path, key = {
@@ -572,6 +573,22 @@ def read_feedback(args):
 
 
 def run(args):
+    if args.command == "search":
+        if args.offset < 0 or len(args.query.strip()) > 200:
+            raise ClientError(
+                "invalid_arguments", "Use a nonnegative offset and a query up to 200 characters."
+            )
+        query = urlencode(
+            {
+                "q": args.query.strip(),
+                "subject": args.subject,
+                "sort": args.sort,
+                "offset": args.offset,
+            }
+        )
+        return request(server_for(args), "/api/v1/papers/?" + query)
+    if args.command == "snapshot":
+        return verify(request(server_for(args), f"/api/v1/submissions/{uuid.UUID(args.target)}/"))
     if args.command in READ_COMMANDS:
         return read_feedback(args)
     if args.command in {"categories", "licenses"}:
@@ -692,6 +709,7 @@ def run(args):
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--json", action="store_true", help="Machine-readable output")
+    parser.add_argument("--version", action="version", version="peerpedia 0.5.0")
     commands = parser.add_subparsers(dest="command", required=True)
     for command in (
         "login",
@@ -706,6 +724,8 @@ def main(argv=None):
         "rebase",
         "categories",
         "licenses",
+        "search",
+        "snapshot",
         *sorted(READ_COMMANDS),
     ):
         child = commands.add_parser(command)
@@ -713,8 +733,15 @@ def main(argv=None):
         if command == "login":
             child.add_argument("server")
             child.add_argument("--token-stdin", action="store_true")
-        if command in {"init", "clone", "logout", "categories", "licenses"}:
+        if command in {"init", "clone", "logout", "categories", "licenses", "search", "snapshot"}:
             child.add_argument("--server")
+        if command == "search":
+            child.add_argument("query", nargs="?", default="")
+            child.add_argument("--subject", default="")
+            child.add_argument("--sort", choices=["latest", "rating"], default="latest")
+            child.add_argument("--offset", type=int, default=0)
+        if command == "snapshot":
+            child.add_argument("target", help="Immutable submission UUID")
         if command == "clone":
             child.add_argument("paper_id")
             child.add_argument("directory", nargs="?")
@@ -728,7 +755,7 @@ def main(argv=None):
                 action="store_true",
                 help="Read all pages; discussion also includes all replies",
             )
-            if command in {"feedback", "reviews"}:
+            if command in {"feedback", "reviews", "prs"}:
                 targets = child.add_mutually_exclusive_group()
                 targets.add_argument("--paper")
                 if command == "feedback":

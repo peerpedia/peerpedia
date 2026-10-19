@@ -94,6 +94,13 @@ access/refresh tokens. Tests replace only Google's token exchange; no real Googl
 credentials are needed in CI. Local testing should use a separate development OAuth
 client and an exact localhost callback, not the production secret.
 
+## Codex desktop plugin
+
+The [Peerpedia plugin](plugins/peerpedia/README.md) finds papers, explains their
+claims and readers' reactions, and proposes corrections based on selected feedback.
+It uses the CLI below, keeps local work in `~/Documents/Peerpedia`, and submits only
+when requested. Public reading needs no account; AI cannot comment, rate or vote.
+
 ## Local editing and command-line pushes
 
 Install the standalone client (Python 3.12 or newer; no runtime dependencies):
@@ -103,6 +110,20 @@ python3 -m pip install ./cli
 ```
 
 For repository development, `.venv/bin/python -m pip install -e ./cli` installs the editable client; activate that environment or use `.venv/bin/peerpedia`.
+
+Search without login (CLI 0.5+):
+
+```sh
+peerpedia search "Galois" --server https://peerpedia.dev --json
+peerpedia search "" --subject math.NT --sort rating --server https://peerpedia.dev --json
+```
+
+Results include accepted metadata, abstracts, rating counts, snapshot hashes and
+links. Search shares the website's rules and excludes hidden papers. It returns
+25 results per page; pass the returned `next` offset with `--offset` to continue.
+Use `prs --all` from a cloned paper to discover its PR conversations and
+`snapshot SUBMISSION_ID --server ORIGIN --json` to read a verified frozen snapshot
+without changing local files.
 
 Sign in to the website with a verified account, open **Access tokens**, confirm your password, and create a token. Tokens expire after 30 or 90 days and are shown only once. They permit proposals by default. Check **Also allow publishing new papers** only when that tool should create papers with you as the corresponding author. Tokens never grant acceptance, browser sign-in, or administrative permissions. Revoke a token on the same page to disable it immediately. The server stores only its SHA-256 digest and display prefix.
 
@@ -183,6 +204,8 @@ For an AI runner, inject `PEERPEDIA_TOKEN` through its secret-management mechani
 | Endpoint | Authentication | Purpose |
 |---|---|---|
 | `GET /api/v1/categories/` | Public | Pinned arXiv codes, names, and groups |
+| `GET /api/v1/papers/?q=TEXT&subject=CODE&sort=latest&offset=0` | Public | Search accepted papers (25 per page) |
+| `GET /api/v1/papers/<id>/prs/` | Public | List public PR conversations (100 per page) |
 | `GET /api/v1/me/` | Bearer token | Username, scopes, expiry |
 | `GET /api/v1/papers/<uuid>/` | Public | Current accepted snapshot and metadata |
 | `GET /api/v1/submissions/<uuid>/` | Public | Frozen snapshot and decision status |
