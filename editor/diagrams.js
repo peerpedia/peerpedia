@@ -11,6 +11,8 @@ let serial = 0;
 // The converter output is untrusted. Only static SVG geometry and local font
 // names survive. In particular, TeX specials cannot add HTML, scripts or URLs.
 DOMPurify.addHook("uponSanitizeAttribute", (node, data) => {
+  // CSS escapes can disguise url() inside SVG presentation attributes.
+  if (/[\\\u0000-\u001f\u007f]/.test(data.attrValue)) data.keepAttr = false;
   if (data.attrName === "style") {
     const font = /^font-family:\s*([a-z][a-z0-9]{1,30});?\s*$/i.exec(
       data.attrValue,

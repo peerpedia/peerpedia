@@ -780,6 +780,7 @@ C \arrow[r, "k"'] & D
                 '<image href="https://bad.test/image" />'
                 '<a href="javascript:alert(1)"><text>unsafe link</text></a>'
                 '<path id="pgf1" d="M0 0L10 10" style="fill:url(https://bad.test/style)" />'
+                r'<path d="M0 0L1 1" fill="u\72l(https://bad.test/escaped)"/>'
                 '<use href="#pgf1"/><use href="https://bad.test/#shape"/>'
                 '<text style="font-family: cmmi10;">A</text></svg>',
             },
@@ -800,7 +801,8 @@ C \arrow[r, "k"'] & D
         ).to_have_count(0)
         self.assertIsNone(self.page.evaluate("window.pwned"))
         expect(output.locator("text[font-family=cmmi10]")).to_have_count(1)
-        local_id = output.locator("path").get_attribute("id")
+        local_id = output.locator("path").first.get_attribute("id")
+        self.assertIsNone(output.locator("path").last.get_attribute("fill"))
         self.assertTrue(local_id.startswith("diagram-"))
         expect(output.locator("use").first).to_have_attribute("href", "#" + local_id)
         self.assertIsNone(output.locator("use").last.get_attribute("href"))
