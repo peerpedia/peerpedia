@@ -631,3 +631,49 @@ Docker-published ports can bypass ordinary UFW rules, so UFW alone is insufficie
 Keep SSH available for trusted key-based administration and Mac backups. Ensure
 certificate HTTP validation remains reachable through the proxy. DNS propagation
 and origin firewall protection must be verified separately from deploying code.
+
+
+## Content licenses and agreements
+
+Authors choose one of six licenses, without a default: CC BY 4.0, CC BY-SA 4.0,
+CC BY-NC-SA 4.0, CC BY-NC-ND 4.0, CC0 1.0, or Peerpedia non-exclusive license 1.0.
+Every choice includes a separate limited permission for public on-platform PRs.
+Revisions inherit the paper's fixed license. The corresponding author controls
+acceptance; accepting a contribution does not transfer copyright.
+
+The account holder must accept the versioned submission/discussion agreement at
+`/agreements/` on the website. A bearer token cannot accept it. Missing agreement
+returns `agreement_required`; an absent initial license returns `license_required`;
+an incompatible PR license returns `license_mismatch`. CLI users run
+`peerpedia licenses --server https://peerpedia.dev`, then put e.g.
+`"license": "CC-BY-4.0"` in `paper.json` after choosing it. Clone includes the
+paper's license. API discovery is `/api/v1/licenses/`; `/api/v1/me/` reports consent.
+The website requires a rights confirmation on every publication/PR submission.
+
+New manifests use `peerpedia-submission-v3` and hash the license code and agreement
+version, document hash, acceptance ID and time. v1/v2 hashes remain byte-for-byte
+compatible. API and downloaded verification records include separate `licensing`
+information; any later declaration is outside the original snapshot hash.
+`AgreementAcceptance` and `PaperLicense` are append-only at both ORM and database
+levels. Their admin screens are read-only. Never change an archived agreement's
+text in place: add a new version, retain old routes and require fresh acceptance.
+
+No data migration invents licenses or consent. With an owner's explicit authority,
+operators can preview `declare_legacy_license --owner USER --license CC-BY-4.0
+--authority 'Recorded authorization and scope'`, then add `--confirm-owner-rights`
+to record dated grants. This covers only that owner's still-unlicensed papers and
+lists exactly the existing hashes. It refuses papers with other contributors;
+resolve their permissions separately. It never records website acceptance, edits
+old hashes, or licenses other accounts' papers. Run `verify_history` afterwards.
+
+Private copyright/withdrawal/privacy requests are stored through `/rights/` and
+reviewed in administration under Rights requests. Do not publish request details
+as public issues. Comments and reviews receive hosting/API permissions, not a
+blanket Creative Commons license. Public history is normally preserved after
+withdrawal; operators can restrict access for rights or privacy concerns.
+
+Design references: [arXiv licensing](https://info.arxiv.org/help/license/index.html)
+and [submission agreement](https://info.arxiv.org/help/policies/submission_agreement.html).
+Peerpedia's terms are original and adapt to public PRs; they do not assert arXiv
+affiliation or copy its jurisdiction and liability waivers. Content licensing is
+separate from licensing of this application's source code.

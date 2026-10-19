@@ -149,9 +149,13 @@ def request(server, route, token=None, payload=None, key=None):
 def verify(record):
     try:
         manifest = record["manifest"]
-        if manifest["format"] not in {"peerpedia-submission-v1", "peerpedia-submission-v2"}:
+        if manifest["format"] not in {
+            "peerpedia-submission-v1",
+            "peerpedia-submission-v2",
+            "peerpedia-submission-v3",
+        }:
             raise ValueError()
-        if manifest["format"] == "peerpedia-submission-v2":
+        if manifest["format"] in {"peerpedia-submission-v2", "peerpedia-submission-v3"}:
             if (
                 not isinstance(manifest["primary_category"], str)
                 or not manifest["primary_category"]
@@ -159,6 +163,14 @@ def verify(record):
                 raise ValueError()
             if not isinstance(manifest["secondary_categories"], list) or not all(
                 isinstance(code, str) for code in manifest["secondary_categories"]
+            ):
+                raise ValueError()
+        if manifest["format"] == "peerpedia-submission-v3":
+            if not isinstance(manifest["license"], str) or not manifest["license"]:
+                raise ValueError()
+            if (
+                not isinstance(manifest["agreement"]["version"], str)
+                or len(manifest["agreement"]["sha256"]) != 64
             ):
                 raise ValueError()
         uuid.UUID(manifest["paper_id"])
@@ -184,6 +196,8 @@ def verify(record):
 def metadata(record):
     return {
         **{key: record["manifest"][key] for key in ("title", "authors", "abstract")},
+        "license": record["manifest"].get("license", (record.get("licensing") or {}).get("code"))
+        or "",
         "primary_category": record["manifest"].get("primary_category", ""),
         "secondary_categories": record["manifest"].get("secondary_categories", []),
     }
@@ -195,7 +209,7 @@ def local_document(root):
         raise ClientError("too_large", "Markdown must be 1 MB or smaller.")
     data = read_json(root / "paper.json")
     required = {"title", "authors", "abstract"}
-    optional = {"primary_category", "secondary_categories"}
+    optional = {"primary_category", "secondary_categories", "license"}
     if (
         not isinstance(data, dict)
         or not required <= set(data)
@@ -205,6 +219,11 @@ def local_document(root):
         raise ClientError(
             "invalid_metadata",
             "paper.json requires title, authors, abstract, and supports primary_category and secondary_categories.",
+        )
+    data.setdefault("license", "")
+    if not isinstance(data["license"], str):
+        raise ClientError(
+            "invalid_metadata", "license must be a license code from the licenses command."
         )
     data.setdefault("primary_category", "")
     data.setdefault("secondary_categories", [])
@@ -323,6 +342,7 @@ def initialize(args):
                 "abstract": "",
                 "primary_category": "",
                 "secondary_categories": [],
+                "license": "",
             },
         )
         write_json(root / ".peerpedia/state.json", state)
@@ -370,6 +390,11 @@ def push(root, state, args):
             raise ClientError("invalid_state", "Stored base and state do not agree.")
         if not changed(root, base) and not pr_id:
             return {"status": "unchanged", "message": "No local changes to push."}
+        if not state["paper_id"] and not local_document(root)["license"]:
+            raise ClientError(
+                "license_required",
+                "Choose a license in paper.json. Run peerpedia licenses to compare choices; accept the agreement on the website first.",
+            )
         pending = {
             "server": state["server"],
             "key": str(uuid.uuid4()),
@@ -380,6 +405,8 @@ def push(root, state, args):
                 "explanation": args.message,
             },
         }
+        if state["paper_id"] and not pending["payload"].get("license"):
+            pending["payload"].pop("license", None)
         if pr_id:
             pending["payload"].update(
                 pull_request_id=str(uuid.UUID(pr_id)), expected_head=expected_head
@@ -424,6 +451,9 @@ def push(root, state, args):
             "stale_pr",
             "invalid_discussion",
             "forbidden",
+            "agreement_required",
+            "license_required",
+            "license_mismatch",
         }:
             pending_path.unlink()  # Definitive rejection: safe to fix and submit anew.
         raise
@@ -440,7 +470,7 @@ def push(root, state, args):
         raise ClientError(
             "verification_failed", "Server receipt does not match the pushed document or base."
         )
-    for field in ("primary_category", "secondary_categories"):
+    for field in ("primary_category", "secondary_categories", "license"):
         if field in submitted and record["manifest"].get(field) != submitted[field]:
             raise ClientError(
                 "verification_failed", "Server receipt does not match the pushed subjects."
@@ -544,8 +574,8 @@ def read_feedback(args):
 def run(args):
     if args.command in READ_COMMANDS:
         return read_feedback(args)
-    if args.command == "categories":
-        return request(server_for(args), "/api/v1/categories/")
+    if args.command in {"categories", "licenses"}:
+        return request(server_for(args), f"/api/v1/{args.command}/")
     if args.command == "login":
         return login(args)
     if args.command == "logout":
@@ -675,6 +705,7 @@ def main(argv=None):
         "fetch",
         "rebase",
         "categories",
+        "licenses",
         *sorted(READ_COMMANDS),
     ):
         child = commands.add_parser(command)
@@ -682,7 +713,7 @@ def main(argv=None):
         if command == "login":
             child.add_argument("server")
             child.add_argument("--token-stdin", action="store_true")
-        if command in {"init", "clone", "logout", "categories"}:
+        if command in {"init", "clone", "logout", "categories", "licenses"}:
             child.add_argument("--server")
         if command == "clone":
             child.add_argument("paper_id")

@@ -1,3 +1,4 @@
+from publishing.test_support import consenting_user
 import json
 import uuid
 from datetime import timedelta
@@ -7,7 +8,6 @@ from unittest import skipUnless
 from django.db import connection, connections
 from django.test import Client, TestCase, TransactionTestCase, override_settings
 from django.utils import timezone
-from accounts.models import User
 from accounts.tokens import issue_token
 from .models import ApiPush, Paper, Submission
 from .services import decide, propose, publish
@@ -17,12 +17,8 @@ from .tests import document
 @override_settings(PASSWORD_HASHERS=["django.contrib.auth.hashers.MD5PasswordHasher"])
 class APITests(TestCase):
     def setUp(self):
-        self.owner = User.objects.create_user(
-            "owner", "owner@example.org", "password", email_verified=True
-        )
-        self.other = User.objects.create_user(
-            "other", "other@example.org", "password", email_verified=True
-        )
+        self.owner = consenting_user("owner", "owner@example.org", "password", email_verified=True)
+        self.other = consenting_user("other", "other@example.org", "password", email_verified=True)
         self.paper = publish(self.owner, document())
         self.token, self.raw = issue_token(self.other, "Tests")
         self.data = {
@@ -181,9 +177,7 @@ class APITests(TestCase):
 @override_settings(PASSWORD_HASHERS=["django.contrib.auth.hashers.MD5PasswordHasher"])
 class ConcurrentPushTests(TransactionTestCase):
     def test_concurrent_retries_create_one_submission(self):
-        user = User.objects.create_user(
-            "owner", "owner@example.org", "password", email_verified=True
-        )
+        user = consenting_user("owner", "owner@example.org", "password", email_verified=True)
         _, raw = issue_token(user, "Concurrent", can_publish=True)
         key = str(uuid.uuid4())
         data = {**document(), "paper_id": None, "base_hash": None}

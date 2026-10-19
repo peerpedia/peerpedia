@@ -11,9 +11,33 @@ def require_verified(user):
 @transaction.atomic
 def publish(user, data):
     require_verified(user)
+    from .licensing import require_agreement, LICENSES, VERSION, document_hash
+    from .models import PaperLicense
+
+    agreement = require_agreement(user)
+    data = dict(data)
+    license_code = data.pop("license", None)
+    if not isinstance(license_code, str) or license_code not in LICENSES:
+        raise ValidationError(
+            "Choose a content license for the new paper.", code="license_required"
+        )
     paper = Paper.objects.create(owner=user)
+    PaperLicense.objects.create(
+        paper=paper,
+        actor=user,
+        license_code=license_code,
+        agreement_version=VERSION,
+        document_hash=document_hash(),
+        authority="Corresponding author selected this license when publishing.",
+    )
     submission = Submission.objects.create(
-        paper=paper, contributor=user, contributor_name=user.username, **data
+        paper=paper,
+        contributor=user,
+        contributor_name=user.username,
+        manifest_version=3,
+        license_code=license_code,
+        agreement=agreement,
+        **data,
     )
     decision = Decision.objects.create(submission=submission, actor=user, action="accepted")
     paper.current = submission
@@ -27,7 +51,17 @@ def propose(
     user, paper_id, base_id, data, *, pull_request_id=None, expected_head=None, section=None
 ):
     require_verified(user)
+    from .licensing import require_agreement, paper_license
+
+    agreement = require_agreement(user)
     paper = Paper.objects.select_for_update().get(pk=paper_id, is_hidden=False)
+    license_code = paper_license(paper)
+    data = dict(data)
+    supplied = data.pop("license", license_code)
+    if supplied != license_code:
+        raise ValidationError(
+            "Revisions must inherit the paper's fixed license.", code="license_mismatch"
+        )
     if str(paper.current_id) != str(base_id):
         raise ValidationError(
             "This paper has a newer accepted version. Download it and prepare a new submission; your upload has not been published."
@@ -57,7 +91,14 @@ def propose(
         if any(data.get(k) != getattr(paper.current, k) for k in METADATA_FIELDS):
             raise ValidationError("Section PRs cannot change paper metadata.")
     submission = Submission.objects.create(
-        paper=paper, contributor=user, contributor_name=user.username, base_id=base_id, **data
+        paper=paper,
+        contributor=user,
+        contributor_name=user.username,
+        base_id=base_id,
+        manifest_version=3,
+        license_code=license_code,
+        agreement=agreement,
+        **data,
     )
     if pr:
         number = pr.commits.count() + 1

@@ -1,3 +1,4 @@
+from publishing.test_support import consenting_user
 import hashlib
 import json
 import os
@@ -10,7 +11,6 @@ from unittest.mock import patch
 from django.contrib.staticfiles.testing import StaticLiveServerTestCase
 from django.db import connection
 from django.test import SimpleTestCase, override_settings
-from accounts.models import User
 from accounts.tokens import issue_token
 from cli.peerpedia_cli import main as client
 from publishing.models import Paper, Submission
@@ -86,12 +86,8 @@ class CLIJourneys(StaticLiveServerTestCase):
     host = "127.0.0.1"
 
     def setUp(self):
-        self.owner = User.objects.create_user(
-            "owner", "owner@example.org", "password", email_verified=True
-        )
-        self.other = User.objects.create_user(
-            "other", "other@example.org", "password", email_verified=True
-        )
+        self.owner = consenting_user("owner", "owner@example.org", "password", email_verified=True)
+        self.other = consenting_user("other", "other@example.org", "password", email_verified=True)
         _, self.owner_token = issue_token(self.owner, "Publisher", can_publish=True)
         _, self.other_token = issue_token(self.other, "Contributor")
         self.temporary = tempfile.TemporaryDirectory(prefix="peerpedia-cli-test-")
@@ -249,6 +245,7 @@ class CLIJourneys(StaticLiveServerTestCase):
             {
                 key: data[key]
                 for key in (
+                    "license",
                     "title",
                     "authors",
                     "abstract",

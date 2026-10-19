@@ -1,10 +1,10 @@
+from publishing.test_support import consenting_user
 import json
 from types import SimpleNamespace
 from django.core.exceptions import ValidationError
 from django.db import DatabaseError, transaction
 from django.test import TestCase, Client, override_settings
 from django.urls import reverse
-from accounts.models import User
 from . import passages
 from .models import Passage, PassageComment, PassageCommentRevision, PassageVote, PassageReport
 from .rendering import render_reader
@@ -17,15 +17,11 @@ SOURCE = '# Notes\n\n## Claim\n\nA unique claim with 🌱 and $x^2$.\n\n## Proof
 @override_settings(PASSWORD_HASHERS=["django.contrib.auth.hashers.MD5PasswordHasher"])
 class DiscussionTests(TestCase):
     def setUp(self):
-        self.owner = User.objects.create_user(
-            "author", email="author@example.org", email_verified=True
-        )
-        self.other = User.objects.create_user(
+        self.owner = consenting_user("author", email="author@example.org", email_verified=True)
+        self.other = consenting_user(
             "commenter", email="commenter@example.org", email_verified=True
         )
-        self.third = User.objects.create_user(
-            "reader", email="reader@example.org", email_verified=True
-        )
+        self.third = consenting_user("reader", email="reader@example.org", email_verified=True)
         self.paper = publish(self.owner, document(markdown=SOURCE))
         self.base = self.paper.current
         block = next(b for b in passages.blocks(SOURCE) if b["text"].startswith("A unique"))

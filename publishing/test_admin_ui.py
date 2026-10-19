@@ -1,7 +1,7 @@
+from publishing.test_support import consenting_user
 from django.contrib.auth.models import Permission
 from django.test import TestCase
 from django.urls import reverse
-from accounts.models import User
 from django_otp.oath import totp
 from django_otp.plugins.otp_totp.models import TOTPDevice
 from .models import ModerationEvent
@@ -11,8 +11,8 @@ from .tests import document
 
 class AdministrationTests(TestCase):
     def setUp(self):
-        self.owner = User.objects.create_user("author", "author@example.org", email_verified=True)
-        self.admin = User.objects.create_user(
+        self.owner = consenting_user("author", "author@example.org", email_verified=True)
+        self.admin = consenting_user(
             "administrator", "admin@example.org", is_staff=True, is_superuser=True
         )
         self.paper = publish(self.owner, document())
@@ -27,7 +27,7 @@ class AdministrationTests(TestCase):
     def test_dashboard_respects_model_permissions(self):
         self.client.force_login(self.owner)
         self.assertEqual(self.client.get(reverse("admin:index")).status_code, 302)
-        staff = User.objects.create_user("moderator", "moderator@example.org", is_staff=True)
+        staff = consenting_user("moderator", "moderator@example.org", is_staff=True)
         staff.user_permissions.add(
             Permission.objects.get(content_type__app_label="publishing", codename="view_review")
         )

@@ -1,3 +1,4 @@
+from publishing.test_support import consenting_user
 import hashlib
 import json
 from django.core.exceptions import ValidationError
@@ -5,7 +6,6 @@ from django.core.files.uploadedfile import SimpleUploadedFile
 from django.db import DatabaseError, transaction
 from django.test import TestCase
 from django.urls import reverse
-from accounts.models import User
 from accounts.tokens import issue_token
 from cli.peerpedia_cli.main import ClientError, verify
 from .forms import UploadForm
@@ -22,9 +22,7 @@ from django.test import TransactionTestCase
 class SubjectTests(TestCase):
     @classmethod
     def setUpTestData(cls):
-        cls.owner = User.objects.create_user(
-            "subjectowner", "subjects@example.org", email_verified=True
-        )
+        cls.owner = consenting_user("subjectowner", "subjects@example.org", email_verified=True)
         cls.paper = publish(
             cls.owner, document(primary_category="cond-mat.str-el", secondary_categories=["hep-th"])
         )
@@ -122,7 +120,7 @@ class SubjectTests(TestCase):
             "manifest": current.manifest(),
             "markdown": current.markdown,
         }
-        self.assertEqual(record["manifest"]["format"], "peerpedia-submission-v2")
+        self.assertEqual(record["manifest"]["format"], "peerpedia-submission-v3")
         verify(record)
         record["manifest"]["primary_category"] = "math.NT"
         with self.assertRaises(ClientError):
@@ -139,7 +137,11 @@ class SubjectTests(TestCase):
             contributor=self.owner,
             contributor_name=self.owner.username,
             manifest_version=1,
-            **document(primary_category="", secondary_categories=[]),
+            **{
+                k: v
+                for k, v in document(primary_category="", secondary_categories=[]).items()
+                if k != "license"
+            },
         )
         paper.current = legacy
         paper.save()
@@ -152,6 +154,15 @@ class SubjectTests(TestCase):
         self.assertEqual(digest, legacy.hash)
         verify({"hash": legacy.hash, "manifest": manifest, "markdown": legacy.markdown})
         self.assertIn(paper, self.client.get("/", {"subject": "unclassified"}).context["page"])
+        from django.core.management import call_command
+
+        call_command(
+            "declare_legacy_license",
+            owner=self.owner.username,
+            license="CC-BY-4.0",
+            authority="Test fixture owner declaration",
+            confirm_owner_rights=True,
+        )
         change = propose(self.owner, paper.pk, legacy.pk, document(primary_category="math.NT"))
         decide(self.owner, change.pk, "accepted")
         legacy.refresh_from_db()
@@ -203,7 +214,10 @@ class SubjectTests(TestCase):
         response = self.client.post(reverse("publish"), data)
         self.assertContains(response, "High Energy Physics - Theory")
         token = response.context["token"]
-        self.client.post(reverse("publish"), {"action": "confirm", "token": token})
+        self.client.post(
+            reverse("publish"),
+            {"action": "confirm", "token": token, "license": "CC-BY-4.0", "rights_confirmed": "on"},
+        )
         created = Submission.objects.latest("created_at")
         self.assertEqual(created.primary_category, "hep-th")
         self.assertEqual(created.secondary_categories, ["cond-mat.str-el", "math-ph"])
@@ -218,7 +232,7 @@ class SubjectTests(TestCase):
 class SubjectMigrationTests(TransactionTestCase):
     def test_populated_v1_upgrade_preserves_hash_and_guards(self):
         before = [("publishing", "0003_apipush")]
-        after = [("publishing", "0009_submissionsource_notification")]
+        after = [("publishing", "0010_rightsrequest_submission_license_code_and_more")]
         executor = MigrationExecutor(connection)
         executor.migrate(before)
         try:
@@ -229,6 +243,7 @@ class SubjectMigrationTests(TransactionTestCase):
             user = Owner.objects.create(username="oldowner", email="old@example.org", password="!")
             paper = OldPaper.objects.create(owner_id=user.pk)
             data = document()
+            data.pop("license")
             data.pop("primary_category")
             data.pop("secondary_categories")
             old = OldSubmission(
@@ -268,7 +283,7 @@ class SubjectMigrationTests(TransactionTestCase):
     def test_downgrade_cannot_destroy_classified_history(self):
         from django.db.migrations.exceptions import IrreversibleError
 
-        owner = User.objects.create_user("downgradecheck", email_verified=True)
+        owner = consenting_user("downgradecheck", email_verified=True)
         paper = publish(owner, document())
         with self.assertRaises(IrreversibleError):
             MigrationExecutor(connection).migrate([("publishing", "0003_apipush")])

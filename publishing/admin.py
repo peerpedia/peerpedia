@@ -1,7 +1,7 @@
 from django.contrib import admin
 from .models import Comment, Decision, ModerationEvent, Paper, Review, Submission
 from .models import Passage, PassageComment, PassageCommentRevision, PassageReport
-from .models import SubmissionSource
+from .models import SubmissionSource, AgreementAcceptance, PaperLicense, RightsRequest
 
 
 class ImmutableAdmin(admin.ModelAdmin):
@@ -198,3 +198,29 @@ class SubmissionSourceAdmin(ImmutableAdmin):
     list_filter = ("ai_assisted",)
     search_fields = ("submission__title", "submission__contributor_name")
     list_select_related = ("submission",)
+
+
+@admin.register(AgreementAcceptance)
+class AgreementAcceptanceAdmin(ImmutableAdmin):
+    list_display = ("user", "version", "created_at")
+    search_fields = ("user__username",)
+
+
+@admin.register(PaperLicense)
+class PaperLicenseAdmin(ImmutableAdmin):
+    list_display = ("paper", "actor", "license_code", "created_at")
+    search_fields = ("actor__username", "paper__current__title")
+
+
+@admin.register(RightsRequest)
+class RightsRequestAdmin(admin.ModelAdmin):
+    list_display = ("name", "work_url", "created_at", "resolved")
+    list_filter = ("resolved",)
+    ordering = ("resolved", "-created_at")
+    readonly_fields = ("name", "email", "work_url", "details", "created_at")
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False

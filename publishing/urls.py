@@ -1,8 +1,14 @@
 from django.urls import path
 from django.views.generic import TemplateView
 from . import views, drafts, discussions, notifications
+from . import licensing
 
 urlpatterns = [
+    path("terms/", licensing.terms, name="terms"),
+    path("terms/<str:version>/", licensing.terms, name="terms_version"),
+    path("licenses/", licensing.licenses, name="licenses"),
+    path("agreements/", licensing.agreements, name="agreements"),
+    path("rights/", licensing.rights_request, name="rights_request"),
     path("privacy/", TemplateView.as_view(template_name="privacy.html"), name="privacy"),
     path("inbox/", notifications.inbox, name="inbox"),
     path("inbox/read/", notifications.mark_read, name="inbox_read"),

@@ -1,0 +1,4 @@
+{% if consent_form.license_info %}<p>Content license: <a href="{{ consent_form.license_info.url }}">{{ consent_form.license_info.label }}</a>. Your contribution uses this paper's fixed license.</p>{% endif %}
+<p><a href="{% url 'licenses' %}" target="_blank" rel="noopener">Compare licenses</a> · <a href="{% url 'terms' %}" target="_blank" rel="noopener">Submission agreement</a></p>
+{% include 'includes/form.html' with form=consent_form %}
+<p class="help">This also permits public PR snapshots on Peerpedia, including unaccepted proposals. Published history is normally preserved after withdrawal.</p>

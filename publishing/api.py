@@ -38,6 +38,7 @@ from .models import (
 from .subjects import TAXONOMY
 from .services import propose, publish
 from .queries import public_papers, submission_queryset
+from .licensing import require_agreement, acceptance, VERSION, LICENSES
 
 
 class APIError(Exception):
@@ -93,7 +94,12 @@ def endpoint(method="GET", authenticated=False):
             except UnicodeError:
                 response = error_response("invalid_document", "Use valid UTF-8 text.", 400)
             except ValidationError as error:
-                response = error_response("stale_base", " ".join(error.messages), 409)
+                code = getattr(error, "code", None)
+                response = error_response(
+                    code or "stale_base",
+                    " ".join(error.messages),
+                    403 if code == "agreement_required" else 409,
+                )
             if response.status_code == 401:
                 response["WWW-Authenticate"] = "Bearer"
             if response.status_code == 405:
@@ -117,6 +123,7 @@ def snapshot(submission):
         "markdown": submission.markdown,
         "status": submission.status,
         "url": reverse("submission", args=[submission.pk]),
+        "licensing": submission.licensing,
     }
 
 
@@ -127,6 +134,11 @@ def me(request):
             "username": request.user.username,
             "scopes": ["propose"] + (["publish"] if request.api_token.can_publish else []),
             "expires_at": request.api_token.expires_at.isoformat(),
+            "agreement": {
+                "version": VERSION,
+                "accepted": bool(acceptance(request.user)),
+                "url": reverse("agreements"),
+            },
         }
     )
 
@@ -134,6 +146,20 @@ def me(request):
 @endpoint()
 def categories(request):
     return JsonResponse(TAXONOMY)
+
+
+@endpoint()
+def licenses(request):
+    return JsonResponse(
+        {
+            "agreement_version": VERSION,
+            "accept_url": reverse("agreements"),
+            "licenses": [
+                {"code": code, "label": item[0], "url": item[1], "description": item[2]}
+                for code, item in LICENSES.items()
+            ],
+        }
+    )
 
 
 @endpoint()
@@ -166,6 +192,7 @@ def push(request):
         "expected_head",
         "discussion_ids",
         "ai_assisted",
+        "license",
     }
     if (
         not isinstance(payload, dict)
@@ -251,6 +278,7 @@ def push(request):
         if existing.submission.paper.is_hidden:
             raise Http404()
         return JsonResponse(snapshot(existing.submission))
+    require_agreement(request.user)
     item = get_object_or_404(public_papers(), pk=payload["paper_id"]) if not initial else None
     if item and item.current.hash != payload["base_hash"]:
         raise APIError(
@@ -307,6 +335,8 @@ def push(request):
             details=form.errors.get_json_data(),
         )
     data = form.submission_data()
+    if "license" in payload:
+        data["license"] = payload["license"]
     record = (
         publish(request.user, data).current
         if initial
@@ -449,6 +479,7 @@ def pr_comments(request, pr_id):
 
 
 urlpatterns = [
+    path("licenses/", licenses),
     path("papers/<uuid:paper_id>/feedback/", feedback),
     path("submissions/<uuid:submission_id>/feedback/", feedback),
     path("papers/<uuid:paper_id>/reviews/", paper_reviews),

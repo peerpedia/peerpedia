@@ -1,11 +1,12 @@
 """Protect feedback query costs and public/private response boundaries."""
 
+from publishing.test_support import consenting_user
+
 import json
 from django.contrib.auth.models import AnonymousUser
 from django.db import connection
 from django.test import TestCase, RequestFactory
 from django.test.utils import CaptureQueriesContext
-from accounts.models import User
 from . import api, passages
 from .feedback_queries import passage_index, passage_detail, comment_replies
 from .models import Passage, PassageComment, PassageVote, PassagePRLink
@@ -16,7 +17,7 @@ from .tests import document
 class FeedbackQueryTests(TestCase):
     @classmethod
     def setUpTestData(cls):
-        cls.owner = User.objects.create_user(
+        cls.owner = consenting_user(
             "query-owner", email="query-owner@example.org", email_verified=True
         )
         source = "\n\n".join(f"Paragraph {i} makes a distinct claim." for i in range(100))
@@ -36,7 +37,7 @@ class FeedbackQueryTests(TestCase):
         PassageComment.objects.create(
             passage=self.anchors[0], user=self.owner, text="Visible", score=4
         )
-        hidden_user = User.objects.create_user("hidden-rater", email="hidden@example.org")
+        hidden_user = consenting_user("hidden-rater", email="hidden@example.org")
         PassageComment.objects.create(
             passage=self.anchors[0], user=hidden_user, text="Hidden", score=1, is_hidden=True
         )
@@ -53,7 +54,7 @@ class FeedbackQueryTests(TestCase):
     def test_ranked_pages_replies_and_personal_votes_are_bounded(self):
         roots = []
         for i in range(25):
-            user = User.objects.create_user(f"rater-{i}", email=f"rater-{i}@example.org")
+            user = consenting_user(f"rater-{i}", email=f"rater-{i}@example.org")
             roots.append(
                 PassageComment.objects.create(
                     passage=self.anchors[0], user=user, text=f"Root {i}", score=3
