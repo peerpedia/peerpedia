@@ -764,3 +764,84 @@ Only `/diagram-worker.js` permits `wasm-unsafe-eval`; page script policies remai
 unchanged. DOMPurify validates preview output before display. No source goes to
 third parties. Basic TikZ and tikz-cd are supported, not external files or a full
 LaTeX/Overleaf environment.
+
+### Chapters, references, and reading progress
+
+A paper can contain up to 64 ordered Markdown chapters and one shared UTF-8
+`references.bib`. The complete source and bibliography are limited to 1 MB.
+Existing single-file papers continue to work. In the editor, **Add chapter**
+converts the draft; a single PR publishes all chapter changes together. Readers
+see one chapter at a time. Chapter IDs survive file renaming and reordering.
+
+For the CLI (0.6.0 or later), `paper.json` adds:
+
+```json
+{
+  "title": "A course",
+  "authors": "Ada Example",
+  "abstract": "An introduction with worked examples.",
+  "primary_category": "math.GT",
+  "secondary_categories": [],
+  "license": "CC-BY-4.0",
+  "chapters": [
+    {"id": "intro", "title": "Introduction", "file": "chapters/intro.md"},
+    {"id": "proofs", "title": "Proofs", "file": "chapters/proofs.md"}
+  ],
+  "bibliography": "references.bib"
+}
+```
+
+`clone`, `diff`, `push`, and `pull` include these files. `fetch` also places a
+multi-file copy in `.peerpedia/incoming-<hash>/` for manual reconciliation.
+Old clients cannot accidentally replace a chaptered paper with a single file.
+Remote filenames are generated from validated IDs, never taken from arbitrary
+server paths. Local chapter paths must stay inside the project without symlinks.
+
+Use **Insert block** for theorem, lemma, proposition, corollary, definition,
+example, remark, proof, figure, table, equation, or unnumbered containers:
+
+```markdown
+## Motivation {#sec:motivation}
+
+::: theorem {#thm:main}
+Every example has an explanation.
+:::
+
+::: equation {#eq:energy}
+$$
+E = mc^2
+$$
+:::
+
+See @sec:motivation, @thm:main, and @eq:energy.
+See [@einstein1905, p. 3; @anotherWork].
+```
+
+Every display-math block gets a chapter-based equation number; wrap it in
+`::: unnumbered` to suppress numbering. An `align` display is one referenceable
+block. Theorem-like blocks share a chapter counter; proofs are unnumbered.
+Figures and tables use their own counters; text after their opening block name
+is the caption, before an optional `{#label}`. Figures may contain existing
+TikZ diagram fences; image uploads remain unsupported.
+
+The reference picker inserts persistent labels when citing local objects.
+Manual labels must be unique across the paper. Unlabeled objects still have
+frozen-version permalinks, but their generated IDs can change when edited.
+Ambiguous or missing references are warnings, never silently retargeted.
+BibTeX is parsed as data and never executed. Unknown fields and entry types
+remain in the original file. Malformed files are retained with a preview warning.
+Citations display a compact title, first author and year, and link to the chapter's
+full reference list. External works use standard BibTeX fields including `url`
+or `doi`. Peerpedia's picker uses frozen submission URLs.
+
+Manifest v4 hashes ordered chapter IDs, titles and individual Markdown hashes,
+as well as the exact bibliography hash and the existing canonical combined
+Markdown. This combined field supports search and older read-only integrations;
+chapter-aware clients verify every component. v1–v3 histories are unchanged.
+The chapter migration refuses a rollback once v4 snapshots exist.
+
+Reading completion and position are private account data. Visitors keep progress
+in their browser. Completion retains the hash of the chapter read, allowing the
+sidebar to indicate later changes without erasing the reader's achievement.
+Cross-chapter passage mapping uses the existing exact, unambiguous quote rule;
+uncertain matches remain historical.

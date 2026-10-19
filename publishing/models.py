@@ -50,6 +50,8 @@ class Submission(FrozenRecord):
     authors = models.TextField(max_length=2000)
     abstract = models.TextField(max_length=10000)
     markdown = models.TextField()
+    chapters = models.JSONField(default=list, blank=True)
+    bibliography = models.TextField(blank=True, default="")
     explanation = models.TextField(max_length=5000)
     created_at = models.DateTimeField(default=timezone.now, editable=False)
     hash = models.CharField(max_length=64, unique=True, editable=False)
@@ -127,6 +129,16 @@ class Submission(FrozenRecord):
                     "acceptance_id": self.agreement_id,
                 },
             )
+        if self.manifest_version >= 4:
+            from .documents import digest
+
+            manifest.update(
+                chapters=[
+                    {"id": p["id"], "title": p["title"], "markdown_sha256": digest(p["markdown"])}
+                    for p in self.chapters
+                ],
+                bibliography_sha256=digest(self.bibliography),
+            )
         return manifest
 
     def calculate_hash(self):
@@ -149,6 +161,14 @@ class Submission(FrozenRecord):
                     raise ValidationError("A license and agreement acceptance are required.")
                 if self.agreement.user_id != self.contributor_id:
                     raise ValidationError("Agreement acceptance must belong to the contributor.")
+            if self.manifest_version >= 4:
+                from .documents import validate, combined
+
+                validate(self.chapters, self.bibliography)
+                if self.chapters and self.markdown != combined(self.chapters):
+                    raise ValidationError("Combined Markdown does not match the chapters.")
+            elif self.chapters or self.bibliography:
+                raise ValidationError("Chapters require manifest version 4.")
             self.hash = self.calculate_hash()
         return super().save(*args, **kwargs)
 
@@ -323,6 +343,8 @@ class Draft(models.Model):
     section = models.JSONField(default=dict, blank=True)
     data = models.JSONField(default=dict)
     markdown = models.TextField(blank=True)
+    chapters = models.JSONField(default=list, blank=True)
+    bibliography = models.TextField(blank=True, default="")
     revision = models.PositiveIntegerField(default=1)
     updated_at = models.DateTimeField(auto_now=True)
     submitted = models.ForeignKey(
@@ -507,3 +529,17 @@ class DiagramArtifact(models.Model):
     available_at = models.DateTimeField(default=timezone.now, db_index=True)
     updated_at = models.DateTimeField(default=timezone.now)
     submissions = models.ManyToManyField(Submission, related_name="diagram_artifacts")
+
+
+class ReadingProgress(models.Model):
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
+    paper = models.ForeignKey(Paper, on_delete=models.CASCADE)
+    chapter = models.CharField(max_length=64, blank=True)
+    position = models.FloatField(default=0)
+    completed = models.JSONField(default=dict)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=["user", "paper"], name="one_reading_progress")
+        ]

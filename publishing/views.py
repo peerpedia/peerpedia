@@ -17,7 +17,7 @@ from accounts.security import limited, verified_required
 from .forms import CommentForm, ReviewForm, UploadForm
 from .licensing import PublicationConsentForm, agreement_required
 from .models import Comment, Review, Submission, PullRequest, PullRequestCommit
-from .rendering import render_markdown, render_reader
+from .rendering import render_markdown
 from .services import decide, propose, publish
 from .subjects import (
     METADATA_FIELDS,
@@ -106,9 +106,43 @@ def reader(request, submission):
         else None
     )
     from .diagram_cache import saved_for
+    from .documents import pages, digest
+    from .references import ReferenceDocument
+    from . import passages
+    from urllib.parse import urlencode
 
-    body, contents = render_reader(
-        submission.markdown,
+    chapters = pages(submission)
+    selected = request.GET.get("chapter")
+    if not selected and request.GET.get("discussion"):
+        from .feedback_queries import anchors_for, mapping
+
+        try:
+            discussion_id = uuid.UUID(request.GET["discussion"])
+        except ValueError:
+            raise Http404()
+        anchor = anchors_for(submission).filter(pk=discussion_id).first()
+        if anchor:
+            all_blocks = passages.blocks(submission)
+            _, spans = mapping(anchor, submission, all_blocks)
+            if spans:
+                selected = next(
+                    (b.get("chapter") for b in all_blocks if b["id"] == spans[0]["block"]), None
+                )
+    selected = selected or chapters[0]["id"]
+    page = next((p for p in chapters if p["id"] == selected), None)
+    if page is None:
+        raise Http404("This chapter is not in this version.")
+    index = chapters.index(page)
+    reader_url = reverse("read_submission", args=[submission.pk])
+    refs = ReferenceDocument(
+        chapters, submission.bibliography, reader_url, number_sections=bool(submission.chapters)
+    )
+    if edit_url and submission.chapters:
+        edit_url += "&" + urlencode({"chapter": selected})
+    offset = sum(len(passages.blocks(p["markdown"])) for p in chapters[:index])
+    body, contents = refs.render(
+        selected,
+        passage_offset=offset,
         edit_url=edit_url,
         passage_annotations=True,
         saved_diagrams=saved_for(submission),
@@ -145,6 +179,47 @@ def reader(request, submission):
             "body": mark_safe(body),
             "contents": contents,
             "discussion_config": config,
+            "chapters": [
+                {
+                    **p,
+                    "url": reader_url + "?" + urlencode({"chapter": p["id"]}),
+                    "selected": p["id"] == selected,
+                }
+                for p in chapters
+            ]
+            if submission.chapters
+            else [],
+            "chapter": page,
+            "chapter_number": index + 1,
+            "chapter_has_title": bool(
+                refs.tokens[selected]
+                and refs.tokens[selected][0].type == "heading_open"
+                and refs.tokens[selected][0].tag == "h1"
+            ),
+            "previous_chapter": reader_url + "?" + urlencode({"chapter": chapters[index - 1]["id"]})
+            if index
+            else "",
+            "next_chapter": reader_url + "?" + urlencode({"chapter": chapters[index + 1]["id"]})
+            if index + 1 < len(chapters)
+            else "",
+            "reading_config": {
+                "paper": str(submission.paper_id),
+                "submission": str(submission.pk),
+                "chapter": selected,
+                "explicit": bool(request.GET.get("chapter") or request.GET.get("discussion")),
+                "progress_url": reverse("reading_progress", args=[submission.paper_id])
+                if request.user.is_authenticated
+                else "",
+                "user": request.user.pk if request.user.is_authenticated else "visitor",
+                "chapters": [
+                    {
+                        "id": p["id"],
+                        "hash": digest(p["markdown"]),
+                        "url": reader_url + "?" + urlencode({"chapter": p["id"]}),
+                    }
+                    for p in chapters
+                ],
+            },
         },
     )
     response["Cache-Control"] = "private, no-store"
@@ -153,6 +228,21 @@ def reader(request, submission):
 
 def download(request, submission_id):
     submission = get_object_or_404(submission_queryset(), pk=submission_id)
+    if submission.chapters or submission.bibliography:
+        from .documents import archive
+
+        info = {k: getattr(submission, k) for k in METADATA_FIELDS}
+        info["license"] = submission.licensing["code"]
+        content = archive(
+            submission.chapters,
+            submission.bibliography,
+            submission.markdown,
+            info,
+            {"manifest": submission.manifest(), "hash": submission.hash},
+        )
+        response = HttpResponse(content, content_type="application/zip")
+        response["Content-Disposition"] = f'attachment; filename="{submission.short_hash}.zip"'
+        return response
     response = HttpResponse(
         submission.markdown.encode("utf-8"), content_type="text/markdown; charset=utf-8"
     )
@@ -305,6 +395,17 @@ def confirm_upload(request, paper):
 def submission_detail(request, submission_id):
     submission = get_object_or_404(submission_queryset(), pk=submission_id)
     base = submission.base
+    from .documents import chapter_diff
+
+    changes = (
+        chapter_diff(base, submission)
+        if submission.chapters or submission.bibliography or (base and base.chapters)
+        else []
+    )
+    selected_change = next(
+        (c for c in changes if c["id"] == request.GET.get("chapter")),
+        changes[0] if changes else None,
+    )
     commit = (
         PullRequestCommit.objects.filter(submission=submission)
         .select_related("request__head")
@@ -322,7 +423,11 @@ def submission_detail(request, submission_id):
         {
             "submission": submission,
             "paper": submission.paper,
-            "diff": diff_lines(base.markdown if base else "", submission.markdown),
+            "diff": selected_change["diff"]
+            if selected_change
+            else diff_lines(base.markdown if base else "", submission.markdown),
+            "chapter_changes": changes,
+            "selected_change": selected_change,
             "metadata_changes": metadata_diff(
                 base, {key: getattr(submission, key) for key in METADATA_FIELDS}
             ),

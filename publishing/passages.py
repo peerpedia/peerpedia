@@ -14,6 +14,10 @@ def inline_text(token):
             if c.type in {"softbreak", "hardbreak"}
             else "$" + c.content + "$"
             if c.type.startswith("math_inline")
+            else "[@" + c.content + "]"
+            if c.type == "citation"
+            else "@" + c.content
+            if c.type == "cross_reference"
             else c.content
             if c.type in {"text", "code_inline"}
             else ""
@@ -22,7 +26,7 @@ def inline_text(token):
     )
 
 
-def annotate(md, tokens, decorate=False):
+def annotate(md, tokens, decorate=False, offset=0):
     headings = {h["index"]: h for h in heading_tokens(tokens)}
     result, path, ordinals = [], [], {}
     table_end = -1
@@ -57,7 +61,7 @@ def annotate(md, tokens, decorate=False):
         ordinal = ordinals.get(key, 0)
         ordinals[key] = ordinal + 1
         block = {
-            "id": f"b{len(result)}",
+            "id": f"b{offset + len(result)}",
             "kind": kind,
             "text": value,
             "path": section_path,
@@ -72,7 +76,7 @@ def annotate(md, tokens, decorate=False):
         # Avoid a second layout-only newline after <br>, so DOM and quote offsets agree.
         md.renderer.rules["hardbreak"] = lambda *args: "<br>"
         # Atomic rendered blocks keep a stable canonical TeX/code representation.
-        for name in ("math_block", "math_block_eqno", "fence", "code_block"):
+        for name in ("math_block", "math_block_eqno", "math_block_label", "fence", "code_block"):
             original = md.renderer.rules.get(name)
             if not original:
                 continue
@@ -116,6 +120,17 @@ def annotate(md, tokens, decorate=False):
 
 
 def blocks(source):
+    if not isinstance(source, str):
+        if source.chapters:
+            result = []
+            for page in source.chapters:
+                md = parser()
+                items = annotate(md, md.parse(page["markdown"]), offset=len(result))
+                for item in items:
+                    item["chapter"] = page["id"]
+                result.extend(items)
+            return result
+        source = source.markdown
     md = parser()
     return annotate(md, md.parse(source))
 

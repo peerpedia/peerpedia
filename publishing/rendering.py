@@ -11,6 +11,9 @@ def parser(saved_diagrams=None):
         .enable("table")
         .enable("strikethrough")
     )
+    from .references import install
+
+    install(md)
     md.use(dollarmath_plugin)
     md.use(texmath_plugin, delimiters="brackets")
 
@@ -66,6 +69,7 @@ def parser(saved_diagrams=None):
     md.add_render_rule("math_inline", inline_math)
     md.add_render_rule("math_block", block_math)
     md.add_render_rule("math_block_eqno", block_math)
+    md.add_render_rule("math_block_label", block_math)
     # Images are excluded even when an old/imported document contains one.
     md.renderer.rules["image"] = lambda *args: ""
     return md
@@ -89,7 +93,15 @@ def heading_tokens(tokens):
             for child in inline.children or []
             if child.type not in {"image", "html_inline"}
         ).strip()
+        from .references import label_text
+
+        label, explicit = label_text(label)
+        if explicit and inline.children and inline.children[-1].type == "text":
+            inline.children[-1].content = label_text(inline.children[-1].content)[0]
+            token.meta["explicit_label"] = explicit
+        explicit = explicit or token.meta.get("explicit_label", "")
         stem = "section-" + (slugify(label, allow_unicode=True)[:80] or "heading")
+        stem = explicit or stem
         anchor, suffix = stem, 2
         while anchor in used_ids:
             anchor = f"{stem}-{suffix}"
@@ -113,7 +125,15 @@ def heading_tokens(tokens):
 
 
 def render_reader(
-    source, source_lines=False, edit_url=None, passage_annotations=False, saved_diagrams=None
+    source,
+    source_lines=False,
+    edit_url=None,
+    passage_annotations=False,
+    saved_diagrams=None,
+    references=None,
+    chapter="main",
+    passage_offset=0,
+    reference_line_offset=0,
 ):
     """Render safe Markdown with the same section boundaries used by the editor."""
     md = parser(saved_diagrams)
@@ -121,32 +141,59 @@ def render_reader(
     if passage_annotations:
         from .passages import annotate
 
-        annotate(md, tokens, decorate=True)
+        annotate(md, tokens, decorate=True, offset=passage_offset)
     headings = heading_tokens(tokens)
+    used = references.decorate(md, tokens, chapter, reference_line_offset) if references else {}
     contents = []
     for item in headings:
+        target = item["token"].meta.get("reference_target")
+        scope = item["id"]
+        if target:
+            item["id"] = target["id"]
+            if not item["title"] and references.number_sections:
+                item["label"] = target["number"] + " " + item["label"]
+                from markdown_it.token import Token
+
+                text = Token("html_inline", "", 0)
+                text.content = (
+                    '<span class="section-number">' + escape(target["number"]) + " </span>"
+                )
+                tokens[item["index"] + 1].children.insert(0, text)
+        if target and not item["title"]:
+            from .references import copy_button
+            from markdown_it.token import Token
+
+            button = Token("html_inline", "", 0)
+            button.content = copy_button(target)
+            tokens[item["index"] + 1].children.append(button)
         if source_lines:
             item["token"].attrSet("data-source-line", str(item["line"]))
         if item["label"] and not item["title"]:
             contents.append({k: item[k] for k in ("id", "label", "level", "line")})
         if edit_url and not item["title"] and item["token"].level == 0:
             from urllib.parse import urlencode
+            from .ui import icon
             from markdown_it.token import Token
 
             link = Token("html_inline", "", 0)
             link.content = (
-                '<a class="section-edit" aria-label="Edit section '
+                '<a class="section-edit ui-icon-button" aria-label="Edit section '
                 + escape(item["label"], quote=True)
                 + '" href="'
-                + escape(edit_url + "&" + urlencode({"scope": item["id"]}), quote=True)
-                + '">Edit</a>'
+                + escape(edit_url + "&" + urlencode({"scope": scope}), quote=True)
+                + '" title="Edit section">'
+                + icon("edit")
+                + "</a>"
             )
             tokens[item["index"] + 1].children.append(link)
     if contents:
         base_level = min(item["level"] for item in contents)
         for item in contents:
             item["depth"] = min(item["level"] - base_level, 3)
-    return md.renderer.render(tokens, md.options, {}), contents
+    body = md.renderer.render(tokens, md.options, {})
+    if references:
+        body += references.reference_list(used)
+    return body, contents
 
 
 def has_images(source):

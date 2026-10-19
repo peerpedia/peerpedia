@@ -1,9 +1,11 @@
 from django.urls import path
 from django.views.generic import TemplateView
 from . import views, drafts, discussions, notifications
-from . import licensing, diagrams
+from . import licensing, diagrams, reading
 
 urlpatterns = [
+    path("references/search/", reading.reference_search, name="reference_search"),
+    path("papers/<uuid:paper_id>/progress/", reading.progress, name="reading_progress"),
     path("diagrams/<str:key>/status/", diagrams.status, name="diagram_status"),
     path("diagrams/<str:key>.svg", diagrams.svg, name="diagram_svg"),
     path("diagram-worker.js", diagrams.worker, name="diagram_worker"),
@@ -55,6 +57,7 @@ urlpatterns = [
     path("drafts/", drafts.listing, name="drafts"),
     path("drafts/<uuid:draft_id>/", drafts.editor, name="editor"),
     path("drafts/<uuid:draft_id>/save/", drafts.save, name="draft_save"),
+    path("drafts/<uuid:draft_id>/export/", drafts.export, name="draft_export"),
     path("drafts/<uuid:draft_id>/preview/", drafts.preview, name="draft_preview"),
     path("drafts/<uuid:draft_id>/rebase/", drafts.rebase, name="draft_rebase"),
     path("drafts/<uuid:draft_id>/review/", drafts.review, name="draft_review"),

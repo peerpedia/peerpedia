@@ -121,6 +121,8 @@ def snapshot(submission):
         "hash": submission.hash,
         "manifest": submission.manifest(),
         "markdown": submission.markdown,
+        "chapters": submission.chapters,
+        "bibliography": submission.bibliography,
         "status": submission.status,
         "url": reverse("submission", args=[submission.pk]),
         "licensing": submission.licensing,
@@ -267,6 +269,8 @@ def push(request):
         "discussion_ids",
         "ai_assisted",
         "license",
+        "chapters",
+        "bibliography",
     }
     if (
         not isinstance(payload, dict)
@@ -409,6 +413,9 @@ def push(request):
             details=form.errors.get_json_data(),
         )
     data = form.submission_data()
+    for field in ("chapters", "bibliography"):
+        if field in payload:
+            data[field] = payload[field]
     if "license" in payload:
         data["license"] = payload["license"]
     record = (
