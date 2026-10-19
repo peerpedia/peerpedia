@@ -50,7 +50,11 @@ def main():
     plist.parent.mkdir(parents=True, exist_ok=True)
     job = {
         "Label": label,
-        "ProgramArguments": [sys._base_executable, str(folder / "backup_to_mac.py"), str(config)],
+        "ProgramArguments": [
+            shutil.which("python3") or sys._base_executable,
+            str(folder / "backup_to_mac.py"),
+            str(config),
+        ],
         "StartInterval": 21600,
         "RunAtLoad": True,
         "ProcessType": "Background",

@@ -16,6 +16,9 @@ import tempfile
 REPOSITORY = "peerpedia/peerpedia"
 REQUIRED_JOBS = {"test", "browser", "quality"}
 ROOT = Path(__file__).resolve().parent.parent
+BACKUP_PATH_FILTER = (
+    r"sed -n 's/^Backup written to \([^ ]*\.dump\).*$/\1/p; t; /^backups\/.*\.dump$/p'"
+)
 
 
 def run(*args):
@@ -90,7 +93,7 @@ cd /opt/peerpedia
 exec 9>/tmp/peerpedia-release.lock
 flock -n 9
 printf '%s  %s\n' {shlex.quote(digest)} {shlex.quote(destination)} | sha256sum -c -
-backup=$(sudo sh scripts/backup.sh | sed -n 's/^Backup written to \([^ ]*\.dump\).*$/\1/p; /^backups\/.*\.dump$/p')
+backup=$(sudo sh scripts/backup.sh | {BACKUP_PATH_FILTER})
 test -n "$backup"
 sudo sh scripts/restore-check.sh "$backup"
 sudo docker image tag peerpedia-web:local peerpedia-web:before-{args.sha[:12]}
