@@ -1,10 +1,26 @@
 import unittest
-from deploy import verified_release
+import subprocess
+from deploy import verified_release, BACKUP_PATH_FILTER
 
 SHA = "a" * 40
 
 
 class ReleaseGateTests(unittest.TestCase):
+    def test_old_and_new_backup_output_produce_one_path(self):
+        path = "backups/peerpedia-20261019T041302Z.dump"
+        for output in [
+            path + "\n",
+            f"Backup written to {path}. Copy it to storage outside this server.\n",
+        ]:
+            result = subprocess.run(
+                ["sh", "-c", BACKUP_PATH_FILTER],
+                input=output,
+                text=True,
+                capture_output=True,
+                check=True,
+            )
+            self.assertEqual(result.stdout, path + "\n")
+
     def reader(self, status="success", jobs=None, head=SHA):
         def read(path):
             if path == "branches/main":
