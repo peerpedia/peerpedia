@@ -194,8 +194,16 @@ class BrowserJourneys(StaticLiveServerTestCase):
         paper = self.fixture_paper()
         self.login("contributor")
         self.page.goto(f"{self.live_server_url}/papers/{paper.pk}/")
+        for score in range(1, 6):
+            self.page.locator('.paper-star').nth(score - 1).hover()
+            for index in range(5):
+                expect(self.page.locator('.paper-star svg').nth(index)).to_have_css(
+                    'fill', re.compile(r'^rgb\(') if index < score else 'rgba(0, 0, 0, 0)')
         self.page.locator('label.paper-star[title="5 stars"]').click()
         expect(self.page.get_by_label("5 stars", exact=True)).to_be_checked()
+        self.page.get_by_label("Your review:", exact=True).hover()
+        for star in self.page.locator('.paper-star svg').all():
+            expect(star).to_have_css('fill', re.compile(r'^rgb\('))
         self.page.get_by_role("button", name="Publish review").click()
         self.assertFalse(self.page.get_by_label("Your review:", exact=True).evaluate("element => element.validity.valid"))
         self.assertEqual(self.database_call(Review.objects.count), 0)

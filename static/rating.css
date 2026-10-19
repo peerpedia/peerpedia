@@ -8,7 +8,7 @@
   .paper-star:has(input:focus-visible) { outline:2px solid var(--accent); outline-offset:2px; }
   @media(hover:hover) {
     .paper-stars:has(.paper-star:hover) .paper-star svg { fill:transparent; stroke:#a7afa1; }
-    .paper-stars .paper-star:hover svg,.paper-stars .paper-star:has(~ .paper-star:hover) svg { fill:#b69a48; stroke:#b69a48; }
+    .paper-stars .paper-star:is(:hover,:has(~ .paper-star:hover)) svg { fill:#b69a48; stroke:#b69a48; }
   }
 
 #id_score.paper-stars label:has(input:checked){background:transparent;border:0}
