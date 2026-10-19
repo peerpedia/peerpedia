@@ -13,4 +13,5 @@ def project_info(request):
         "developer_name": settings.DEVELOPER_NAME,
         "developer_url": settings.DEVELOPER_URL,
         "site_url": settings.SITE_URL,
+        "google_login_enabled": settings.GOOGLE_LOGIN_ENABLED,
     }

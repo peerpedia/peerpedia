@@ -1,11 +1,26 @@
 from django.contrib.auth import views as auth
 from django.urls import path
-from . import views
+from . import views, social
+from django.views.generic import RedirectView, TemplateView
 from .security import limited
 from . import tokens
 from .mfa import security
 
 urlpatterns = [
+    path("google/login/", social.google_login, name="google_login"),
+    path("google/login/callback/", social.google_callback, name="google_callback"),
+    path("google/signup/", social.google_signup, name="socialaccount_signup"),
+    path("connections/", social.connections, name="socialaccount_connections"),
+    path(
+        "google/cancelled/",
+        TemplateView.as_view(template_name="socialaccount/login_cancelled.html"),
+        name="socialaccount_login_cancelled",
+    ),
+    path(
+        "sign-in/",
+        RedirectView.as_view(pattern_name="login", query_string=True),
+        name="account_login",
+    ),
     path("security/", security, name="staff_mfa"),
     path("tokens/", tokens.token_settings, name="access_tokens"),
     path("tokens/<int:token_id>/revoke/", tokens.revoke_token, name="revoke_token"),

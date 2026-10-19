@@ -9,7 +9,7 @@ from django.core.mail import send_mail
 from django.shortcuts import redirect, render
 from django.urls import reverse
 from django.views.decorators.http import require_POST
-from .forms import LoginForm, SignupForm
+from .forms import LoginForm, SignupForm, PeerPasswordResetForm
 from .models import User
 from .security import limited
 
@@ -53,6 +53,7 @@ class PeerLoginView(LoginView):
 
 
 class PeerPasswordResetView(PasswordResetView):
+    form_class = PeerPasswordResetForm
     template_name = "accounts/password_reset.html"
     email_template_name = "accounts/reset_email.txt"
     subject_template_name = "accounts/reset_subject.txt"

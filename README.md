@@ -59,7 +59,38 @@ To create your administrator account:
 
 Sign in at `/admin/`. In development, you can mark your own account's email as verified there. For the online pilot, use the actual email-verification flow. Administrator status alone does not grant permission to accept other researchers' submissions.
 
-The normal UI has no personal profile pages. The Password navigation link changes the current account's password. Access tokens manages credentials for local tools.
+The normal UI has no personal profile pages. The Account navigation link manages password changes and Google connections. Access tokens manages credentials for local tools.
+
+### Google sign-in (optional)
+
+Use a Google Auth Platform **Web application** OAuth client. Set the exact authorized
+redirect URI to `https://YOUR_DOMAIN/accounts/google/login/callback/`. JavaScript
+origins are not needed for this server-side flow. Configure the public homepage and
+`/privacy/` page in Google branding, request only `openid email profile`, and use an
+External audience. Switch from Testing to Production when ready for public sign-in.
+Keep the client JSON outside the checkout. Set `GOOGLE_CLIENT_ID` and
+`GOOGLE_CLIENT_SECRET` in the server's private `.env`, then recreate the web service.
+Both values are required to display the button. No paid Google hosting or Identity
+Platform subscription is required for this integration.
+
+New users choose a public username once and their Google-verified email remains
+private. Existing users sign in with their password, open **Account**, and confirm
+their password to connect the Google account with the same email. Linking expires
+after ten minutes. An email match never automatically grants access to an existing
+account. Future sign-ins use Google's stable subject ID, not the email string.
+
+Google-only users can **Add a password by email** from Account, using the existing
+rate-limited password recovery flow. They must open the emailed link before setting
+a password. A password is required for CLI token creation, disconnection, and staff
+MFA enrollment. Add a password before granting a Google-only user staff status.
+Staff Google logins still require Peerpedia's authenticator/recovery code.
+
+Only our explicit Google entry/callback/signup/account routes are mounted; allauth's
+parallel password, email editing, and token-login endpoints are not exposed. OAuth
+starts require a CSRF-protected POST, use state and PKCE, and do not retain Google
+access/refresh tokens. Tests replace only Google's token exchange; no real Google
+credentials are needed in CI. Local testing should use a separate development OAuth
+client and an exact localhost callback, not the production secret.
 
 ## Local editing and command-line pushes
 
