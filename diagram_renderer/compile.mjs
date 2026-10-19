@@ -2,6 +2,7 @@
 // pinned WASM engine; it is not relied on as a sandbox for arbitrary JavaScript.
 import { readFile } from "node:fs/promises";
 import vm from "node:vm";
+import { gunzipSync } from "node:zlib";
 import { parentPort, workerData } from "node:worker_threads";
 
 const base = new URL("../static/vendor/tikzjax/", import.meta.url);
@@ -10,6 +11,11 @@ const diagnostic = (...parts) => {
   log = (log + parts.join(" ") + "\n").slice(-8000);
 };
 const scope = {
+  loadDiagramCore: async () => {
+    const compressed = await readFile(new URL("core.bin", base));
+    const core = gunzipSync(compressed, { maxOutputLength: 163840000 });
+    return new Uint8Array(core.buffer, core.byteOffset, core.byteLength);
+  },
   fetch: async (name) => {
     if (!["tex.wasm", "core.bin"].includes(name))
       throw new Error("Unexpected compiler asset request");

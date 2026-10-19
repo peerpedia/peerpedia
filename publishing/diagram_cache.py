@@ -10,7 +10,7 @@ from pathlib import Path
 from django.conf import settings
 
 # Bump when engine/core, fonts or sanitization changes. Never mutate old artifacts.
-VERSION = "tikzjax-b565ab0b-20261019-saved-svg-v1"
+VERSION = "tikzjax-b565ab0b-20261019-saved-svg-v2"
 MAX_SOURCE = 32768
 MAX_DIAGRAMS = 32
 SVG = "http://www.w3.org/2000/svg"

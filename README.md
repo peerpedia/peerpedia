@@ -733,9 +733,11 @@ figures are polled near the viewport, and failures retain their original source.
 transactions and leases. It calls the credential-free `diagrams` container over a
 separate internal network. The renderer has no database network, credentials,
 host mounts, writable filesystem, or external network. It runs as a non-root user
-with dropped capabilities, 768 MiB memory, 0.75 CPU, and a fifteen-second deadline
+with dropped capabilities, 768 MiB memory, 0.75 CPU, and a thirty-second deadline
 per disposable Node worker. Only the pinned engine receives source; TeX sees its
-virtual filesystem. An allowlisted fetch shim can load only its two local binary
+virtual filesystem. The server uses bounded native gzip inflation for the trusted
+compiler memory image, while browser previews retain their JavaScript inflater.
+An allowlisted fetch shim can load only its two local binary
 assets. Node's VM adapts browser APIs; Docker provides the isolation boundary.
 
 Output is bounded and validated again in Python. The SVG allowlist excludes

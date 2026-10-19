@@ -52,9 +52,9 @@ def status(request, key):
     item = visible_artifact(key)
     response = JsonResponse(
         {
-            "status": item.status,
+            "status": "error" if item.status == "obsolete" else item.status,
             "url": reverse("diagram_svg", args=[key]) if item.status == "ready" else None,
-            "error": item.error if item.status == "error" else "",
+            "error": item.error if item.status in {"error", "obsolete"} else "",
         }
     )
     response["Cache-Control"] = "no-store"

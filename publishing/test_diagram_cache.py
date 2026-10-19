@@ -160,6 +160,14 @@ class DiagramCacheTests(TestCase):
         self.assertEqual(DiagramArtifact.objects.get().status, "error")
         self.assertFalse(process_one())
 
+    @patch("publishing.management.commands.process_diagrams.open_renderer")
+    def test_old_queued_artifact_cannot_receive_new_compiler_output(self, mocked):
+        with patch("publishing.diagram_cache.VERSION", "old-engine"):
+            self.publish()
+        self.assertTrue(process_one())
+        self.assertEqual(DiagramArtifact.objects.get().status, "obsolete")
+        mocked.assert_not_called()
+
     def test_source_and_per_submission_limits_do_not_queue_unbounded_work(self):
         self.publish("```tikz\n" + "a" * 33000 + "\n```")
         self.assertEqual(DiagramArtifact.objects.get().status, "error")
