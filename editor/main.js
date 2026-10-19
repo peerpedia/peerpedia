@@ -444,6 +444,7 @@ async function updatePreview() {
         if (generation !== previewGeneration) return;
         window.MathJax?.typesetClear?.([preview]);
         preview.innerHTML = result.html;
+        window.PeerpediaDiagrams?.render(preview);
         preview.querySelectorAll(".math.inline,.math.block").forEach((node) => {
           const block = node.classList.contains("block");
           node.textContent =

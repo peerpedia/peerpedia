@@ -1,9 +1,10 @@
 from django.urls import path
 from django.views.generic import TemplateView
 from . import views, drafts, discussions, notifications
-from . import licensing
+from . import licensing, diagrams
 
 urlpatterns = [
+    path("diagram-worker.js", diagrams.worker, name="diagram_worker"),
     path("terms/", licensing.terms, name="terms"),
     path("terms/<str:version>/", licensing.terms, name="terms_version"),
     path("licenses/", licensing.licenses, name="licenses"),

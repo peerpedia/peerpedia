@@ -21,6 +21,22 @@ def parser():
     def block_math(self, tokens, idx, options, env):
         return '<div class="math block">' + escape(tokens[idx].content) + "</div>\n"
 
+    original_fence = md.renderer.rules["fence"]
+
+    def diagram_fence(tokens, idx, options, env):
+        token = tokens[idx]
+        if token.info.strip() not in {"tikzcd", "tikzpicture", "tikz"}:
+            return original_fence(tokens, idx, options, env)
+        return (
+            '<figure class="tex-diagram" data-diagram>'
+            '<div class="diagram-output" role="img" aria-label="TeX diagram"></div>'
+            '<p class="diagram-status" role="status">Diagram waiting to compile.</p>'
+            '<details class="diagram-source"><summary>Diagram source</summary><pre><code>'
+            + escape(token.content)
+            + "</code></pre></details></figure>\n"
+        )
+
+    md.renderer.rules["fence"] = diagram_fence
     md.add_render_rule("math_inline", inline_math)
     md.add_render_rule("math_block", block_math)
     md.add_render_rule("math_block_eqno", block_math)

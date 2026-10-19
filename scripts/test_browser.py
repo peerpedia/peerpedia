@@ -48,6 +48,8 @@ def main():
     app_python = os.path.abspath(args.python)
     if not (root / "static/vendor/mathjax/tex-svg.js").is_file():
         raise SystemExit("First run: python scripts/fetch_mathjax.py")
+    if not (root / "static/vendor/tikzjax/peerpedia-engine.js").is_file():
+        raise SystemExit("First run: python scripts/fetch_diagrams.py")
     with tempfile.TemporaryDirectory(prefix="peerpedia-browser-") as folder:
         scratch = Path(folder)
         with database_url(scratch) as uri:

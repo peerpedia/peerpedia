@@ -23,5 +23,10 @@ class SecurityHeadersMiddleware:
                 "img-src 'self'; font-src 'self'; connect-src 'self'; "
                 f"object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action {form_action}"
             )
+        if request.path == reverse("diagram_worker"):
+            response["Content-Security-Policy"] = (
+                "default-src 'none'; script-src 'self' 'wasm-unsafe-eval'; "
+                "connect-src 'self'; object-src 'none'"
+            )
         response["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
         return response

@@ -5,16 +5,18 @@ document.querySelectorAll(".math.inline, .math.block").forEach(function (node) {
     (block ? "\\[" : "\\(") + node.textContent + (block ? "\\]" : "\\)");
 });
 window.MathJax = {
+  loader: { load: [document.querySelector("[data-amscd]").dataset.amscd] },
   tex: {
     inlineMath: [["\\(", "\\)"]],
     displayMath: [["\\[", "\\]"]],
-    packages: { "[-]": ["autoload", "require", "html"] },
+    packages: { "[+]": ["amscd"], "[-]": ["autoload", "require", "html"] },
     maxMacros: 1000,
     maxBuffer: 20000,
   },
   svg: { fontCache: "local" },
   options: {
     enableMenu: false,
+    ignoreHtmlClass: "cm-editor|tex-diagram",
     skipHtmlTags: ["script", "noscript", "style", "textarea", "pre", "code"],
   },
 };

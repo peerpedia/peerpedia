@@ -1,6 +1,6 @@
 {% extends 'base.html' %}{% load static %}
 {% block title %}Review your upload · Peerpedia{% endblock %}
-{% block head %}<link rel="stylesheet" href="{% static 'reader.css' %}"><script defer src="{% static 'math.js' %}"></script><script defer src="{% static 'vendor/mathjax/tex-svg.js' %}"></script>{% endblock %}
+{% block head %}<link rel="stylesheet" href="{% static 'reader.css' %}">{% include "includes/math.html" %}{% endblock %}
 {% block content %}
 <div class="eyebrow"><span class="muted">01 UPLOAD / </span>02 PREVIEW <span class="muted">/ 03 PUBLISH</span></div>
 <h1>Review your upload</h1><p class="lede">Nothing has been published yet. This preview expires after one hour.</p>

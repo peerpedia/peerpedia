@@ -77,6 +77,7 @@ jobs:
       - run: npm ci --ignore-scripts --prefix editor
       - run: npm run build --prefix editor
       - run: python scripts/fetch_mathjax.py
+      - run: python scripts/fetch_diagrams.py
       - run: python manage.py collectstatic --noinput
       - run: python manage.py makemigrations --check --dry-run
       - run: python manage.py test --noinput
@@ -115,6 +116,7 @@ jobs:
       - run: npm ci --ignore-scripts --prefix editor
       - run: npm run build --prefix editor
       - run: python scripts/fetch_mathjax.py
+      - run: python scripts/fetch_diagrams.py
       - run: python scripts/test_browser.py
       - uses: actions/upload-artifact@v4
         if: failure()
