@@ -38,9 +38,10 @@
       input.select();
       try {
         await navigator.clipboard.writeText(input.value);
-        button.textContent = "Copied";
+        button.querySelector("[data-copy-label]").textContent = "Copied";
       } catch (_) {
-        button.textContent = "Select and copy";
+        button.querySelector("[data-copy-label]").textContent =
+          "Select and copy";
       }
     });
   });

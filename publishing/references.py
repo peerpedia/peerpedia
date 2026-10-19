@@ -396,6 +396,6 @@ def copy_button(target):
         + '" aria-label="Copy reference to '
         + escape(target["text"], quote=True)
         + '" title="Copy reference">'
-        + icon("link")
+        + icon("copy")
         + "</button>"
     )
