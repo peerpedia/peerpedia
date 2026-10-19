@@ -14,7 +14,7 @@ from django.utils.http import url_has_allowed_host_and_scheme
 from django.views.decorators.cache import never_cache
 from django.views.decorators.debug import sensitive_post_parameters
 from django.views.decorators.http import require_http_methods
-from django_otp import login as otp_login
+from django_otp import DEVICE_ID_SESSION_KEY, login as otp_login
 from django_otp.plugins.otp_static.models import StaticDevice, StaticToken
 from django_otp.plugins.otp_totp.models import TOTPDevice
 import segno
@@ -28,6 +28,12 @@ class StaffMFAMiddleware:
 
     def __call__(self, request):
         user = request.user
+        if user.is_authenticated and user.is_staff and user.is_verified():
+            verified_at = request.session.get("staff_mfa_verified_at", 0)
+            if time.time() - verified_at >= 12 * 3600:
+                request.session.pop(DEVICE_ID_SESSION_KEY, None)
+                request.session.pop("staff_mfa_verified_at", None)
+                user.otp_device = None
         exempt = {reverse("staff_mfa"), reverse("logout"), reverse("admin:logout")}
         # Tokens retain their deliberately limited API scopes; they are not browser sessions.
         if (
@@ -68,6 +74,7 @@ def recovery_codes(user):
 def verified_session(request, device):
     request.session.cycle_key()
     otp_login(request, device)
+    request.session["staff_mfa_verified_at"] = time.time()
     request.session.set_expiry(12 * 3600)
 
 

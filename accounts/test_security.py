@@ -161,3 +161,28 @@ class SecurityTests(TestCase):
     def test_mfa_secrets_are_not_exposed_in_admin(self):
         self.assertFalse(admin.site.is_registered(TOTPDevice))
         self.assertFalse(admin.site.is_registered(StaticDevice))
+
+    def test_verification_expires_even_if_the_browser_session_is_extended(self):
+        self.enroll()
+        session = self.client.session
+        session["staff_mfa_verified_at"] = 0
+        session.set_expiry(86400)
+        session.save()
+        response = self.client.get(reverse("admin:index"))
+        self.assertEqual(response.status_code, 302)
+        self.assertTrue(response.url.startswith(self.url))
+        self.assertNotIn("otp_device_id", self.client.session)
+
+    def test_changing_the_password_does_not_remove_second_factor(self):
+        device, _ = self.enroll()
+        self.user.set_password("Replacement-Test-Password-983!")
+        self.user.save()
+        self.client.logout()
+        self.client.post(
+            reverse("login"),
+            {"username": self.user.username, "password": "Replacement-Test-Password-983!"},
+        )
+        response = self.client.get(reverse("admin:index"))
+        self.assertEqual(response.status_code, 302)
+        self.assertTrue(response.url.startswith(self.url))
+        self.assertTrue(TOTPDevice.objects.filter(pk=device.pk, confirmed=True).exists())
