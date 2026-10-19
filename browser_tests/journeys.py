@@ -691,18 +691,28 @@ class BrowserJourneys(StaticLiveServerTestCase):
     def test_google_signin_button_privacy_and_account_settings(self):
         from urllib.parse import parse_qs
 
-        # Observe the real redirect without contacting Google or using real credentials.
-        self.context.route(
-            "https://accounts.google.com/**",
-            lambda route: route.fulfill(
+        # Intercept the first hop: Chromium does not route every hop in a redirected
+        # request. Fetch only our POST, record its Location, and stop before Google.
+        destinations = []
+
+        def capture_google_redirect(route):
+            response = route.fetch(max_redirects=0)
+            self.assertEqual(response.status, 302)
+            destinations.append(response.headers["location"])
+            route.fulfill(
                 status=200, content_type="text/html", body="<h1>Google test destination</h1>"
-            ),
-        )
+            )
+
+        route_url = self.live_server_url + "/accounts/google/login/"
+        self.context.route(route_url, capture_google_redirect)
         self.page.goto(self.live_server_url + "/accounts/login/")
         expect(self.page.get_by_role("button", name="Continue with Google")).to_be_visible()
         self.page.get_by_role("button", name="Continue with Google").click()
         expect(self.page.get_by_role("heading", name="Google test destination")).to_be_visible()
-        query = parse_qs(urlsplit(self.page.url).query)
+        self.context.unroute(route_url, capture_google_redirect)
+        self.assertEqual(len(destinations), 1)
+        self.assertEqual(urlsplit(destinations[0]).hostname, "accounts.google.com")
+        query = parse_qs(urlsplit(destinations[0]).query)
         self.assertEqual(
             query["redirect_uri"], [self.live_server_url + "/accounts/google/login/callback/"]
         )
