@@ -1,6 +1,6 @@
 import re
 from django import forms
-from django.contrib.auth.forms import AuthenticationForm, UserCreationForm
+from django.contrib.auth.forms import AuthenticationForm, UserCreationForm, PasswordResetForm
 from .models import User
 
 
@@ -41,3 +41,18 @@ class LoginForm(AuthenticationForm):
         label="Username or email",
         widget=forms.TextInput(attrs={"autofocus": True, "autocomplete": "username"}),
     )
+
+
+class PeerPasswordResetForm(PasswordResetForm):
+    def get_users(self, email):
+        for user in super().get_users(email):
+            yield user
+        # Google-only users can add a local password by proving email ownership again.
+        for user in User.objects.filter(
+            email__iexact=email,
+            is_active=True,
+            email_verified=True,
+            socialaccount__provider="google",
+        ).distinct():
+            if not user.has_usable_password():
+                yield user

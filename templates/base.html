@@ -20,7 +20,7 @@
         <a class="inbox-link" href="{% url 'inbox' %}" aria-label="Inbox{% if unread_notifications %}, {{ unread_notifications }} unread{% endif %}" title="Inbox"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4"/></svg>{% if unread_notifications %}<span class="inbox-count" aria-hidden="true">{% if unread_notifications > 99 %}99+{% else %}{{ unread_notifications }}{% endif %}</span>{% endif %}<span class="sr-only">Inbox</span></a>
         <a href="{% url 'drafts' %}">My drafts</a><span class="account-name">{{ user.username }}</span>
         {% if user.is_staff %}<a href="{% url 'admin:index' %}">Admin</a><a href="{% url 'staff_mfa' %}" class="quiet-link">Security</a>{% endif %}
-        <a href="{% url 'password_change' %}" class="quiet-link">Password</a>
+        <a href="{% url 'socialaccount_connections' %}" class="quiet-link">Account</a>
         <a href="{% url 'access_tokens' %}" class="quiet-link">Access tokens</a>
         <form action="{% url 'logout' %}" method="post" class="inline-form">{% csrf_token %}<button class="nav-button">Sign out</button></form>
       {% else %}
@@ -35,7 +35,7 @@
   </main>
   <footer class="site-footer">
     <span>Peerpedia · Research, with a history.</span>
-    <div class="footer-links"><a href="{% url 'help' %}">Help</a><a href="{{ repository_url }}">GitHub</a><span>Developed by <a href="{{ developer_url }}">{{ developer_name }}</a></span></div>
+    <div class="footer-links"><a href="{% url 'privacy' %}">Privacy</a><a href="{% url 'help' %}">Help</a><a href="{{ repository_url }}">GitHub</a><span>Developed by <a href="{{ developer_url }}">{{ developer_name }}</a></span></div>
   </footer>
 </body>
 </html>

@@ -140,6 +140,8 @@ peerpedia push -m "Extend the proposed fix" --pr PR_ID --expected-head FULL_HEAD
     </section>
     <section id="account">
       <h2>Manage your account</h2>
+      <p>Choose <strong>Continue with Google</strong> to sign up or sign in using Google. New users choose a public username; the Google-verified email stays private. If you already have a Peerpedia account with that email, sign in with your password first, then open <strong>Account</strong> and connect Google.</p>
+      <p>Google-only users can choose <strong>Add a password by email</strong> in Account. Open the emailed link to set a Peerpedia password before creating CLI access tokens. You can disconnect Google after adding a password. Administrator accounts still require the Peerpedia authenticator code.</p>
       <p>Sign in with your username or email address. You must verify your email before publishing, proposing changes, reviewing, or commenting.</p>
       <p>If a verification email is missing, check your spam folder and use <a href="{% url 'verification_needed' %}">Verify email</a> to request another. Verification links expire after 24 hours.</p>
       <p>Use <a href="{% url 'password_reset' %}">Forgot password?</a> to receive a recovery link, or <a href="{% url 'password_change' %}">Password</a> to change your password while signed in. Manage or revoke tool credentials under <a href="{% url 'access_tokens' %}">Access tokens</a>.</p>

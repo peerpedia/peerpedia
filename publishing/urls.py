@@ -3,6 +3,7 @@ from django.views.generic import TemplateView
 from . import views, drafts, discussions, notifications
 
 urlpatterns = [
+    path("privacy/", TemplateView.as_view(template_name="privacy.html"), name="privacy"),
     path("inbox/", notifications.inbox, name="inbox"),
     path("inbox/read/", notifications.mark_read, name="inbox_read"),
     path("inbox/<int:notification_id>/open/", notifications.open_notification, name="inbox_open"),

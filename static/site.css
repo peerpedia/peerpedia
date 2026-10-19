@@ -223,3 +223,13 @@
 .security-panel code { overflow-wrap: anywhere; }
 .security-panel details { margin-bottom: 1.5rem; }
 .security-panel .button + .button { margin-top: .75rem; }
+
+/* A conventional, local Google button: no third-party script or font requests. */
+.google-signin { width:100%; display:flex; align-items:center; justify-content:center; gap:12px; min-height:44px; padding:10px 16px; background:#fff; color:#1f1f1f; border:1px solid #747775; border-radius:4px; font:500 14px Arial,sans-serif; cursor:pointer; }
+.google-signin:hover { background:#f5f7fa; }
+.google-signin:focus-visible { outline:3px solid #4285f4; outline-offset:3px; }
+.google-signin svg { flex:none; }
+.auth-divider { display:flex; gap:12px; align-items:center; margin:24px 0; color:var(--muted); font-size:13px; }
+.auth-divider::before,.auth-divider::after { content:""; flex:1; height:1px; background:var(--line); }
+.help-page { max-width:800px; margin:36px auto 80px; }
+.help-page h2 { margin-top:32px; }

@@ -673,3 +673,64 @@ class BrowserJourneys(StaticLiveServerTestCase):
         self.page.get_by_label("Subject", exact=True).select_option("math.PR")
         self.page.get_by_role("button", name="Apply", exact=True).click()
         expect(self.page.get_by_role("heading", name="No papers found")).to_be_visible()
+
+    @override_settings(
+        GOOGLE_LOGIN_ENABLED=True,
+        SOCIALACCOUNT_PROVIDERS={
+            "google": {
+                "APP": {
+                    "client_id": "browser-test-client",
+                    "secret": "browser-test-secret",
+                    "key": "",
+                },
+                "SCOPE": ["openid", "email", "profile"],
+                "OAUTH_PKCE_ENABLED": True,
+            }
+        },
+    )
+    def test_google_signin_button_privacy_and_account_settings(self):
+        from urllib.parse import parse_qs
+
+        # Intercept the first hop: Chromium does not route every hop in a redirected
+        # request. Fetch only our POST, record its Location, and stop before Google.
+        destinations = []
+
+        def capture_google_redirect(route):
+            response = route.fetch(max_redirects=0)
+            self.assertEqual(response.status, 302)
+            destinations.append(response.headers["location"])
+            route.fulfill(
+                status=200, content_type="text/html", body="<h1>Google test destination</h1>"
+            )
+
+        route_url = self.live_server_url + "/accounts/google/login/"
+        self.context.route(route_url, capture_google_redirect)
+        self.page.goto(self.live_server_url + "/accounts/login/")
+        expect(self.page.get_by_role("button", name="Continue with Google")).to_be_visible()
+        self.page.get_by_role("button", name="Continue with Google").click()
+        expect(self.page.get_by_role("heading", name="Google test destination")).to_be_visible()
+        self.context.unroute(route_url, capture_google_redirect)
+        self.assertEqual(len(destinations), 1)
+        self.assertEqual(urlsplit(destinations[0]).hostname, "accounts.google.com")
+        query = parse_qs(urlsplit(destinations[0]).query)
+        self.assertEqual(
+            query["redirect_uri"], [self.live_server_url + "/accounts/google/login/callback/"]
+        )
+        self.assertEqual(query["code_challenge_method"], ["S256"])
+        self.assertEqual(set(query["scope"][0].split()), {"openid", "email", "profile"})
+        self.page.goto(
+            self.live_server_url + "/accounts/google/login/callback/?state=wrong&code=invalid"
+        )
+        expect(
+            self.page.get_by_role("heading", name="Sign-in could not be completed")
+        ).to_be_visible()
+        self.login("owner")
+        self.page.get_by_role("link", name="Account", exact=True).click()
+        expect(self.page.get_by_role("heading", name="Sign-in options")).to_be_visible()
+        self.page.get_by_label("Confirm your password").fill("wrong-password")
+        self.page.get_by_role("button", name="Connect Google").click()
+        expect(
+            self.page.get_by_text("Incorrect password. Google was not connected.")
+        ).to_be_visible()
+        self.page.goto(self.live_server_url + "/privacy/")
+        expect(self.page.get_by_role("heading", name="Privacy", exact=True)).to_be_visible()
