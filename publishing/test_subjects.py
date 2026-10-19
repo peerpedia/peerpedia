@@ -232,7 +232,7 @@ class SubjectTests(TestCase):
 class SubjectMigrationTests(TransactionTestCase):
     def test_populated_v1_upgrade_preserves_hash_and_guards(self):
         before = [("publishing", "0003_apipush")]
-        after = [("publishing", "0010_rightsrequest_submission_license_code_and_more")]
+        after = MigrationExecutor(connection).loader.graph.leaf_nodes("publishing")
         executor = MigrationExecutor(connection)
         executor.migrate(before)
         try:
@@ -287,5 +287,8 @@ class SubjectMigrationTests(TransactionTestCase):
         paper = publish(owner, document())
         with self.assertRaises(IrreversibleError):
             MigrationExecutor(connection).migrate([("publishing", "0003_apipush")])
+        MigrationExecutor(connection).migrate(
+            MigrationExecutor(connection).loader.graph.leaf_nodes("publishing")
+        )
         paper.current.refresh_from_db()
         self.assertEqual(paper.current.calculate_hash(), paper.current.hash)

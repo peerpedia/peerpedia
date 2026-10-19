@@ -7,3 +7,28 @@
 .section-scope{padding:10px 22px;background:#edf3ed;color:#355247;font-size:13px;flex-shrink:0}.section-rebase pre{white-space:pre-wrap;overflow-wrap:anywhere;max-height:50vh;overflow:auto;padding:18px;background:#f2f5f0}
 .editor-intro{padding:10px 22px;background:#edf3ed;color:#355247;font-size:13px;line-height:1.6;flex-shrink:0}.editor-intro a{white-space:nowrap}.details-actions{display:flex;justify-content:space-between;gap:12px}.editor-controls #close-details{border-color:#c7d3c6;background:#f3f6f1}.editor-controls .optional-subjects{margin:16px 0}.editor-controls .optional-subjects summary{list-style:revert}.details-panel .help{font-size:12px;line-height:1.5}.cm-placeholder{white-space:pre-wrap;color:#748077}
 @media(max-width:760px){.editor-intro{padding:8px 10px;font-size:12px}.details-panel{top:100px;max-height:calc(100dvh - 120px)}}
+
+.editor-document-layout { display:flex; flex:1; min-height:0; }
+.chapter-workspace { flex:1; min-width:0; display:flex; flex-direction:column; }
+.chapter-panel { width:190px; flex-shrink:0; padding:1rem; border-right:1px solid #d9dfd8; overflow:auto; background:#f8faf6; }
+.chapter-panel h2 { font-size:1rem; }
+.chapter-panel ol { padding:0; list-style:none; }
+.chapter-panel li button { display:block; width:100%; text-align:left; border:0; background:transparent; padding:.6rem; }
+.chapter-panel [aria-current=true] { background:#e4ece1; font-weight:600; }
+.chapter-actions { display:flex; flex-wrap:wrap; gap:.3rem; margin:.5rem 0 1.5rem; }
+.chapter-tools { display:flex; flex-wrap:wrap; gap:1rem; align-items:center; padding:.5rem 1rem; }
+#reference-warnings { color:#87501f; margin:0 1rem; font-size:.85rem; }
+#link-results { max-height:45vh; overflow:auto; margin-top:1rem; }
+#link-results > button { display:block; margin:.5rem 0; text-align:left; }
+#bib-source { font: .85rem monospace; }
+@media(max-width:760px) { .editor-document-layout { flex-direction:column; } .chapter-panel { width:auto; max-height:160px; border-right:0; border-bottom:1px solid #ddd; padding:.5rem; } .chapter-panel ol { display:flex; overflow:auto; } .chapter-panel li { min-width:130px; } .chapter-actions { display:inline-flex; margin:.3rem; } }
+
+.chapter-workspace { min-height:0; overflow:hidden; }
+.chapter-tools { flex-shrink:0; font:13px system-ui; gap:.8rem; }
+.chapter-tools label { display:flex; align-items:center; gap:.5rem; font-weight:400; }
+.chapter-tools select { width:auto; padding:.45rem; font-size:13px; }
+.chapter-panel button,.chapter-tools button,#link-results button { padding:.45rem .65rem; border:1px solid #c7d3c6; border-radius:5px; background:#f4f7f1; color:#315247; font:13px system-ui; cursor:pointer; }
+.chapter-panel button:hover,.chapter-tools button:hover { background:#e5ece0; }
+.chapter-panel .chapter-actions button { padding:.35rem .45rem; font-size:12px; }
+#reference-warnings { max-height:5rem; overflow:auto; flex-shrink:0; }
+@media(max-width:760px) { .chapter-panel { flex-shrink:0; } .chapter-tools { gap:.5rem; padding:.5rem; } .chapter-tools label { margin:0; } .chapter-tools strong { max-width:45%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; } }

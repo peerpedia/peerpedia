@@ -112,7 +112,9 @@
       }
       if (
         n.nodeType !== Node.ELEMENT_NODE ||
-        n.matches(".section-edit,.passage-marker,.passage-block-action")
+        n.matches(
+          ".section-edit,.passage-marker,.passage-block-action,.section-number,.copy-reference",
+        )
       )
         return;
       if (n.hasAttribute("data-passage-math")) {

@@ -6,16 +6,19 @@
   {% include "includes/icons.html" %}
   <link rel="stylesheet" href="{% static 'reader.css' %}">
   <script defer src="{% static 'reader.js' %}"></script>
+  <script defer src="{% static 'reading.js' %}"></script>
   <link rel="stylesheet" href="{% static 'discussions.css' %}">
   <script defer src="{% static 'discussions.js' %}"></script>
   {% include "includes/math.html" %}
 </head>
-<body class="reader{% if contents %} has-contents{% endif %}">
+<body class="reader{% if contents or chapters %} has-contents{% endif %}">
   <a class="reader-skip" href="#paper-text">Skip to paper</a>
   <aside class="reader-sidebar" aria-label="Paper navigation">
     <a class="reader-home" href="{% url 'browse' %}" aria-label="Peerpedia home" title="Peerpedia home"><img src="{% static 'favicon.svg' %}" width="32" height="32" alt=""><span>Peerpedia</span></a>
-    <a class="reader-edit" href="{% url 'edit_paper' submission.paper_id %}" aria-label="{% if submission.pk != submission.paper.current_id %}Edit latest accepted version{% else %}Edit paper{% endif %}" title="{% if submission.pk != submission.paper.current_id %}Edit latest accepted version{% else %}Edit paper{% endif %}"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="m15 4 5 5M4 20l5-1L21 7a2 2 0 0 0-5-5L4 14z"/></svg><span>{% if submission.pk != submission.paper.current_id %}Edit latest{% else %}Edit{% endif %}</span></a>
+    <a class="reader-edit" href="{% url 'edit_paper' submission.paper_id %}?chapter={{ chapter.id }}" aria-label="{% if submission.pk != submission.paper.current_id %}Edit latest accepted version{% else %}Edit paper{% endif %}" title="{% if submission.pk != submission.paper.current_id %}Edit latest accepted version{% else %}Edit paper{% endif %}"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="m15 4 5 5M4 20l5-1L21 7a2 2 0 0 0-5-5L4 14z"/></svg><span>{% if submission.pk != submission.paper.current_id %}Edit latest{% else %}Edit{% endif %}</span></a>
     <button type="button" class="reader-discussions" id="discussions-open" aria-controls="discussion-panel" aria-expanded="false">Discussions <span id="discussion-count"></span></button>
+    <button type="button" id="reading-return" hidden>Back to where you were</button>
+    {% if chapters %}<nav class="chapter-navigation" aria-label="Chapters"><h2>Chapters</h2><ol>{% for page in chapters %}<li><a href="{{ page.url }}" {% if page.selected %}aria-current="page"{% endif %}>{{ forloop.counter }}. {{ page.title }} <small data-chapter-state="{{ page.id }}"></small></a></li>{% endfor %}</ol></nav>{% endif %}
     {% if contents %}
     <details class="reader-contents" open>
       <summary><span>Contents</span><span class="reader-current" aria-hidden="true"></span></summary>
@@ -27,7 +30,7 @@
     </details>
     {% endif %}
   </aside>
-  <main id="paper-text" class="markdown-body" tabindex="-1">{{ body }}{% include 'includes/license.html' %}</main>
+  <main id="paper-text" class="markdown-body" tabindex="-1">{% if chapters %}<div class="chapter-heading"><p>Chapter {{ chapter_number }} of {{ chapters|length }}</p>{% if not chapter_has_title %}<h1>{{ chapter.title }}</h1>{% endif %}</div>{% endif %}{{ body }}{% if chapters %}<nav class="chapter-footer" aria-label="Chapter navigation">{% if previous_chapter %}<a href="{{ previous_chapter }}">← Previous chapter</a>{% endif %}<button type="button" id="chapter-complete">Mark complete and continue</button>{% if next_chapter %}<a href="{{ next_chapter }}" id="next-chapter">Next chapter →</a>{% endif %}<span id="reading-status" role="status"></span></nav>{% endif %}{% include 'includes/license.html' %}</main>
   <button type="button" id="passage-selection" hidden>Comment &amp; rate</button>
   <aside id="discussion-panel" class="discussion-panel" aria-label="Passage discussions" hidden>
     <header class="discussion-header"><div><h2>Discussions</h2><p>{{ submission.short_hash }} · {{ submission.status }}</p></div><button type="button" id="discussions-close" aria-label="Close discussions">✕</button></header>
@@ -35,6 +38,8 @@
     <div id="discussion-body"></div>
   </aside>
   <div hidden>{% csrf_token %}</div>
+  {% include "includes/reference_tools.html" %}
+  {{ reading_config|json_script:"reading-config" }}
   {{ discussion_config|json_script:"discussion-config" }}
 </body>
 </html>

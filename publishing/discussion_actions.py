@@ -55,13 +55,13 @@ def create(user, data, submission_id):
     require_verified(user)
     require_agreement(user)
     submission = visible_submission(submission_id)
-    selected, quote, key = passages.validate(submission.markdown, data.get("spans"))
+    selected, quote, key = passages.validate(submission, data.get("spans"))
     text, score = text_value(data), score_value(data)
     canonical = [{"block": s["id"], "start": s["start"], "end": s["end"]} for s in selected]
     with transaction.atomic():
         # Serialize canonical-anchor creation across users and inherited versions.
         Paper.objects.select_for_update().get(pk=submission.paper_id)
-        available = passages.blocks(submission.markdown)
+        available = passages.blocks(submission)
         anchor = None
         for candidate in anchors_for(submission):
             state, spans = mapping(candidate, submission, available)

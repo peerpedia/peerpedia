@@ -141,7 +141,7 @@ def offset(value=0):
 
 def passage_index(submission_id, start=0):
     submission = visible_submission(submission_id)
-    blocks = passages.blocks(submission.markdown)
+    blocks = passages.blocks(submission)
     query = with_stats(anchors_for(submission))
     rows = list(query[start : start + 101])
     return {

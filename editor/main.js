@@ -1,3 +1,4 @@
+import { chapterWorkspace } from "./chapters.js";
 import { EditorView, placeholder } from "@codemirror/view";
 import { EditorState } from "@codemirror/state";
 import { basicSetup } from "codemirror";
@@ -70,13 +71,29 @@ const view = new EditorView({
   }),
   parent: $("source-editor"),
 });
+function replaceText(text) {
+  changingCopy = true;
+  view.dispatch({
+    changes: { from: 0, to: view.state.doc.length, insert: text },
+  });
+  changingCopy = false;
+}
+const chapters = chapterWorkspace({
+  initial,
+  view,
+  changed,
+  replaceText,
+  preview: updatePreview,
+  warn,
+});
+replaceText(chapters.initialText());
 function data() {
   const fields = new FormData(details),
     result = {};
   if (initial.is_section)
     return {
       data: { ...initial.data, explanation: fields.get("explanation") || "" },
-      markdown: view.state.doc.toString(),
+      ...chapters.payload(),
     };
   for (const key of [
     "title",
@@ -87,7 +104,7 @@ function data() {
   ])
     result[key] = fields.get(key) || "";
   result.secondary_categories = fields.getAll("secondary_categories").sort();
-  return { data: result, markdown: view.state.doc.toString() };
+  return { data: result, ...chapters.payload() };
 }
 function serial(value = data()) {
   return JSON.stringify(value);
@@ -226,7 +243,11 @@ function showConflict(server) {
 function replaceCopy(contents) {
   changingCopy = true;
   view.dispatch({
-    changes: { from: 0, to: view.state.doc.length, insert: contents.markdown },
+    changes: {
+      from: 0,
+      to: view.state.doc.length,
+      insert: chapters.replace(contents),
+    },
   });
   changingCopy = false;
   for (const key of [
@@ -274,7 +295,12 @@ $("use-local").addEventListener("click", async () => {
   )
     return;
   updateState(resolving);
-  saved = serial({ data: resolving.data, markdown: resolving.markdown });
+  saved = serial({
+    data: resolving.data,
+    markdown: resolving.markdown,
+    chapters: resolving.chapters,
+    bibliography: resolving.bibliography,
+  });
   resolving = null;
   $("conflict").hidden = true;
   await save().catch(() => {});
@@ -430,9 +456,10 @@ async function updatePreview() {
     source = view.state.doc.toString();
   $("preview-status").textContent = "Updating preview…";
   try {
+    const previewCopy = chapters.preview();
     const result = await post(initial.preview_url, {
       revision,
-      markdown: source,
+      ...previewCopy,
     });
     if (generation !== previewGeneration) return;
     renderQueue = renderQueue
@@ -444,6 +471,7 @@ async function updatePreview() {
         if (generation !== previewGeneration) return;
         window.MathJax?.typesetClear?.([preview]);
         preview.innerHTML = result.html;
+        chapters.rendered(result, previewCopy);
         window.PeerpediaDiagrams?.render(preview);
         preview.querySelectorAll(".math.inline,.math.block").forEach((node) => {
           const block = node.classList.contains("block");
@@ -483,6 +511,12 @@ function goToLine(line, focus = true) {
   if (focus) view.focus();
 }
 preview.addEventListener("click", (event) => {
+  const link = event.target.closest("a");
+  if (link && link.getAttribute("href")?.startsWith("?chapter=")) {
+    event.preventDefault();
+    chapters.navigate(link.href);
+    return;
+  }
   const heading = event.target.closest("[data-source-line]");
   if (!heading) return;
   goToLine(Number(heading.dataset.sourceLine));
@@ -587,3 +621,25 @@ divider.addEventListener("keydown", (event) => {
   }
 });
 updatePreview();
+
+$("download-all").addEventListener("click", async () => {
+  try {
+    const response = await fetch(initial.export_url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-CSRFToken": csrf },
+      body: JSON.stringify({ revision, ...data() }),
+    });
+    if (!response.ok || response.redirected)
+      throw new Error(
+        "Could not export the draft. Your working copy is still here.",
+      );
+    const url = URL.createObjectURL(await response.blob()),
+      link = document.createElement("a");
+    link.href = url;
+    link.download = "peerpedia-draft.zip";
+    link.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  } catch (error) {
+    warn(error.message);
+  }
+});

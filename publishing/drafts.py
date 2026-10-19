@@ -19,10 +19,10 @@ from accounts.security import verified_required, limited
 from .models import Draft, Paper, PullRequest
 from .forms import UploadForm
 from .licensing import PublicationConsentForm, agreement_required
-from .rendering import render_reader, has_images
+from .rendering import has_images
 from .services import publish, propose
 from .subjects import METADATA_FIELDS
-from . import sections
+from . import sections, documents
 from .comparisons import diff_lines, metadata_diff
 
 
@@ -84,6 +84,8 @@ def state(draft):
         "data": draft.data,
         "is_section": bool(draft.section),
         "markdown": draft.markdown,
+        "chapters": draft.chapters,
+        "bibliography": draft.bibliography,
         "updated_at": draft.updated_at.isoformat(),
         "base": str(draft.base_id) if draft.base_id else None,
         "latest": str(latest.pk) if latest else None,
@@ -140,7 +142,14 @@ def start(request, paper_id=None, pr_id=None):
             return redirect("edit_paper", paper_id=paper.pk)
     source = pr.head if pr else paper.current if paper else None
     section = pr.head.pr_commit.section if pr else {}
-    scope = section.get("anchor", "") if pr else request.GET.get("scope", "")[:200]
+    scope = (
+        (
+            (section.get("chapter", "") + ":" if section.get("chapter") else "")
+            + section.get("anchor", "")
+        )
+        if pr
+        else request.GET.get("scope", "")[:200]
+    )
     if scope and not pr:
         if not source or request.GET.get("version") != str(source.pk):
             messages.error(
@@ -148,7 +157,19 @@ def start(request, paper_id=None, pr_id=None):
                 "The paper changed since you opened it. Choose a section from the latest version.",
             )
             return redirect("read_paper", paper_id=paper.pk) if paper else redirect("browse")
-        section = sections.find(source.markdown, scope)
+        chapter_id = request.GET.get("chapter", "")
+        chapter = (
+            next((p for p in documents.pages(source) if p["id"] == chapter_id), None)
+            if source.chapters
+            else None
+        )
+        if source.chapters and chapter is None:
+            messages.error(request, "Choose a section from an existing chapter.")
+            return redirect("read_paper", paper_id=paper.pk)
+        section = sections.find(chapter["markdown"] if chapter else source.markdown, scope)
+        if chapter and section:
+            section["chapter"] = chapter["id"]
+            scope = chapter["id"] + ":" + scope
         if not section:
             messages.error(
                 request,
@@ -200,9 +221,13 @@ def start(request, paper_id=None, pr_id=None):
             scope_key=scope,
             section=section,
             data=data,
-            markdown=sections.extract(source.base.markdown, section, source.markdown)
+            chapters=source.chapters if source and not section else [],
+            bibliography=source.bibliography if source else "",
+            markdown=sections.extract(
+                section_source(source.base, section), section, section_source(source, section)
+            )
             if section and pr
-            else sections.text(source.markdown, section)
+            else sections.text(section_source(source, section), section)
             if section
             else source.markdown
             if source
@@ -214,8 +239,8 @@ def start(request, paper_id=None, pr_id=None):
 def section_query(request):
     from urllib.parse import urlencode
 
-    section = request.GET.get("section", "")[:200]
-    return "?" + urlencode({"section": section}) if section else ""
+    query = {k: request.GET[k][:200] for k in ("section", "chapter") if request.GET.get(k)}
+    return "?" + urlencode(query) if query else ""
 
 
 @private
@@ -237,9 +262,12 @@ def editor(request, draft_id):
     initial.update(
         save_url=reverse("draft_save", args=[draft.pk]),
         preview_url=reverse("draft_preview", args=[draft.pk]),
+        export_url=reverse("draft_export", args=[draft.pk]),
         rebase_url=reverse("draft_rebase", args=[draft.pk]),
         user_id=request.user.pk,
         section=request.GET.get("section", "")[:200],
+        chapter=request.GET.get("chapter", ""),
+        references_url=reverse("reference_search"),
     )
     pending = (
         PullRequest.objects.filter(
@@ -301,10 +329,23 @@ def save(request, draft_id):
                 {"error": "Check the draft contents.", "fields": form.errors.get_json_data()},
                 status=400,
             )
+        chapters = data.get("chapters", draft.chapters)
+        bibliography = data.get("bibliography", draft.bibliography)
+        try:
+            documents.validate(chapters, bibliography, allow_empty=True)
+            if draft.section and (chapters or bibliography != draft.bibliography):
+                raise ValidationError("Use the full-paper editor to change chapters or references.")
+            if chapters and form.cleaned_data["markdown"] != documents.combined(chapters):
+                raise ValidationError("The saved chapters do not match the complete document.")
+        except ValidationError as error:
+            return JsonResponse({"error": " ".join(error.messages)}, status=400)
+        draft.chapters, draft.bibliography = chapters, bibliography
         draft.data = {key: form.cleaned_data[key] for key in FIELDS}
         draft.markdown = form.cleaned_data["markdown"]
         draft.revision += 1
-        draft.save(update_fields=["data", "markdown", "revision", "updated_at"])
+        draft.save(
+            update_fields=["data", "markdown", "chapters", "bibliography", "revision", "updated_at"]
+        )
     return JsonResponse(state(draft))
 
 
@@ -313,7 +354,7 @@ def save(request, draft_id):
 @require_POST
 @limited("draft_preview", limit=120, seconds=60)
 def preview(request, draft_id):
-    owned(request, draft_id)
+    draft = owned(request, draft_id)
     data = payload(request)
     source = data.get("markdown") if data else None
     try:
@@ -326,8 +367,73 @@ def preview(request, draft_id):
         size = settings.MAX_MARKDOWN_BYTES + 1
     if size > settings.MAX_MARKDOWN_BYTES:
         return JsonResponse({"error": "Preview accepts up to 1 MB of Markdown."}, status=400)
-    body, toc = render_reader(source, source_lines=True)
-    return JsonResponse({"html": body, "contents": toc})
+    try:
+        chapters = data.get("chapters", [])
+        bibliography = data.get("bibliography", "")
+        documents.validate(chapters, bibliography, allow_empty=True)
+        from .references import ReferenceDocument
+
+        line_offset = 0
+        if draft.section:
+            draft.markdown = source
+            chapters = full_chapters(draft)
+            bibliography = draft.bibliography
+            chapter = draft.section.get("chapter", "main")
+            context = section_source(draft.base, draft.section)
+            line_offset = context[: draft.section["start"]].count("\n")
+            full_source = full_markdown(draft)
+        else:
+            chapter = data.get("chapter", "main")
+            full_source = source
+        refs = ReferenceDocument(
+            chapters or [{"id": "main", "title": "", "markdown": full_source}],
+            bibliography,
+            number_sections=bool(chapters),
+        )
+        if chapter not in refs.sources:
+            raise ValidationError("Select an existing chapter.")
+        from .rendering import render_reader
+
+        body, toc = render_reader(
+            source if draft.section else refs.sources[chapter],
+            references=refs,
+            chapter=chapter,
+            source_lines=True,
+            reference_line_offset=line_offset,
+        )
+        targets = []
+        for target in refs.targets:
+            target = dict(target)
+            if draft.section:
+                inside = target["chapter"] == chapter and (
+                    line_offset < target["line"] <= line_offset + len(source.splitlines())
+                )
+                if not inside and not target["explicit"]:
+                    continue
+                if inside:
+                    target["line"] -= line_offset
+                    target["end_line"] -= line_offset
+                target["chapter"] = "main" if inside else target["chapter"]
+            targets.append(target)
+    except ValidationError as error:
+        return JsonResponse({"error": " ".join(error.messages)}, status=400)
+    return JsonResponse(
+        {
+            "html": body,
+            "contents": toc,
+            "targets": targets
+            + [
+                {
+                    "kind": "citation",
+                    "label": key,
+                    "text": entry.get("title", key),
+                    "title": entry.get("author", ""),
+                }
+                for key, entry in refs.entries.items()
+            ],
+            "warnings": refs.warnings,
+        }
+    )
 
 
 @private
@@ -340,10 +446,19 @@ def rebase(request, draft_id):
             return redirect("editor", draft_id=draft.pk)
         latest = draft.paper.current
         if draft.section:
+            try:
+                latest_source = section_source(latest, draft.section)
+            except ValidationError as error:
+                messages.error(request, " ".join(error.messages))
+                return redirect("editor", draft_id=draft.pk)
             target = (
-                sections.find(latest.markdown, request.GET.get("target", ""))
+                sections.find(latest_source, request.GET.get("target", ""))
                 if request.GET.get("target")
-                else sections.match(draft.base.markdown, draft.section, latest.markdown)
+                else sections.match(
+                    section_source(draft.base, draft.section),
+                    draft.section,
+                    latest_source,
+                )
             )
             return render(
                 request,
@@ -352,13 +467,15 @@ def rebase(request, draft_id):
                     "draft": draft,
                     "latest": latest,
                     "target": target,
-                    "choices": sections.sections(latest.markdown),
-                    "original": sections.text(draft.base.markdown, draft.section),
-                    "latest_text": sections.text(latest.markdown, target) if target else "",
+                    "choices": sections.sections(latest_source),
+                    "original": sections.text(
+                        section_source(draft.base, draft.section), draft.section
+                    ),
+                    "latest_text": sections.text(latest_source, target) if target else "",
                     "unchanged": bool(
                         target
-                        and sections.text(latest.markdown, target)
-                        == sections.text(draft.base.markdown, draft.section)
+                        and sections.text(latest_source, target)
+                        == sections.text(section_source(draft.base, draft.section), draft.section)
                     ),
                 },
             )
@@ -368,7 +485,7 @@ def rebase(request, draft_id):
             {
                 "draft": draft,
                 "latest": latest,
-                "diff": diff_lines(draft.base.markdown, latest.markdown),
+                "diff": diff_lines(section_source(draft.base, draft.section), latest_source),
                 "metadata_changes": metadata_diff(
                     draft.base, {k: getattr(latest, k) for k in METADATA_FIELDS}
                 ),
@@ -386,7 +503,11 @@ def rebase(request, draft_id):
                 {"error": "The accepted version changed again. Refresh the comparison."}, status=409
             )
         if draft.section:
-            target = sections.find(draft.paper.current.markdown, data.get("target", ""))
+            try:
+                latest_source = section_source(draft.paper.current, draft.section)
+            except ValidationError as error:
+                return JsonResponse({"error": " ".join(error.messages)}, status=409)
+            target = sections.find(latest_source, data.get("target", ""))
             if not target or target["level"] != draft.section["level"]:
                 return JsonResponse(
                     {"error": "Select a replacement section at the same heading level."}, status=400
@@ -395,7 +516,12 @@ def rebase(request, draft_id):
                 Draft.objects.filter(
                     owner=request.user,
                     paper=draft.paper,
-                    scope_key=target["anchor"],
+                    scope_key=(
+                        draft.section.get("chapter", "") + ":"
+                        if draft.section.get("chapter")
+                        else ""
+                    )
+                    + target["anchor"],
                     submitted__isnull=True,
                 )
                 .exclude(pk=draft.pk)
@@ -407,18 +533,56 @@ def rebase(request, draft_id):
                     },
                     status=409,
                 )
+            if draft.section.get("chapter"):
+                target["chapter"] = draft.section["chapter"]
             draft.section = target
-            draft.scope_key = target["anchor"]
+            draft.scope_key = (
+                target.get("chapter", "") + ":" if target.get("chapter") else ""
+            ) + target["anchor"]
             draft.data.update({k: getattr(draft.paper.current, k) for k in METADATA_FIELDS})
+            draft.bibliography = draft.paper.current.bibliography
         draft.base = draft.paper.current
         draft.revision += 1
-        draft.save(update_fields=["base", "section", "scope_key", "data", "revision", "updated_at"])
+        draft.save(
+            update_fields=[
+                "base",
+                "section",
+                "scope_key",
+                "data",
+                "bibliography",
+                "revision",
+                "updated_at",
+            ]
+        )
     return JsonResponse(state(draft))
 
 
+def section_source(snapshot, section):
+    if section.get("chapter"):
+        page = next((p for p in documents.pages(snapshot) if p["id"] == section["chapter"]), None)
+        if page is None:
+            raise ValidationError(
+                "This chapter was deleted. Preserve your text and use the full-paper editor to reconcile it."
+            )
+        return page["markdown"]
+    return snapshot.markdown
+
+
+def full_chapters(draft):
+    if draft.section.get("chapter"):
+        result = [dict(p) for p in documents.pages(draft.base)]
+        page = next(p for p in result if p["id"] == draft.section["chapter"])
+        page["markdown"] = sections.combine(page["markdown"], draft.section, draft.markdown)
+        return result
+    return draft.chapters
+
+
 def full_markdown(draft):
+    chapters = full_chapters(draft)
+    if chapters:
+        return documents.combined(chapters)
     return (
-        sections.combine(draft.base.markdown, draft.section, draft.markdown)
+        sections.combine(section_source(draft.base, draft.section), draft.section, draft.markdown)
         if draft.section
         else draft.markdown
     )
@@ -429,16 +593,26 @@ def refresh_section(draft):
     latest = draft.paper.current
     if draft.base_id == latest.pk:
         return False
-    target = sections.match(draft.base.markdown, draft.section, latest.markdown)
-    if not target or sections.text(latest.markdown, target) != sections.text(
-        draft.base.markdown, draft.section
+    target = sections.match(
+        section_source(draft.base, draft.section),
+        draft.section,
+        section_source(latest, draft.section),
+    )
+    if not target or sections.text(section_source(latest, draft.section), target) != sections.text(
+        section_source(draft.base, draft.section), draft.section
     ):
         raise ValidationError(
             "Your section changed or moved ambiguously. Compare the latest version and resolve the section before submitting. Your draft is preserved."
         )
     if (
         Draft.objects.filter(
-            owner=draft.owner, paper=draft.paper, scope_key=target["anchor"], submitted__isnull=True
+            owner=draft.owner,
+            paper=draft.paper,
+            scope_key=(
+                draft.section.get("chapter", "") + ":" if draft.section.get("chapter") else ""
+            )
+            + target["anchor"],
+            submitted__isnull=True,
         )
         .exclude(pk=draft.pk)
         .exists()
@@ -446,10 +620,27 @@ def refresh_section(draft):
         raise ValidationError(
             "Another draft already occupies this section. Finish or discard that draft first."
         )
-    draft.base, draft.section, draft.scope_key = latest, target, target["anchor"]
+    if draft.section.get("chapter"):
+        target["chapter"] = draft.section["chapter"]
+    draft.base, draft.section, draft.scope_key = (
+        latest,
+        target,
+        (target.get("chapter", "") + ":" if target.get("chapter") else "") + target["anchor"],
+    )
     draft.data.update({k: getattr(latest, k) for k in METADATA_FIELDS})
+    draft.bibliography = latest.bibliography
     draft.revision += 1
-    draft.save(update_fields=["base", "section", "scope_key", "data", "revision", "updated_at"])
+    draft.save(
+        update_fields=[
+            "base",
+            "section",
+            "scope_key",
+            "data",
+            "bibliography",
+            "revision",
+            "updated_at",
+        ]
+    )
     return True
 
 
@@ -481,7 +672,14 @@ def review(request, draft_id):
                 )
             if draft.paper_id and draft.base_id != draft.paper.current_id:
                 raise ValidationError("Update to the latest accepted version before submitting.")
-            body, _ = render_reader(source)
+            documents.validate(full_chapters(draft), draft.bibliography)
+            from .references import ReferenceDocument
+
+            chapters = full_chapters(draft) or [
+                {"id": "main", "title": draft.title, "markdown": source}
+            ]
+            refs = ReferenceDocument(chapters, draft.bibliography)
+            body = "".join(refs.render(p["id"])[0] for p in chapters)
             token = signing.dumps(
                 {"draft": str(draft.pk), "revision": draft.revision, "owner": request.user.pk},
                 salt="draft-review",
@@ -493,8 +691,11 @@ def review(request, draft_id):
                     "draft": draft,
                     "token": token,
                     "body": body,
+                    "reference_warnings": refs.warnings,
                     "refreshed": refreshed,
-                    "diff": diff_lines(draft.base.markdown if draft.base else "", source),
+                    "diff": diff_lines(
+                        section_source(draft.base, draft.section) if draft.base else "", source
+                    ),
                     "metadata_changes": metadata_diff(draft.base, draft.data),
                     "subjects": form.cleaned_data,
                     "consent_form": PublicationConsentForm(paper=draft.paper),
@@ -541,6 +742,7 @@ def submit(request, draft_id):
                     "Choose a license for a new paper and confirm your authority to submit. Your draft is preserved."
                 )
             data = form.submission_data()
+            data.update(chapters=full_chapters(draft), bibliography=draft.bibliography)
             if not draft.paper_id:
                 data["license"] = consent.code()
             if draft.paper_id:
@@ -558,8 +760,19 @@ def submit(request, draft_id):
             draft.submitted = submitted
             draft.data = {}
             draft.markdown = ""
+            draft.chapters, draft.bibliography = [], ""
             draft.revision += 1
-            draft.save(update_fields=["submitted", "data", "markdown", "revision", "updated_at"])
+            draft.save(
+                update_fields=[
+                    "submitted",
+                    "data",
+                    "markdown",
+                    "chapters",
+                    "bibliography",
+                    "revision",
+                    "updated_at",
+                ]
+            )
     except ValidationError as error:
         messages.error(request, " ".join(error.messages))
         return redirect("editor", draft_id=draft_id)
@@ -582,3 +795,37 @@ def discard(request, draft_id):
         draft.delete()
     messages.success(request, "Draft discarded. Published history is unchanged.")
     return redirect("drafts")
+
+
+@private
+@verified_required
+@require_POST
+def export(request, draft_id):
+    """Download this browser's complete working copy, including unsaved/conflicting edits."""
+    from django.http import HttpResponse
+    from .documents import archive
+
+    owned(request, draft_id)
+    data = payload(request)
+    if (
+        not data
+        or not isinstance(data.get("data"), dict)
+        or not isinstance(data.get("markdown"), str)
+    ):
+        return JsonResponse({"error": "Invalid draft contents."}, status=400)
+    try:
+        chapters = data.get("chapters", [])
+        bibliography = data.get("bibliography", "")
+        documents.validate(
+            chapters or [{"id": "main", "title": "Draft", "markdown": data["markdown"]}],
+            bibliography,
+            allow_empty=True,
+        )
+        info = {key: data["data"].get(key, "") for key in METADATA_FIELDS}
+        info["license"] = ""
+        content = archive(chapters, bibliography, data["markdown"], info)
+    except (ValidationError, TypeError, UnicodeError) as error:
+        return JsonResponse({"error": str(error)}, status=400)
+    response = HttpResponse(content, content_type="application/zip")
+    response["Content-Disposition"] = 'attachment; filename="peerpedia-draft.zip"'
+    return response

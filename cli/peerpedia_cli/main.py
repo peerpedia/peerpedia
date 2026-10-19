@@ -22,7 +22,7 @@ class ClientError(Exception):
 
 
 def read_json(path):
-    return json.loads(path.read_text(encoding="utf-8"))
+    return json.loads(path.read_bytes().decode("utf-8"))
 
 
 def write_json(path, data):
@@ -153,9 +153,14 @@ def verify(record):
             "peerpedia-submission-v1",
             "peerpedia-submission-v2",
             "peerpedia-submission-v3",
+            "peerpedia-submission-v4",
         }:
             raise ValueError()
-        if manifest["format"] in {"peerpedia-submission-v2", "peerpedia-submission-v3"}:
+        if manifest["format"] in {
+            "peerpedia-submission-v2",
+            "peerpedia-submission-v3",
+            "peerpedia-submission-v4",
+        }:
             if (
                 not isinstance(manifest["primary_category"], str)
                 or not manifest["primary_category"]
@@ -165,12 +170,44 @@ def verify(record):
                 isinstance(code, str) for code in manifest["secondary_categories"]
             ):
                 raise ValueError()
-        if manifest["format"] == "peerpedia-submission-v3":
+        if manifest["format"] in {"peerpedia-submission-v3", "peerpedia-submission-v4"}:
             if not isinstance(manifest["license"], str) or not manifest["license"]:
                 raise ValueError()
             if (
                 not isinstance(manifest["agreement"]["version"], str)
                 or len(manifest["agreement"]["sha256"]) != 64
+            ):
+                raise ValueError()
+        if manifest["format"] == "peerpedia-submission-v4":
+            import re
+
+            chapters = record["chapters"]
+            if not isinstance(chapters, list) or len(chapters) > 64:
+                raise ValueError()
+            seen = set()
+            checks = []
+            for page in chapters:
+                if set(page) != {"id", "title", "markdown"} or not all(
+                    isinstance(v, str) for v in page.values()
+                ):
+                    raise ValueError()
+                if not re.fullmatch(r"[A-Za-z0-9_-]{1,64}", page["id"]) or page["id"] in seen:
+                    raise ValueError()
+                seen.add(page["id"])
+                checks.append(
+                    {
+                        "id": page["id"],
+                        "title": page["title"],
+                        "markdown_sha256": hashlib.sha256(page["markdown"].encode()).hexdigest(),
+                    }
+                )
+            if checks != manifest["chapters"] or (
+                chapters and record["markdown"] != "\n\n".join(p["markdown"] for p in chapters)
+            ):
+                raise ValueError()
+            if (
+                hashlib.sha256(record["bibliography"].encode()).hexdigest()
+                != manifest["bibliography_sha256"]
             ):
                 raise ValueError()
         uuid.UUID(manifest["paper_id"])
@@ -203,13 +240,34 @@ def metadata(record):
     }
 
 
+def safe_file(root, name):
+    if (
+        not isinstance(name, str)
+        or not name
+        or Path(name).is_absolute()
+        or ".." in Path(name).parts
+        or "\\" in name
+    ):
+        raise ClientError("invalid_path", "Document files must stay inside the paper folder.")
+    target = root / name
+    if not target.resolve().is_relative_to(root.resolve()) or any(
+        p.is_symlink() for p in [target, *target.parents] if p != root and p.is_relative_to(root)
+    ):
+        raise ClientError("invalid_path", "Do not use symlinks for document files.")
+    return target
+
+
+def record_document(record):
+    data = {**metadata(record), "markdown": record["markdown"]}
+    if record["manifest"]["format"] == "peerpedia-submission-v4":
+        data.update(chapters=record["chapters"], bibliography=record["bibliography"])
+    return data
+
+
 def local_document(root):
-    source = (root / "paper.md").read_bytes()
-    if len(source) > 1024 * 1024:
-        raise ClientError("too_large", "Markdown must be 1 MB or smaller.")
     data = read_json(root / "paper.json")
     required = {"title", "authors", "abstract"}
-    optional = {"primary_category", "secondary_categories", "license"}
+    optional = {"primary_category", "secondary_categories", "license", "chapters", "bibliography"}
     if (
         not isinstance(data, dict)
         or not required <= set(data)
@@ -237,7 +295,56 @@ def local_document(root):
             "primary_category must be a subject code; secondary_categories must be a list of subject codes.",
         )
     data["secondary_categories"] = sorted(data["secondary_categories"])
-    return {**data, "markdown": source.decode("utf-8")}
+    chapter_specs = data.pop("chapters", None)
+    bib_path = data.pop("bibliography", None)
+    extra = {}
+    if chapter_specs is not None or bib_path is not None:
+        import re
+
+        if not isinstance(chapter_specs or [], list) or len(chapter_specs or []) > 64:
+            raise ClientError("invalid_chapters", "Use a list of up to 64 chapters.")
+        chapters, seen, paths = [], set(), set()
+        for item in chapter_specs or []:
+            if (
+                not isinstance(item, dict)
+                or set(item) != {"id", "title", "file"}
+                or not all(isinstance(v, str) for v in item.values())
+            ):
+                raise ClientError("invalid_chapters", "Each chapter needs id, title, and file.")
+            if (
+                not re.fullmatch(r"[A-Za-z0-9_-]{1,64}", item["id"])
+                or item["id"] in seen
+                or not item["title"].strip()
+            ):
+                raise ClientError("invalid_chapters", "Use unique chapter IDs and nonempty titles.")
+            path = safe_file(root, item["file"])
+            if path.resolve() in paths or path.suffix.lower() != ".md":
+                raise ClientError(
+                    "invalid_chapters", "Each chapter needs a separate Markdown file."
+                )
+            paths.add(path.resolve())
+            seen.add(item["id"])
+            if path.stat().st_size > 1024 * 1024:
+                raise ClientError("too_large", "The complete paper must be at most 1 MB.")
+            chapters.append(
+                {
+                    "id": item["id"],
+                    "title": item["title"],
+                    "markdown": path.read_bytes().decode("utf-8"),
+                }
+            )
+        bib = safe_file(root, bib_path).read_bytes().decode("utf-8") if bib_path else ""
+        extra.update(chapters=chapters, bibliography=bib)
+        source = (
+            "\n\n".join(p["markdown"] for p in chapters).encode("utf-8")
+            if chapters
+            else safe_file(root, "paper.md").read_bytes()
+        )
+    else:
+        source = safe_file(root, "paper.md").read_bytes()
+    if len(source) + len(extra.get("bibliography", "").encode()) > 1024 * 1024:
+        raise ClientError("too_large", "The complete paper and bibliography must be at most 1 MB.")
+    return {**data, "markdown": source.decode("utf-8"), **extra}
 
 
 def project():
@@ -278,7 +385,43 @@ def base_record(root):
 
 
 def changed(root, base):
-    return not base or local_document(root) != {**metadata(base), "markdown": base["markdown"]}
+    return not base or local_document(root) != record_document(base)
+
+
+def write_working(root, record):
+    info = metadata(record)
+    if record["manifest"]["format"] == "peerpedia-submission-v4":
+        info.update(chapters=[], bibliography="references.bib")
+        # Preserve local filenames for matching chapter IDs when pulling.
+        existing_info = read_json(root / "paper.json") if (root / "paper.json").exists() else {}
+        filenames = {p["id"]: p["file"] for p in existing_info.get("chapters", [])}
+        bib_filename = existing_info.get("bibliography") or "references.bib"
+        info["bibliography"] = bib_filename
+        bib_target = safe_file(root, bib_filename)
+        if bib_target.exists() and not existing_info.get("bibliography"):
+            raise ClientError(
+                "local_changes", "A bibliography would overwrite an untracked file. Move it first."
+            )
+        targets = []
+        for page in record["chapters"]:
+            filename = filenames.get(page["id"], f"chapters/{page['id']}.md")
+            target = safe_file(root, filename)
+            if target.exists() and page["id"] not in filenames:
+                raise ClientError(
+                    "local_changes",
+                    f"A new chapter would overwrite {filename}. Move that file first.",
+                )
+            targets.append((target, page["markdown"]))
+            info["chapters"].append({"id": page["id"], "title": page["title"], "file": filename})
+        if not record["chapters"]:
+            targets.append((safe_file(root, "paper.md"), record["markdown"]))
+        targets.append((bib_target, record["bibliography"]))
+        for target, text in targets:
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(text, encoding="utf-8")
+    else:
+        safe_file(root, "paper.md").write_bytes(record["markdown"].encode("utf-8"))
+    write_json(root / "paper.json", info)
 
 
 def save_base(root, state, record, replace_working=False):
@@ -286,8 +429,7 @@ def save_base(root, state, record, replace_working=False):
     if state["paper_id"] and state["paper_id"] != record["manifest"]["paper_id"]:
         raise ClientError("wrong_paper", "Remote document belongs to a different paper.")
     if replace_working:
-        (root / "paper.md").write_bytes(record["markdown"].encode("utf-8"))
-        write_json(root / "paper.json", metadata(record))
+        write_working(root, record)
     write_json(root / ".peerpedia/base.json", record)
     state.update(paper_id=record["manifest"]["paper_id"], base_hash=record["hash"])
     write_json(root / ".peerpedia/state.json", state)
@@ -475,6 +617,12 @@ def push(root, state, args):
             raise ClientError(
                 "verification_failed", "Server receipt does not match the pushed subjects."
             )
+    for field in ("chapters", "bibliography"):
+        if field in submitted and record.get(field) != submitted[field]:
+            raise ClientError(
+                "verification_failed",
+                "Server receipt does not match the pushed chapters or bibliography.",
+            )
     state["paper_id"] = record["manifest"]["paper_id"]
     state["last_submission"] = record["manifest"]["submission_id"]
     write_json(root / ".peerpedia/last-push.json", {"request": pending, "receipt": record})
@@ -614,11 +762,7 @@ def run(args):
         base = base_record(root)
         if args.command == "diff":
             data = local_document(root)
-            before = (
-                {**metadata(base), "markdown": base["markdown"]}
-                if base
-                else dict.fromkeys(data, "")
-            )
+            before = record_document(base) if base else dict.fromkeys(data, "")
 
             def lines(value):
                 return (
@@ -630,14 +774,14 @@ def run(args):
             diffs = {
                 key: "".join(
                     difflib.unified_diff(
-                        lines(before[key]),
+                        lines(before.get(key, "")),
                         lines(value),
                         fromfile="base/" + key,
                         tofile="local/" + key,
                     )
                 )
                 for key, value in data.items()
-                if before[key] != value
+                if before.get(key, "") != value
             }
             return {"changed": bool(diffs), "diffs": diffs}
         if args.command == "status":
@@ -669,6 +813,11 @@ def run(args):
             write_json(root / ".peerpedia/incoming.json", remote)
             (root / ".peerpedia/incoming.md").write_bytes(remote["markdown"].encode("utf-8"))
             write_json(root / ".peerpedia/incoming-metadata.json", metadata(remote))
+            if remote["manifest"]["format"] == "peerpedia-submission-v4":
+                incoming_dir = root / ".peerpedia" / ("incoming-" + remote["hash"])
+                if not incoming_dir.exists():
+                    incoming_dir.mkdir()
+                    write_working(incoming_dir, remote)
             return {
                 "hash": remote["hash"],
                 "message": "Fetched into .peerpedia/incoming.md and incoming-metadata.json. Working files are unchanged. Reconcile them, then run rebase --acknowledge.",
@@ -693,7 +842,7 @@ def run(args):
         if args.command == "pull":
             remote = remote_current(state)
             data = local_document(root)
-            matches_remote = data == {**metadata(remote), "markdown": remote["markdown"]}
+            matches_remote = data == record_document(remote)
             if changed(root, base) and not matches_remote:
                 raise ClientError(
                     "local_changes",
@@ -709,7 +858,7 @@ def run(args):
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--json", action="store_true", help="Machine-readable output")
-    parser.add_argument("--version", action="version", version="peerpedia 0.5.0")
+    parser.add_argument("--version", action="version", version="peerpedia 0.6.0")
     commands = parser.add_subparsers(dest="command", required=True)
     for command in (
         "login",

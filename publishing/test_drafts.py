@@ -432,7 +432,7 @@ class DraftConcurrencyTests(TransactionTestCase):
 class PRMigrationTests(TransactionTestCase):
     def test_populated_history_is_grouped_without_rehashing(self):
         before = [("publishing", "0004_submission_subjects")]
-        after = [("publishing", "0010_rightsrequest_submission_license_code_and_more")]
+        after = MigrationExecutor(connection).loader.graph.leaf_nodes("publishing")
         MigrationExecutor(connection).migrate(before)
         try:
             apps = MigrationExecutor(connection).loader.project_state(before).apps

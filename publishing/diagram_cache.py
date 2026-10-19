@@ -33,10 +33,18 @@ def sources(markdown):
     )
 
 
+def document_sources(submission):
+    from .documents import pages
+
+    return list(
+        dict.fromkeys(source for page in pages(submission) for source in sources(page["markdown"]))
+    )
+
+
 def enqueue(submission):
     from .models import DiagramArtifact
 
-    for source in sources(submission.markdown)[:MAX_DIAGRAMS]:
+    for source in document_sources(submission)[:MAX_DIAGRAMS]:
         oversized = len(source.encode()) > MAX_SOURCE
         artifact, _ = DiagramArtifact.objects.get_or_create(
             key=key_for(source),
@@ -50,7 +58,14 @@ def enqueue(submission):
 
 
 def saved_for(submission):
-    return {item.key: item for item in submission.diagram_artifacts.defer("svg", "source")}
+    from types import SimpleNamespace
+
+    saved = {item.key: item for item in submission.diagram_artifacts.defer("svg", "source")}
+    for source in document_sources(submission)[MAX_DIAGRAMS:]:
+        saved[key_for(source)] = SimpleNamespace(
+            status="error", error="Keep each paper below 32 distinct diagrams."
+        )
+    return saved
 
 
 def sanitize(result):

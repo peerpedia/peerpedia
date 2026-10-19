@@ -406,3 +406,103 @@ cli.main(["push", "-m", "Correct proof", "--json"])
         self.assertEqual(
             client.local_document(root)["secondary_categories"], ["math.HO", "math.NT"]
         )
+
+    def test_multichapter_clone_rename_push_accept_pull(self):
+        from publishing.test_chapters import course
+
+        paper = publish(self.owner, course())
+        self.login(self.owner_token)
+        self.command("clone", str(paper.pk), "course")
+        root = self.root / "course"
+        info = client.read_json(root / "paper.json")
+        original = root / info["chapters"][0]["file"]
+        renamed = root / "opening.md"
+        original.rename(renamed)
+        info["chapters"][0]["file"] = "opening.md"
+        client.write_json(root / "paper.json", info)
+        self.assertFalse(self.command("diff", folder=root)["changed"])
+        renamed.write_text(renamed.read_text() + "\nAn additional exercise.\n")
+        proposal = self.command("push", "-m", "Add exercise", folder=root)
+        self.assertEqual(proposal["status"], "pending")
+        self.assertEqual(
+            Submission.objects.get(pk=proposal["submission_id"]).chapters[0]["id"], "intro"
+        )
+        decide(self.owner, proposal["submission_id"], "accepted")
+        self.command("pull", folder=root)
+        self.assertFalse(self.command("diff", folder=root)["changed"])
+        self.assertEqual(client.read_json(root / "paper.json")["chapters"][0]["file"], "opening.md")
+        self.command("fetch", folder=root)
+        self.assertTrue(
+            (root / ".peerpedia" / ("incoming-" + proposal["hash"]) / "references.bib").exists()
+        )
+
+
+class ChapterClientTests(SimpleTestCase):
+    def test_local_chapter_files_bibliography_and_renames(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            info = {
+                "title": "Course",
+                "authors": "Ada",
+                "abstract": "Notes",
+                "chapters": [{"id": "one", "title": "One", "file": "one.md"}],
+                "bibliography": "references.bib",
+            }
+            (root / "one.md").write_bytes(b"# One\r\n")
+            (root / "references.bib").write_bytes(b"@misc{one,title={One}}\r\n")
+            client.write_json(root / "paper.json", info)
+            first = client.local_document(root)
+            self.assertEqual(first["chapters"][0]["markdown"], "# One\r\n")
+            (root / "one.md").rename(root / "renamed.md")
+            info["chapters"][0]["file"] = "renamed.md"
+            client.write_json(root / "paper.json", info)
+            self.assertEqual(first, client.local_document(root))
+            info["chapters"][0]["file"] = "../outside.md"
+            client.write_json(root / "paper.json", info)
+            with self.assertRaises(client.ClientError):
+                client.local_document(root)
+
+    def test_chapter_manifest_detects_tampering(self):
+        import copy
+
+        source = "# One"
+        chapters = [{"id": "one", "title": "One", "markdown": source}]
+        manifest = {
+            "format": "peerpedia-submission-v4",
+            "paper_id": "00000000-0000-0000-0000-000000000001",
+            "submission_id": "00000000-0000-0000-0000-000000000002",
+            "title": "Title",
+            "authors": "Ada",
+            "abstract": "Abstract",
+            "primary_category": "math.NT",
+            "secondary_categories": [],
+            "license": "CC-BY-4.0",
+            "agreement": {"version": "test", "sha256": "a" * 64},
+            "markdown_sha256": hashlib.sha256(source.encode()).hexdigest(),
+            "chapters": [
+                {
+                    "id": "one",
+                    "title": "One",
+                    "markdown_sha256": hashlib.sha256(source.encode()).hexdigest(),
+                }
+            ],
+            "bibliography_sha256": hashlib.sha256(b"").hexdigest(),
+        }
+        record = {
+            "manifest": manifest,
+            "markdown": source,
+            "chapters": chapters,
+            "bibliography": "",
+        }
+        record["hash"] = hashlib.sha256(
+            json.dumps(manifest, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode()
+        ).hexdigest()
+        client.verify(record)
+        for key, value in [
+            ("bibliography", "changed"),
+            ("chapters", [{**chapters[0], "title": "Changed"}]),
+        ]:
+            changed = copy.deepcopy(record)
+            changed[key] = value
+            with self.assertRaises(client.ClientError):
+                client.verify(changed)

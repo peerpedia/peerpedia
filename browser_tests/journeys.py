@@ -1006,3 +1006,67 @@ C \arrow[r, "k"'] & D
         ).to_be_visible()
         self.page.goto(self.live_server_url + "/privacy/")
         expect(self.page.get_by_role("heading", name="Privacy", exact=True)).to_be_visible()
+
+    def test_chapter_editor_references_publication_and_progress(self):
+        from publishing.test_chapters import course
+
+        paper = self.database_call(lambda: publish(self.owner, course()))
+        self.login()
+        self.page.goto(self.live_server_url + f"/papers/{paper.pk}/edit/?chapter=proof")
+        expect(self.page.locator("#active-chapter")).to_have_text("A proof")
+        self.page.locator("#chapter-list").get_by_role("button", name="1. Introduction").click()
+        expect(self.page.locator(".cm-content")).to_contain_text("unique passage")
+        self.page.locator(".cm-content").fill(
+            "# Introduction\n\nA revised introduction. See @eq:one and [@wen]."
+        )
+        expect(self.page.locator("#save-status")).to_have_text("Saved")
+        self.page.once("dialog", lambda dialog: dialog.accept("Exercises"))
+        self.page.get_by_role("button", name="Add chapter", exact=True).click()
+        self.page.locator(".cm-content").fill(
+            "# Exercises\n\nExplain the result in your own words.\n\n$$\ny = 2\n$$\n\nSee "
+        )
+        expect(self.page.locator("#save-status")).to_have_text("Saved")
+        expect(self.page.locator("#draft-preview .equation-number")).to_have_text("(3.1)")
+        self.page.get_by_role("button", name="Insert reference", exact=True).click()
+        self.page.locator("#link-results").get_by_role(
+            "button", name="Equation (3.1)", exact=True
+        ).click()
+        expect(self.page.locator(".cm-content")).to_contain_text("{#equation-")
+        expect(self.page.locator("#draft-preview .cross-reference")).to_have_text("Equation (3.1)")
+        expect(self.page.locator("#save-status")).to_have_text("Saved")
+        with self.page.expect_download() as download:
+            self.page.get_by_role("button", name="Download all files", exact=True).click()
+        import zipfile
+
+        with zipfile.ZipFile(download.value.path()) as archive:
+            self.assertEqual(len(json.loads(archive.read("paper.json"))["chapters"]), 3)
+            self.assertIn("Quantum Field Theory", archive.read("references.bib").decode())
+        self.page.reload()
+        expect(self.page.locator("#chapter-list button")).to_have_count(3)
+        self.page.get_by_role("button", name="References.bib", exact=True).click()
+        expect(self.page.locator("#bib-source")).to_have_value(re.compile("Quantum Field Theory"))
+        self.page.locator("#bib-dialog").get_by_role("button", name="Done", exact=True).click()
+        self.page.locator("#paper-details > summary").click()
+        self.page.get_by_label("What changed?", exact=True).fill(
+            "Add exercises and improve the introduction."
+        )
+        self.page.get_by_role("button", name="Review changes", exact=True).click()
+        expect(
+            self.page.get_by_role("heading", name="Review your changes", exact=True)
+        ).to_be_visible()
+        self.page.get_by_label("I have authority to submit", exact=False).check()
+        self.page.get_by_role("button", name="Submit PR", exact=True).click()
+        expect(self.page.locator(".chapter-diffs")).to_contain_text("Exercises")
+        self.page.goto(self.live_server_url + f"/papers/{paper.pk}/read/?chapter=intro")
+        self.page.get_by_role("link", name="Equation (2.1)", exact=True).click()
+        expect(self.page).to_have_url(re.compile(r"chapter=proof#eq%3Aone"))
+        expect(self.page.get_by_role("button", name="Back to where you were")).to_be_visible()
+        self.page.get_by_role("button", name="Back to where you were").click()
+        expect(self.page).to_have_url(re.compile(r"chapter=intro$"))
+        self.page.get_by_role("button", name="Mark complete and continue").click()
+        expect(self.page).to_have_url(re.compile(r"chapter=proof$"))
+        expect(self.page.locator('[data-chapter-state="intro"]')).to_have_text("✓")
+        self.page.reload()
+        expect(self.page.locator('[data-chapter-state="intro"]')).to_have_text("✓")
+        self.page.set_viewport_size({"width": 390, "height": 844})
+        self.assert_no_page_overflow()
