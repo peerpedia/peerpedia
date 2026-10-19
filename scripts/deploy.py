@@ -14,7 +14,7 @@ import subprocess
 import tempfile
 
 REPOSITORY = "peerpedia/peerpedia"
-REQUIRED_JOBS = {"test", "browser", "quality"}
+REQUIRED_JOBS = {"test", "browser", "quality", "security"}
 ROOT = Path(__file__).resolve().parent.parent
 BACKUP_PATH_FILTER = (
     r"sed -n -e 's/^Backup written to \([^ ]*\.dump\).*$/\1/p' -e t -e '/^backups\/.*\.dump$/p'"
@@ -46,7 +46,7 @@ def verified_release(sha, read=github):
     jobs = read(f"actions/runs/{latest['id']}/jobs?per_page=100")["jobs"]
     successful = {job["name"] for job in jobs if job["conclusion"] == "success"}
     if not REQUIRED_JOBS <= successful:
-        raise ValueError("Backend, browser, and quality gates must all pass.")
+        raise ValueError("Backend, browser, quality, and security gates must all pass.")
     return latest["html_url"]
 
 
@@ -98,12 +98,14 @@ test -n "$backup"
 sudo sh scripts/restore-check.sh "$backup"
 sudo docker image tag peerpedia-web:local peerpedia-web:before-{args.sha[:12]}
 sudo tar -xzf {shlex.quote(destination)} -C /opt/peerpedia
+sudo docker compose exec -T caddy caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
 sudo docker compose build web
 sudo docker compose run --rm migrate
 sudo docker compose up -d --no-deps web
 for attempt in $(seq 1 30); do
   if sudo docker inspect --format '{{{{.State.Health.Status}}}}' peerpedia-web-1 | grep -qx healthy; then
     sudo docker compose exec -T web python manage.py verify_history
+    sudo docker compose exec -T caddy caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile
     printf '%s\n' {args.sha} | sudo tee /opt/peerpedia/.release >/dev/null
     exit 0
   fi

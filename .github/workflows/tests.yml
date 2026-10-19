@@ -1,9 +1,27 @@
 name: Tests
-on: [push, pull_request]
+on:
+  push:
+  pull_request:
+  schedule:
+    - cron: "17 2 * * *"
+  workflow_dispatch:
 permissions:
   contents: read
 
 jobs:
+  security:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - run: pip install pip-audit==2.10.1
+      - run: pip-audit -r requirements.lock --disable-pip --no-deps
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: npm audit --prefix editor --audit-level=high
   quality:
     runs-on: ubuntu-latest
     steps:
@@ -23,6 +41,7 @@ jobs:
       - run: editor/node_modules/.bin/prettier --check 'editor/*.js' 'editor/*.mjs' 'static/*.js'
       - run: for source in static/*.js editor/*.js editor/*.mjs; do node --check "$source"; done
       - run: python -m unittest discover -s scripts -p 'test_*_unit.py'
+      - run: python scripts/test_proxy.py
   test:
     runs-on: ubuntu-latest
     services:

@@ -1,0 +1,27 @@
+{% extends 'base.html' %}
+{% block title %}Account security · Peerpedia{% endblock %}
+{% block content %}
+<div class="auth-panel security-panel">
+  <div class="eyebrow">ADMINISTRATOR SECURITY</div>
+  <h1>{% if mode == 'verify' %}Verify your sign-in{% else %}Two-factor authentication{% endif %}</h1>
+  {% if error %}<p class="notice error" role="alert">{{ error }}</p>{% endif %}
+  {% if codes %}
+    <h2>Save your recovery codes</h2>
+    <p>Keep these in your password manager. Each works once if you lose your authenticator. These codes are shown only now; older recovery codes no longer work.</p>
+    <ul>{% for code in codes %}<li><code>{{ code }}</code></li>{% endfor %}</ul>
+    <a class="button" href="{{ next }}">I saved my codes · Continue</a>
+  {% elif mode == 'enroll' %}
+    <p>Scan this QR code with your authenticator app, then enter its six-digit code. Setup expires after ten minutes.</p>
+    <div aria-label="Authenticator setup QR code">{{ qr|safe }}</div>
+    <details><summary>Enter the key manually</summary><p><code>{{ secret }}</code></p><p>Account: {{ user.username }} · Issuer: Peerpedia · Time-based · 6 digits · 30 seconds</p></details>
+    <form method="post">{% csrf_token %}{% include 'includes/form.html' with form=code_form %}<input type="hidden" name="next" value="{{ next }}"><input type="hidden" name="action" value="confirm"><button class="button full">Confirm authenticator</button></form>
+  {% elif mode == 'verify' %}
+    <p>Enter the current code from your authenticator, or one of your saved recovery codes.</p>
+    <form method="post">{% csrf_token %}{% include 'includes/form.html' with form=code_form %}<input type="hidden" name="next" value="{{ next }}"><input type="hidden" name="action" value="verify"><button class="button full">Verify and continue</button></form>
+  {% else %}
+    {% if mode == 'manage' %}<p>Your authenticator is enabled. Confirm your password to replace it or generate new recovery codes.</p>{% else %}<p>Administrators must use an authenticator app to protect their account. Confirm your password to begin, then save the recovery codes.</p>{% endif %}
+    <form method="post">{% csrf_token %}{% include 'includes/form.html' with form=password_form %}<input type="hidden" name="next" value="{{ next }}"><button class="button full" name="action" value="start">{% if mode == 'manage' %}Replace authenticator{% else %}Set up authenticator{% endif %}</button>{% if mode == 'manage' %}<button class="button secondary full" name="action" value="recovery">Generate new recovery codes</button>{% endif %}</form>
+  {% endif %}
+  <p class="auth-link">Lost both your authenticator and recovery codes? Contact the server owner. A password reset does not remove this protection.</p>
+</div>
+{% endblock %}

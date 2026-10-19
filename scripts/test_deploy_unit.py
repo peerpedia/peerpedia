@@ -30,7 +30,8 @@ class ReleaseGateTests(unittest.TestCase):
                     "jobs": jobs
                     if jobs is not None
                     else [
-                        {"name": n, "conclusion": "success"} for n in ["test", "browser", "quality"]
+                        {"name": n, "conclusion": "success"}
+                        for n in ["test", "browser", "quality", "security"]
                     ]
                 }
             return {

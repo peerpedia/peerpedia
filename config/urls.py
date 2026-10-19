@@ -2,7 +2,9 @@ from django.contrib import admin
 from django.urls import include, path
 from accounts.security import limited
 
-admin.site.login = limited("admin_login", limit=10, seconds=900)(admin.site.login)
+admin.site.login = limited("admin_login", limit=10, seconds=900, account_field="username")(
+    admin.site.login
+)
 
 urlpatterns = [
     path("admin/", admin.site.urls),

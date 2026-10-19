@@ -217,3 +217,9 @@
   .subject-filter { display:grid; grid-template-columns:auto minmax(0,1fr); width:100%; }
   .subject-filter select { max-width:100%; }
 }
+
+/* Authenticator secrets stay readable without widening small screens. */
+.security-panel svg.segno { display: block; max-width: 100%; height: auto; margin: 1.5rem auto; }
+.security-panel code { overflow-wrap: anywhere; }
+.security-panel details { margin-bottom: 1.5rem; }
+.security-panel .button + .button { margin-top: .75rem; }

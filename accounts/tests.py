@@ -111,7 +111,11 @@ class AccountTests(TestCase):
             REMOTE_ADDR="192.0.2.2",
         )
         self.assertEqual(response.status_code, 302)
-        self.assertContains(self.client.get(reverse("admin:index")), "Moderation and accounts")
+        self.assertRedirects(
+            self.client.get(reverse("admin:index")),
+            reverse("staff_mfa") + "?next=%2Fadmin%2F",
+            fetch_redirect_response=False,
+        )
 
     def test_reset_password_end_to_end_and_one_use(self):
         user = User.objects.create_user("reader", "reader@example.org", "Old-Password-789")
