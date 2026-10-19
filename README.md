@@ -572,3 +572,9 @@ network/transport floods, not HTTP floods, and may blackhole traffic above its
 threshold. Confirm the actual instance threshold in the cloud console. A managed
 HTTP filtering proxy requires separate account/DNS setup; do not describe the
 application's login limits as full DDoS protection.
+
+For repeated SSH guesses, install the distribution's `fail2ban` package and copy
+`deploy/fail2ban-sshd.local` to `/etc/fail2ban/jail.d/peerpedia-sshd.local`.
+Validate with `fail2ban-client -t` before enabling/restarting the service. The SSH
+jail bans an address for one hour after five failures in ten minutes, while valid
+key-based backup/deployment connections remain available from changing networks.

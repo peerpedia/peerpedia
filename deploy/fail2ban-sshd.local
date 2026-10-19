@@ -1,0 +1,8 @@
+# /etc/fail2ban/jail.d/peerpedia-sshd.local
+[sshd]
+enabled = true
+backend = systemd
+port = ssh
+maxretry = 5
+findtime = 10m
+bantime = 1h

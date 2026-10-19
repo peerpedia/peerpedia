@@ -172,5 +172,6 @@ def security(request):
             "next": next_url,
         },
     )
-    response["Referrer-Policy"] = "no-referrer"
+    # Preserve same-origin form verification while omitting cross-site referrers.
+    response["Referrer-Policy"] = "same-origin"
     return response
