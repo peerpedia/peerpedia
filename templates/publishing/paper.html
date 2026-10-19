@@ -1,4 +1,6 @@
 {% extends 'base.html' %}
+{% load static %}
+{% block head %}<link rel="stylesheet" href="{% static 'rating.css' %}">{% endblock %}
 {% block title %}{{ paper.current.title }} · Peerpedia{% endblock %}
 {% block content %}
 <a class="breadcrumb" href="{% url 'browse' %}">← All papers</a>

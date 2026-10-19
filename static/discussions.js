@@ -253,7 +253,7 @@
     const threadList=node("div"); body.append(threadList);
     data.threads.forEach(c=>threadList.append(thread(c,anchor)));
     addMoreRoots(body,threadList,data.next,anchor);
-    if (data.own_rating) body.append(node("p","You have already rated this passage. Use Edit on your comment to change your rating.","discussion-muted"));
+    if (data.own_rating) body.append(node("p","You have already rated this passage. Open ⋯ on your comment and choose Edit to change your rating.","discussion-muted"));
     if (anchor.state==="current" && !data.own_rating) form(body,{key:config.create+JSON.stringify(anchor.spans),title:"Your rating and comment",rating:true,save:async(text,score)=>{
       await api(config.create,{spans:anchor.spans,text,score}); await reload(anchor);
     }});
@@ -290,13 +290,47 @@
     if (c.reply_to) author.append(node("span","replying to "+c.reply_to,"discussion-muted"));
     author.append(node("span",new Date(c.created).toLocaleDateString()+(c.edited?" · edited":""),"discussion-muted"));
     el.append(author,node("p",c.text,"discussion-text"));
-    const actions=node("div",undefined,"discussion-actions");
+    const actions=node("div",undefined,"discussion-actions discussion-comment-actions");
+    const more=node("details",undefined,"discussion-more");
+    const summary=node("summary","…");
+    summary.setAttribute("aria-label","More actions");
+    summary.title="More actions";
+    const menu=node("div",undefined,"discussion-more-items");
+    more.append(summary,menu);
+    more.addEventListener("toggle",()=>{
+      if (!more.open) return;
+      panel.querySelectorAll(".discussion-more[open]").forEach(other=>{if(other!==more) other.open=false;});
+      menu.scrollIntoView({block:"nearest"});
+    });
+    const secondary=(label,action)=>{
+      const item=button(label,()=>{
+        more.open=false;
+        summary.focus({preventScroll:true});
+        return action();
+      });
+      if(label==="Delete") item.classList.add("discussion-delete-action");
+      menu.append(item);
+    };
     const write=async(action,data)=>{ await api(commentURL(c.id,action),data); await reload(anchor); };
-    if (!c.unavailable) for (const [value,label,count] of [[1,"👍",c.up],[-1,"👎",c.down]]) {
-      const b=button(label+" "+count,async b=>{
+    if (!c.unavailable) for (const [value,count] of [[1,c.up],[-1,c.down]]) {
+      const b=button("",async b=>{
         if (!config.participate) { signin(el); return; }
         b.disabled=true; try { await write("vote",{value:c.vote===value?0:value}); } finally { b.disabled=false; }
       });
+      b.className="discussion-vote";
+      const icon=document.createElementNS("http://www.w3.org/2000/svg","svg");
+      icon.setAttribute("viewBox","0 0 24 24");
+      icon.setAttribute("aria-hidden","true");
+      icon.setAttribute("fill","none");
+      icon.setAttribute("stroke","currentColor");
+      icon.setAttribute("stroke-width","1.6");
+      icon.setAttribute("stroke-linecap","round");
+      icon.setAttribute("stroke-linejoin","round");
+      const path=document.createElementNS(icon.namespaceURI,"path");
+      path.setAttribute("d","M7 10v11H3V10h4Zm0 0 5-8a3 3 0 0 1 2 3l-1 5h6a2 2 0 0 1 2 2l-2 7a3 3 0 0 1-3 2H7");
+      icon.append(path);
+      if(value===-1) icon.style.transform="rotate(180deg)";
+      b.append(icon,node("span",String(count)));
       b.setAttribute("aria-label",(value===1?"Helpful":"Not helpful")+": "+count);
       b.setAttribute("aria-pressed",String(c.vote===value)); actions.append(b);
     }
@@ -307,15 +341,15 @@
     };
     actions.append(button("Reply",()=>compose("reply",{title:"Reply to "+c.author,submit:"Post reply",save:text=>write("reply",{text})})));
     if (c.can_edit) {
-      actions.append(button("Edit",()=>compose("edit",{title:"Edit your comment",rating:c.parent===null,score:c.score,text:c.text,submit:"Save changes",save:(text,score)=>write("edit",{text,score,revision:c.revision})})));
-      actions.append(button("Delete",()=>{
+      secondary("Edit",()=>compose("edit",{title:"Edit your comment",rating:c.parent===null,score:c.score,text:c.text,submit:"Save changes",save:(text,score)=>write("edit",{text,score,revision:c.revision})}));
+      secondary("Delete",()=>{
         if(el.querySelector(".discussion-delete")) return;
         const confirm=node("div",undefined,"discussion-form discussion-delete");
         confirm.append(node("p","Delete your comment? Replies remain visible."),button("Delete comment",()=>write("edit",{delete:true,revision:c.revision})),button("Cancel",()=>confirm.remove())); el.append(confirm);
-      }));
+      });
     }
-    if (c.can_resolve) actions.append(button(c.resolved?"Reopen":"Resolve",()=>write("resolve",{resolved:!c.resolved})));
-    if (!c.unavailable && c.edited) actions.append(button("History",async()=>{
+    if (c.can_resolve) secondary(c.resolved?"Reopen":"Resolve",()=>write("resolve",{resolved:!c.resolved}));
+    if (!c.unavailable && c.edited) secondary("History",async()=>{
       if(el.querySelector(".discussion-history")) { el.querySelector(".discussion-history").remove(); return; }
       const history=node("div",undefined,"discussion-history"); el.append(history);
       async function load(at) {
@@ -323,21 +357,32 @@
         for(const r of data.revisions) history.append(node("strong","Revision "+r.number+(r.score===null?"":" · ★ "+r.score)),node("p",r.text));
         if(data.next!==null) history.append(button("Earlier edits",async b=>{ b.remove(); await load(data.next); }));
       } await load(0);
-    }));
+    });
     if (!c.unavailable && config.participate) {
-      actions.append(button("Report",()=>compose("report",{title:"Report to an administrator",limit:2000,submit:"Send report",save:async reason=>{
+      secondary("Report",()=>compose("report",{title:"Report to an administrator",limit:2000,submit:"Send report",save:async reason=>{
         await api(commentURL(c.id,"report"),{reason}); el.querySelector('[data-compose="report"]')?.remove(); message.textContent="Report sent to the administrator.";
-      }})));
-      if(!c.parent && ownPRs.length) actions.append(button("Link a PR",()=>{
+      }}));
+      if(!c.parent && ownPRs.length) secondary("Link a PR",()=>{
         if(el.querySelector(".discussion-link-form")) return;
         const area=node("div",undefined,"discussion-form discussion-link-form"), select=node("select");
         select.setAttribute("aria-label","Your PR");
         for(const p of ownPRs){ const option=node("option",p.label||p.id); option.value=p.id; select.append(option); }
         area.append(node("label","Link a change you submitted"),select,button("Link PR",()=>write("link_pr",{pr:select.value})),button("Cancel",()=>area.remove())); el.append(area);
-      }));
+      });
     }
+    const deletion=menu.querySelector(".discussion-delete-action");
+    if(deletion) menu.append(deletion);
+    if(menu.childElementCount) actions.append(more);
     el.append(actions); return el;
   }
+  document.addEventListener("click",event=>{
+    panel.querySelectorAll(".discussion-more[open]").forEach(more=>{if(!more.contains(event.target)) more.open=false;});
+  });
+  panel.addEventListener("keydown",event=>{
+    if(event.key!=="Escape") return;
+    const opened=panel.querySelector(".discussion-more[open]");
+    if(opened){event.stopPropagation();opened.open=false;opened.querySelector("summary").focus();}
+  });
   for (const block of blockNodes.filter(n=>n.dataset.passageKind!=="text")) {
     const b=button("＋",()=>showSelection([{block:block.dataset.passage,start:0,end:length(block.dataset.passageText)}]),"passage-block-action");
     b.setAttribute("aria-label","Discuss this "+block.dataset.passageKind); b.title="Discuss this "+block.dataset.passageKind;

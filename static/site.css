@@ -128,9 +128,6 @@
   .help ul { padding-left:18px; margin:5px 0; }
   .has-error input,.has-error textarea { border-color:var(--red); }
   .field-errors { color:var(--red); font-size:13px; }
-  #id_score { display:flex; flex-wrap:wrap; gap:8px; }
-  #id_score label { background:#fff; border:1px solid #cbd4ce; border-radius:4px; padding:9px 13px; font-size:13px; font-weight:400; display:flex; gap:7px; align-items:center; }
-  #id_score label:has(input:checked) { background:#e0ece5; border-color:var(--accent); }
   .auth-panel { max-width:450px; margin:24px auto 55px; }
   .auth-panel .lede { margin-bottom:28px; }
   .auth-panel h1 { font-size:36px; }

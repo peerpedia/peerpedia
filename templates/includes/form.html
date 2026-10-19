@@ -3,7 +3,18 @@
   {% if field.is_hidden %}{{ field }}{% if field.errors %}<div class="field-errors">{{ field.errors }}</div>{% endif %}
   {% else %}
   <div class="field {% if field.errors %}has-error{% endif %}">
-    {% if field.name == 'secondary_categories' %}
+    {% if field.name == 'score' %}
+    <fieldset class="rating-field">
+      <legend>{{ field.label }}</legend>
+      <div id="{{ field.auto_id }}" class="paper-stars">
+        {% for choice in field %}<label class="paper-star" for="{{ choice.id_for_label }}" title="{{ choice.choice_label }}">
+          {{ choice.tag }}
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3 2.8 5.7 6.3.9-4.55 4.44 1.08 6.27L12 17.35l-5.63 2.96 1.08-6.27L2.9 9.6l6.3-.9Z"/></svg>
+          <span class="sr-only">{{ choice.choice_label }}</span>
+        </label>{% endfor %}
+      </div>
+    </fieldset>
+    {% elif field.name == 'secondary_categories' %}
     <details class="cross-list-picker" {% if field.value or field.errors %}open{% endif %}><summary>{{ field.label }} (optional)</summary>
       <label for="subject-search">Find a cross-list subject</label><input type="search" id="subject-search" placeholder="Filter by name or code" data-subject-search>
       <div class="subject-checkboxes">{{ field }}</div>
