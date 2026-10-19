@@ -213,4 +213,7 @@
 .subject-checkboxes { max-height: 20rem; overflow: auto; padding: .7rem; margin-top: .5rem; border: 1px solid var(--line); border-radius: .3rem; }
 .subject-checkboxes label { display: flex; align-items: baseline; gap: .5rem; font-size: .9rem; font-weight: normal; margin: .45rem 0; }
 .subject-checkboxes input[type=checkbox] { width: auto; flex-shrink: 0; }
-@media (max-width: 650px) { .subject-filter { width: 100%; } .subject-filter select { max-width: 100%; } }
+@media (max-width: 650px) {
+  .subject-filter { display:grid; grid-template-columns:auto minmax(0,1fr); width:100%; }
+  .subject-filter select { max-width:100%; }
+}
