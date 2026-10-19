@@ -13,8 +13,7 @@
 .chapter-panel { width:190px; flex-shrink:0; padding:1rem; border-right:1px solid #d9dfd8; overflow:auto; background:#f8faf6; }
 .chapter-panel h2 { font-size:1rem; }
 .chapter-panel ol { padding:0; list-style:none; }
-.chapter-panel li button { display:block; width:100%; text-align:left; border:0; background:transparent; padding:.6rem; }
-.chapter-panel [aria-current=true] { background:#e4ece1; font-weight:600; }
+
 .chapter-actions { display:flex; flex-wrap:wrap; gap:.3rem; margin:.5rem 0 1.5rem; }
 .chapter-tools { display:flex; flex-wrap:wrap; gap:1rem; align-items:center; padding:.5rem 1rem; }
 #reference-warnings { color:#87501f; margin:0 1rem; font-size:.85rem; }
@@ -27,8 +26,7 @@
 .chapter-tools { flex-shrink:0; font:13px system-ui; gap:.8rem; }
 .chapter-tools label { display:flex; align-items:center; gap:.5rem; font-weight:400; }
 .chapter-tools select { width:auto; padding:.45rem; font-size:13px; }
-.chapter-panel button,.chapter-tools button,#link-results button { padding:.45rem .65rem; border:1px solid #c7d3c6; border-radius:5px; background:#f4f7f1; color:#315247; font:13px system-ui; cursor:pointer; }
-.chapter-panel button:hover,.chapter-tools button:hover { background:#e5ece0; }
-.chapter-panel .chapter-actions button { padding:.35rem .45rem; font-size:12px; }
+
+
 #reference-warnings { max-height:5rem; overflow:auto; flex-shrink:0; }
 @media(max-width:760px) { .chapter-panel { flex-shrink:0; } .chapter-tools { gap:.5rem; padding:.5rem; } .chapter-tools label { margin:0; } .chapter-tools strong { max-width:45%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; } }

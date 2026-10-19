@@ -172,15 +172,18 @@ def render_reader(
             contents.append({k: item[k] for k in ("id", "label", "level", "line")})
         if edit_url and not item["title"] and item["token"].level == 0:
             from urllib.parse import urlencode
+            from .ui import icon
             from markdown_it.token import Token
 
             link = Token("html_inline", "", 0)
             link.content = (
-                '<a class="section-edit" aria-label="Edit section '
+                '<a class="section-edit ui-icon-button" aria-label="Edit section '
                 + escape(item["label"], quote=True)
                 + '" href="'
                 + escape(edit_url + "&" + urlencode({"scope": scope}), quote=True)
-                + '">Edit</a>'
+                + '" title="Edit section">'
+                + icon("edit")
+                + "</a>"
             )
             tokens[item["index"] + 1].children.append(link)
     if contents:

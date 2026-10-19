@@ -90,7 +90,6 @@
 
 .reader-sidebar{position:relative}.reader-edit{position:absolute;right:18px;top:37px;margin:0}.reader-home{margin-right:65px}@media(max-width:1049px){.reader-sidebar{grid-template-columns:112px minmax(0,1fr)}.reader-edit{right:auto;left:64px;top:20px}.reader-edit span{display:none}}@media(min-width:1050px){.reader.has-contents .reader-sidebar{position:fixed}.reader:not(.has-contents) .reader-edit{top:18px}}
 
-.markdown-body .section-edit{display:inline-block;font:12px system-ui;margin-left:14px;padding:4px 8px;vertical-align:middle;border:1px solid #dbe2da;border-radius:4px;color:#557467;text-decoration:none;opacity:.75}.markdown-body .section-edit:hover,.markdown-body .section-edit:focus{opacity:1;background:#edf3ed}
 
 /* Chapters and scholarly references */
 .chapter-navigation ol { list-style:none; padding:0; }
@@ -107,8 +106,7 @@
 .numbered-equation { position:relative; padding-right:4em; margin:1.5em 0; }
 .numbered-equation .math.block { overflow-x:auto; }
 .equation-number { position:absolute; right:0; top:50%; transform:translateY(-50%); color:inherit; text-decoration:none; }
-.copy-reference { font: .7rem system-ui; border:0; background:transparent; color:#68736a; cursor:pointer; margin-left:.8em; }
-.numbered-equation .copy-reference { display:block; margin-left:auto; }
+
 .reference-list { border-top:1px solid #ddd; margin-top:3rem; font-size:.9em; overflow-wrap:anywhere; }
 .reference-list li { margin:1em 0; }
 .broken-reference { text-decoration:underline wavy #ad662c; }
@@ -124,9 +122,8 @@
 .chapter-navigation a { color:#3d5647; border-radius:4px; padding:.65rem .4rem; }
 .chapter-navigation a:hover { background:#edf2e9; }
 .chapter-heading p { margin:0 0 1rem; }
-.chapter-footer button,#reading-return,.reference-dialog button { padding:.6rem .85rem; border:1px solid #c7d3c6; border-radius:5px; background:#f4f7f1; color:#315247; font:13px system-ui; cursor:pointer; }
-#reading-return { margin:.6rem 20px; }
-.chapter-footer button { background:#23514b; border-color:#23514b; color:white; }
+
+
 .reference-list li { scroll-margin-top:2rem; }
 @media(max-width:760px) { .chapter-navigation { padding:0 12px; max-height:180px; } .chapter-navigation ol { margin-bottom:.4rem; } }
 

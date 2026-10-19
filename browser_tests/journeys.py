@@ -1034,6 +1034,7 @@ C \arrow[r, "k"'] & D
         expect(self.page.locator(".cm-content")).to_contain_text("{#equation-")
         expect(self.page.locator("#draft-preview .cross-reference")).to_have_text("Equation (3.1)")
         expect(self.page.locator("#save-status")).to_have_text("Saved")
+        self.page.locator("#editor-files > summary").click()
         with self.page.expect_download() as download:
             self.page.get_by_role("button", name="Download all files", exact=True).click()
         import zipfile

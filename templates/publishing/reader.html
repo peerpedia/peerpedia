@@ -10,13 +10,13 @@
   <link rel="stylesheet" href="{% static 'discussions.css' %}">
   <script defer src="{% static 'discussions.js' %}"></script>
   {% include "includes/math.html" %}
-</head>
+<link rel="stylesheet" href="{% static 'controls.css' %}"></head>
 <body class="reader{% if contents or chapters %} has-contents{% endif %}">
   <a class="reader-skip" href="#paper-text">Skip to paper</a>
   <aside class="reader-sidebar" aria-label="Paper navigation">
     <a class="reader-home" href="{% url 'browse' %}" aria-label="Peerpedia home" title="Peerpedia home"><img src="{% static 'favicon.svg' %}" width="32" height="32" alt=""><span>Peerpedia</span></a>
-    <a class="reader-edit" href="{% url 'edit_paper' submission.paper_id %}?chapter={{ chapter.id }}" aria-label="{% if submission.pk != submission.paper.current_id %}Edit latest accepted version{% else %}Edit paper{% endif %}" title="{% if submission.pk != submission.paper.current_id %}Edit latest accepted version{% else %}Edit paper{% endif %}"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="m15 4 5 5M4 20l5-1L21 7a2 2 0 0 0-5-5L4 14z"/></svg><span>{% if submission.pk != submission.paper.current_id %}Edit latest{% else %}Edit{% endif %}</span></a>
-    <button type="button" class="reader-discussions" id="discussions-open" aria-controls="discussion-panel" aria-expanded="false">Discussions <span id="discussion-count"></span></button>
+    <a class="reader-edit ui-icon-button" href="{% url 'edit_paper' submission.paper_id %}?chapter={{ chapter.id }}" aria-label="{% if submission.pk != submission.paper.current_id %}Edit latest accepted version{% else %}Edit paper{% endif %}" title="{% if submission.pk != submission.paper.current_id %}Edit latest accepted version{% else %}Edit paper{% endif %}">{% include "includes/ui_icon.html" with name="edit" %}</a>
+    <button type="button" class="reader-discussions" id="discussions-open" aria-controls="discussion-panel" aria-expanded="false">{% include "includes/ui_icon.html" with name="chat" %}Discussions <span id="discussion-count"></span></button>
     <button type="button" id="reading-return" hidden>Back to where you were</button>
     {% if chapters %}<nav class="chapter-navigation" aria-label="Chapters"><h2>Chapters</h2><ol>{% for page in chapters %}<li><a href="{{ page.url }}" {% if page.selected %}aria-current="page"{% endif %}>{{ forloop.counter }}. {{ page.title }} <small data-chapter-state="{{ page.id }}"></small></a></li>{% endfor %}</ol></nav>{% endif %}
     {% if contents %}

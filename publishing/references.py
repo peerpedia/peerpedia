@@ -386,12 +386,16 @@ class ReferenceDocument:
 
 
 def copy_button(target):
+    from .ui import icon
+
     return (
-        '<button type="button" class="copy-reference" data-reference="'
+        '<button type="button" class="copy-reference ui-icon-button" data-reference="'
         + escape("@" + target["label"], quote=True)
         + '" data-reference-url="'
         + escape(target["url"], quote=True)
         + '" aria-label="Copy reference to '
         + escape(target["text"], quote=True)
-        + '">Copy reference</button>'
+        + '" title="Copy reference">'
+        + icon("link")
+        + "</button>"
     )

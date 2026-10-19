@@ -643,3 +643,18 @@ $("download-all").addEventListener("click", async () => {
     warn(error.message);
   }
 });
+
+// Native disclosure keeps file actions reachable by keyboard without a custom menu.
+const filesMenu = document.getElementById("editor-files");
+filesMenu.addEventListener("click", (event) => {
+  if (event.target.closest("button,.file-button")) filesMenu.open = false;
+});
+document.addEventListener("click", (event) => {
+  if (!filesMenu.contains(event.target)) filesMenu.open = false;
+});
+filesMenu.addEventListener("keydown", (event) => {
+  if (event.key === "Escape") {
+    filesMenu.open = false;
+    filesMenu.querySelector("summary").focus();
+  }
+});
