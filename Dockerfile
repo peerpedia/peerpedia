@@ -1,4 +1,4 @@
-FROM node:22-alpine AS editor-assets
+FROM node:26-alpine AS editor-assets
 WORKDIR /app/editor
 COPY editor/package*.json ./
 RUN npm ci --ignore-scripts
@@ -21,7 +21,7 @@ EXPOSE 8000
 CMD ["gunicorn", "config.wsgi:application", "--bind", "0.0.0.0:8000", "--workers", "2", "--threads", "2", "--timeout", "60", "--forwarded-allow-ips", "*", "--access-logfile", "-", "--error-logfile", "-"]
 
 # No database credentials, host mounts, shell execution, or internet access at runtime.
-FROM node:22-alpine AS diagram-renderer
+FROM node:26-alpine AS diagram-renderer
 WORKDIR /app
 COPY --from=web /app/static/vendor/tikzjax /app/static/vendor/tikzjax
 COPY diagram_renderer /app/diagram_renderer
