@@ -41,6 +41,7 @@ jobs:
       - run: editor/node_modules/.bin/prettier --check 'editor/*.js' 'editor/*.mjs' 'static/*.js'
       - run: for source in static/*.js editor/*.js editor/*.mjs; do node --check "$source"; done
       - run: python -m unittest discover -s scripts -p 'test_*_unit.py'
+      - run: python scripts/test_proxy.py
   test:
     runs-on: ubuntu-latest
     services:

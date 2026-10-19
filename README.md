@@ -578,3 +578,25 @@ For repeated SSH guesses, install the distribution's `fail2ban` package and copy
 Validate with `fail2ban-client -t` before enabling/restarting the service. The SSH
 jail bans an address for one hour after five failures in ten minutes, while valid
 key-based backup/deployment connections remain available from changing networks.
+
+### Cloudflare proxy
+
+The Caddy configuration accepts `CF-Connecting-IP` only from Cloudflare's published
+IPv4/IPv6 networks and replaces `X-Real-IP` with the verified client address. Direct
+requests cannot choose a rate-limit identity by forging headers. Review the range
+list against https://www.cloudflare.com/ips/ when maintaining the proxy. The CI
+proxy test exercises both trusted and untrusted connections using disposable
+containers. Deployment validates and gracefully reloads Caddy before recording a
+successful release.
+
+To activate Cloudflare Free, import and compare the complete registrar DNS zone,
+keep email CNAMEs DNS-only, proxy only the website, and use Full (strict) TLS with
+the origin's valid certificate. Keep default caching; never cache authenticated
+pages or API responses through a Cache Everything rule. Avoid blanket browser
+challenges that prevent CLI access. Switch registrar nameservers only after the
+records and settings are ready. After Cloudflare is active and public checks pass,
+restrict origin HTTP/HTTPS ingress to Cloudflare networks at the cloud firewall.
+Docker-published ports can bypass ordinary UFW rules, so UFW alone is insufficient.
+Keep SSH available for trusted key-based administration and Mac backups. Ensure
+certificate HTTP validation remains reachable through the proxy. DNS propagation
+and origin firewall protection must be verified separately from deploying code.
