@@ -12,6 +12,8 @@ from django.db import connections
 from django.test import override_settings
 from playwright.sync_api import expect, sync_playwright
 from accounts.models import User
+from django_otp.oath import totp
+from django_otp.plugins.otp_totp.models import TOTPDevice
 from publishing.models import Draft, Paper, Review, Submission, PassageComment
 from publishing.services import publish, propose
 
@@ -274,6 +276,27 @@ class BrowserJourneys(StaticLiveServerTestCase):
             lambda: User.objects.filter(pk=self.owner.pk).update(is_staff=True, is_superuser=True)
         )
         self.login()
+        expect(
+            self.page.get_by_role("heading", name="Two-factor authentication", exact=True)
+        ).to_be_visible()
+        self.page.get_by_label("Confirm your password:", exact=True).fill(PASSWORD)
+        self.page.get_by_role("button", name="Set up authenticator", exact=True).click()
+        expect(self.page.locator("svg.segno")).to_be_visible()
+        self.page.set_viewport_size({"width": 390, "height": 844})
+        self.assert_no_page_overflow()
+        device = self.database_call(
+            lambda: TOTPDevice.objects.get(user=self.owner, confirmed=False)
+        )
+        self.page.get_by_label("Authenticator or recovery code:", exact=True).fill(
+            f"{totp(device.bin_key):06d}"
+        )
+        self.page.get_by_role("button", name="Confirm authenticator", exact=True).click()
+        expect(
+            self.page.get_by_role("heading", name="Save your recovery codes", exact=True)
+        ).to_be_visible()
+        expect(self.page.locator(".auth-panel li code")).to_have_count(8)
+        self.page.get_by_role("link", name="I saved my codes · Continue", exact=True).click()
+        self.page.set_viewport_size({"width": 1365, "height": 900})
         self.page.get_by_role("link", name="Admin", exact=True).click()
         expect(self.page.get_by_role("heading", name="Care for the community.")).to_be_visible()
         expect(self.page.get_by_role("link", name=re.compile("Reported comments"))).to_be_visible()

@@ -3,12 +3,18 @@ from django.urls import path
 from . import views
 from .security import limited
 from . import tokens
+from .mfa import security
 
 urlpatterns = [
+    path("security/", security, name="staff_mfa"),
     path("tokens/", tokens.token_settings, name="access_tokens"),
     path("tokens/<int:token_id>/revoke/", tokens.revoke_token, name="revoke_token"),
     path("signup/", views.signup, name="signup"),
-    path("login/", limited("login", limit=20)(views.PeerLoginView.as_view()), name="login"),
+    path(
+        "login/",
+        limited("login", limit=20, account_field="username")(views.PeerLoginView.as_view()),
+        name="login",
+    ),
     path("logout/", auth.LogoutView.as_view(), name="logout"),
     path(
         "password/change/",
@@ -25,7 +31,7 @@ urlpatterns = [
     path("verify/<str:token>/", views.verify_email, name="verify_email"),
     path(
         "password-reset/",
-        limited("reset", limit=5)(views.PeerPasswordResetView.as_view()),
+        limited("reset", limit=5, account_field="email")(views.PeerPasswordResetView.as_view()),
         name="password_reset",
     ),
     path(

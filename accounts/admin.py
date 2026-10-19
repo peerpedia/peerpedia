@@ -1,6 +1,13 @@
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin
 from .models import User
+from django_otp.plugins.otp_totp.models import TOTPDevice
+from django_otp.plugins.otp_static.models import StaticDevice
+
+# Secrets and recovery codes are managed only through the password-confirmed security flow.
+for device_model in (TOTPDevice, StaticDevice):
+    if admin.site.is_registered(device_model):
+        admin.site.unregister(device_model)
 
 
 @admin.register(User)

@@ -93,6 +93,13 @@ class DraftTests(TestCase):
             user.is_superuser = True
             user.save()
             self.client.force_login(user)
+            from django_otp.oath import totp
+            from django_otp.plugins.otp_totp.models import TOTPDevice
+
+            device = TOTPDevice.objects.create(user=user, name="Test authenticator")
+            self.client.post(
+                reverse("staff_mfa"), {"action": "verify", "code": f"{totp(device.bin_key):06d}"}
+            )
             for route in ["editor", "draft_rebase"]:
                 self.assertEqual(self.client.get(reverse(route, args=[draft.pk])).status_code, 404)
             for route in ["draft_save", "draft_preview", "draft_review", "draft_discard"]:

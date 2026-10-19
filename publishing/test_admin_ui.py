@@ -2,6 +2,8 @@ from django.contrib.auth.models import Permission
 from django.test import TestCase
 from django.urls import reverse
 from accounts.models import User
+from django_otp.oath import totp
+from django_otp.plugins.otp_totp.models import TOTPDevice
 from .models import ModerationEvent
 from .services import publish
 from .tests import document
@@ -15,6 +17,13 @@ class AdministrationTests(TestCase):
         )
         self.paper = publish(self.owner, document())
 
+    def verified_login(self, user):
+        self.client.force_login(user)
+        device = TOTPDevice.objects.create(user=user, name="Test authenticator")
+        self.client.post(
+            reverse("staff_mfa"), {"action": "verify", "code": f"{totp(device.bin_key):06d}"}
+        )
+
     def test_dashboard_respects_model_permissions(self):
         self.client.force_login(self.owner)
         self.assertEqual(self.client.get(reverse("admin:index")).status_code, 302)
@@ -22,7 +31,7 @@ class AdministrationTests(TestCase):
         staff.user_permissions.add(
             Permission.objects.get(content_type__app_label="publishing", codename="view_review")
         )
-        self.client.force_login(staff)
+        self.verified_login(staff)
         page = self.client.get(reverse("admin:index"))
         self.assertContains(page, "Paper reviews")
         self.assertNotContains(page, reverse("admin:accounts_user_changelist"))
@@ -30,7 +39,7 @@ class AdministrationTests(TestCase):
         self.assertNotContains(page, reverse("admin:publishing_submission_changelist"))
 
     def test_dashboard_and_lists_render_with_immutable_snapshots(self):
-        self.client.force_login(self.admin)
+        self.verified_login(self.admin)
         response = self.client.get(reverse("admin:index"))
         for heading in [
             "Moderation",
@@ -65,7 +74,7 @@ class AdministrationTests(TestCase):
         self.assertEqual(self.paper.current.title, "A test paper")
 
     def test_moderation_still_records_visibility_changes(self):
-        self.client.force_login(self.admin)
+        self.verified_login(self.admin)
         url = reverse("admin:publishing_paper_changelist")
         original_hash = self.paper.current.hash
         response = self.client.post(

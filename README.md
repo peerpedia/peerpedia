@@ -518,3 +518,57 @@ Inspect or stop the job with:
 launchctl print gui/$(id -u)/dev.peerpedia.backup
 launchctl bootout gui/$(id -u)/dev.peerpedia.backup
 ```
+
+## Administrator security
+
+Staff browser sessions require an authenticator code before accessing the website,
+including administration, private drafts, and token management. After signing in,
+open `/accounts/security/`, confirm your password, scan the QR code in an
+RFC 6238-compatible authenticator, and enter its current code. Save the eight
+single-use recovery codes in your password manager. The QR code is generated
+locally; no secret is sent to a QR service. Setup expires after ten minutes.
+
+This uses `django-otp` for verification, replay prevention, and increasing delays
+between failed attempts. A second account-based limit allows at most 15 security
+form submissions per 15 minutes. Successful verification rotates the session key
+and limits that session to 12 hours. Password resets do not remove the authenticator.
+Old staff sessions are gated immediately after deployment. The owner must complete
+initial enrollment personally before two-factor protection is fully established.
+
+A recovery code can verify a sign-in when the authenticator is lost. From Security,
+confirm your password to replace the authenticator or generate new recovery codes.
+Replacement invalidates the previous authenticator and all previous recovery codes.
+Recovery codes are displayed once. Device secrets are excluded from administration.
+If both factors and recovery codes are lost, the trusted server owner must verify
+the person's identity and reset their OTP devices through server access; public
+password recovery deliberately cannot do this. Treat database backups as sensitive:
+they contain authenticator secrets as well as account information.
+
+Password login limits apply independently to each IP and to each account, with
+username and email aliases sharing a bucket across ordinary and admin login.
+An account permits 20 attempts per 15 minutes, regardless of changing source IP.
+Password-reset requests also have per-IP and per-account limits. These temporary
+limits can delay a legitimate user during an attack; they are not permanent locks.
+CLI bearer tokens retain their existing limited scopes and cannot perform browser
+administration, comment, rate, or vote.
+
+The Tests workflow scans pinned Python packages and editor dependencies on each
+push/PR and daily. A successful `security` job is also required by the release tool.
+Dependabot proposes weekly Python, editor, Docker, and Actions updates. Review and
+test those PRs before deploying; updates are not automatically merged. Enable
+Dependabot alerts/security updates and secret-scanning push protection in GitHub.
+Operating-system automatic updates do not update already-running container images;
+rebuild and deploy reviewed updates regularly.
+
+For SSH, `deploy/ssh-hardening.conf` disables direct root/password login, reduces
+unauthenticated connection limits, and disables agent/X11 forwarding. Only install
+it after confirming non-root key-based sudo access. Validate with `sshd -t`, use a
+rollback timer, reload SSH, and verify a separate new connection before closing the
+old one. For fixed office/VPN egress addresses, additionally allowlist SSH sources
+in the cloud firewall. Do not pin a travelling Mac to an unverified temporary IP.
+
+Alibaba Anti-DDoS Basic is included for simple application servers. It addresses
+network/transport floods, not HTTP floods, and may blackhole traffic above its
+threshold. Confirm the actual instance threshold in the cloud console. A managed
+HTTP filtering proxy requires separate account/DNS setup; do not describe the
+application's login limits as full DDoS protection.
