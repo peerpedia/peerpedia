@@ -1,0 +1,15 @@
+{% extends 'base.html' %}
+{% block title %}About · Peerpedia{% endblock %}
+{% block content %}
+<article class="help-page">
+  <div class="eyebrow">PEERPEDIA</div>
+  <h1>About Peerpedia</h1>
+  <p class="lede">A place for researchers to improve papers and notes together while preserving the history of their work.</p>
+  <h2>Developer</h2>
+  <p>Peerpedia is developed and operated by {{ developer_name }}.</p>
+  <p><a href="{{ developer_url }}">{{ developer_name }} on GitHub</a></p>
+  <h2>Source and feedback</h2>
+  <p><a href="{{ repository_url }}">View the source on GitHub</a> or <a href="{{ repository_url }}/issues">report a bug or suggest an improvement</a>.</p>
+  <p>For copyright, withdrawal, or privacy matters, use the <a href="{% url 'rights_request' %}">private rights-request form</a>. For other contact options, see the developer's GitHub profile. Do not post passwords, access tokens, or private information in public issues.</p>
+</article>
+{% endblock %}

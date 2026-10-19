@@ -10,6 +10,7 @@ urlpatterns = [
     path("agreements/", licensing.agreements, name="agreements"),
     path("rights/", licensing.rights_request, name="rights_request"),
     path("privacy/", TemplateView.as_view(template_name="privacy.html"), name="privacy"),
+    path("about/", TemplateView.as_view(template_name="about.html"), name="about"),
     path("inbox/", notifications.inbox, name="inbox"),
     path("inbox/read/", notifications.mark_read, name="inbox_read"),
     path("inbox/<int:notification_id>/open/", notifications.open_notification, name="inbox_open"),
