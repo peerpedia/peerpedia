@@ -102,3 +102,6 @@ class PassageReportAdmin(admin.ModelAdmin):
 
 admin.site.register(Passage, ImmutableAdmin)
 admin.site.register(PassageCommentRevision, ImmutableAdmin)
+
+from .models import SubmissionSource
+admin.site.register(SubmissionSource, ImmutableAdmin)

@@ -2,7 +2,10 @@ from django.conf import settings
 
 
 def project_info(request):
+    from publishing.notifications import visible
+    unread = visible(request.user).filter(unread=True).count() if request.user.is_authenticated else 0
     return {
+        "unread_notifications": unread,
         "repository_url": settings.PROJECT_REPOSITORY_URL,
         "developer_name": settings.DEVELOPER_NAME,
         "developer_url": settings.DEVELOPER_URL,

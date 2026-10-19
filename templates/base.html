@@ -5,6 +5,7 @@
   <title>{% block title %}Peerpedia{% endblock %}</title>
   {% include "includes/icons.html" %}
   <link rel="stylesheet" href="{% static 'site.css' %}">
+  <link rel="stylesheet" href="{% static 'inbox.css' %}">
   {% block head %}{% endblock %}
 </head>
 <body>
@@ -16,6 +17,7 @@
       <a href="{% url 'publish' %}">Upload a paper</a>
       <a href="{% url 'help' %}">Help</a>
       {% if user.is_authenticated %}
+        <a class="inbox-link" href="{% url 'inbox' %}" aria-label="Inbox{% if unread_notifications %}, {{ unread_notifications }} unread{% endif %}" title="Inbox"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4"/></svg>{% if unread_notifications %}<span class="inbox-count" aria-hidden="true">{% if unread_notifications > 99 %}99+{% else %}{{ unread_notifications }}{% endif %}</span>{% endif %}<span class="sr-only">Inbox</span></a>
         <a href="{% url 'drafts' %}">My drafts</a><span class="account-name">{{ user.username }}</span>
         {% if user.is_staff %}<a href="{% url 'admin:index' %}">Admin</a>{% endif %}
         <a href="{% url 'password_change' %}" class="quiet-link">Password</a>

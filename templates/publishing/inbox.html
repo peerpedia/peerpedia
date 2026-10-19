@@ -1,0 +1,21 @@
+{% extends 'base.html' %}
+{% block title %}Inbox · Peerpedia{% endblock %}
+{% block content %}
+<header class="page-heading"><h1>Inbox</h1><p class="lede">Replies, reviews, and changes to your papers and conversations.</p></header>
+<div class="inbox-toolbar">
+  <nav class="tabs" aria-label="Inbox filter"><a href="{% url 'inbox' %}" {% if not only_unread %}aria-current="page" class="active"{% endif %}>All activity</a><a href="?filter=unread" {% if only_unread %}aria-current="page" class="active"{% endif %}>Unread <span>{{ unread_notifications }}</span></a></nav>
+  {% if unread_notifications %}<form method="post" action="{% url 'inbox_read' %}">{% csrf_token %}<input type="hidden" name="seen_before" value="{{ seen_before }}"><button class="button secondary small">Mark all read</button></form>{% endif %}
+</div>
+<div class="inbox-list">
+{% for item in page %}
+<article class="inbox-item{% if item.unread %} unread{% endif %}">
+  <div class="inbox-item-heading"><h2>{{ item.label }}</h2><span class="muted small-text">{{ item.updated_at|date:'j M, H:i' }} UTC</span></div>
+  <p class="inbox-paper">{{ item.paper.current.title }}</p>
+  <p class="muted small-text">Latest activity by {{ item.actor.username }}{% if item.count > 1 %} · {{ item.count }} updates{% endif %}{% if item.unread %} · Unread{% endif %}</p>
+  {% if item.thread_id and item.kind != 'report' %}{% with selected=item.thread.passage.spans.0 %}{% if selected.kind == 'text' %}<blockquote>{{ item.thread.passage.quote|truncatechars:200 }}</blockquote>{% else %}<p class="muted small-text">{{ selected.kind|capfirst }} discussion{% if selected.path %} · {{ selected.path|last }}{% endif %}</p>{% endif %}{% endwith %}{% endif %}
+  <form method="post" action="{% url 'inbox_open' item.pk %}">{% csrf_token %}<input type="hidden" name="revision" value="{{ item.revision }}"><button class="inbox-view">{% if item.kind == 'report' %}Review reports{% elif item.thread_id %}View discussion{% elif item.pull_request_id %}View PR{% else %}View paper{% endif %} →</button></form>
+</article>
+{% empty %}<div class="empty-inline"><h2>{% if only_unread %}You’re all caught up.{% else %}No activity yet.{% endif %}</h2><p>New activity on your papers and conversations will appear here. Your own actions do not send you notifications.</p></div>{% endfor %}
+</div>
+{% if page.has_other_pages %}<nav class="pagination" aria-label="Inbox pages">{% if page.has_previous %}<a href="?page={{ page.previous_page_number }}{% if only_unread %}&amp;filter=unread{% endif %}">← Previous</a>{% endif %}<span>Page {{ page.number }} of {{ page.paginator.num_pages }}</span>{% if page.has_next %}<a href="?page={{ page.next_page_number }}{% if only_unread %}&amp;filter=unread{% endif %}">Next →</a>{% endif %}</nav>{% endif %}
+{% endblock %}

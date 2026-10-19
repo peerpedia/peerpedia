@@ -262,6 +262,8 @@ def review(request, paper_id):
         return render(request, "error.html", {"heading": "Review hidden by moderation", "detail": "This review cannot be edited while it is hidden."}, status=403)
     if form.is_valid():
         Review.objects.update_or_create(paper=paper, user=request.user, defaults=form.cleaned_data)
+        from .notifications import notify
+        notify([paper.owner_id],request.user,paper,'review')
         messages.success(request, "Your review has been saved.")
         return redirect(reverse("paper", args=[paper.pk]) + "#reviews")
     return render(request, "publishing/review_form.html", {"form": form, "paper": paper}, status=400)
@@ -275,6 +277,9 @@ def comment(request, submission_id):
     form = CommentForm(request.POST)
     if form.is_valid():
         Comment.objects.create(submission=submission, user=request.user, text=form.cleaned_data["text"])
+        from .notifications import notify
+        pr = submission.pr_commit.request if hasattr(submission,'pr_commit') else None
+        notify([submission.paper.owner_id,submission.contributor_id],request.user,submission.paper,'pr_comment',pr=pr)
         return redirect(reverse("submission", args=[submission.pk]) + "#conversation")
     return render(request, "publishing/comment_form.html", {"form": form, "submission": submission}, status=400)
 

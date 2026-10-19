@@ -12,6 +12,7 @@ from accounts.security import limited
 from .models import (Paper, Submission, Passage, PassageComment, PassageCommentRevision,
                      PassageVote, PassageReport, PassagePRLink, PullRequest, PullRequestCommit)
 from . import passages
+from .notifications import discussion_activity, notify, link_activity
 
 
 def private_response(view):
@@ -88,7 +89,9 @@ def anchor_data(anchor, submission, blocks):
     if state != 'current':
         summary.update(historical_average=summary['average'], historical_ratings=summary['ratings'], average=None, ratings=0)
     return {'id':str(anchor.pk), 'quote':anchor.quote, 'state':state, 'spans':spans,
-            'original_version':anchor.submission.short_hash,
+            'original_version':anchor.submission.short_hash, 'original_hash':anchor.submission.hash,
+            'original_submission_id':str(anchor.submission_id),
+            'original_spans':[{'block':s['id'],'kind':s['kind'],'start':s['start'],'end':s['end']} for s in anchor.spans],
             'original_url':reverse('read_submission', args=[anchor.submission_id]) + '?discussion=' + str(anchor.pk),
             **summary}
 
@@ -213,6 +216,7 @@ def create(request, data, submission_id):
             return JsonResponse({'error':'You already rated this passage. Edit your existing discussion or reply to it.', 'passage':str(anchor.pk)},status=409)
         comment = PassageComment.objects.create(passage=anchor,user=request.user,text=text,score=score)
         record(comment)
+        discussion_activity(comment,request.user,'passage')
     return JsonResponse({'passage':str(anchor.pk),'comment':str(comment.pk)},status=201)
 
 
@@ -223,6 +227,7 @@ def reply(request, data, comment_id):
         comment = PassageComment.objects.create(passage=parent.passage,user=request.user,parent=parent,
             root_id=parent.root_id or parent.pk,depth=parent.depth+1,text=text_value(data))
         record(comment)
+        discussion_activity(comment,request.user,'reply')
     return JsonResponse({'comment':str(comment.pk),'passage':str(parent.passage_id)},status=201)
 
 
@@ -242,6 +247,8 @@ def edit(request, data, comment_id):
         comment.revision += 1
         comment.save(update_fields=['text','score','is_deleted','revision','updated_at'])
         record(comment)
+        if not deleting:
+            discussion_activity(comment,request.user,'edit')
     return JsonResponse({'ok':True})
 
 
@@ -266,7 +273,10 @@ def vote(request, data, comment_id):
         if comment.is_hidden or comment.is_deleted:
             return JsonResponse({'error':'This comment is unavailable.'},status=404)
         if value:
+            previous = PassageVote.objects.filter(comment=comment,user=request.user).values_list('value',flat=True).first()
             PassageVote.objects.update_or_create(comment=comment,user=request.user,defaults={'value':value})
+            if previous != value:
+                notify([comment.user_id],request.user,comment.passage.submission.paper,'vote',thread=comment.root or comment)
         else:
             PassageVote.objects.filter(comment=comment,user=request.user).delete()
     return JsonResponse({'ok':True})
@@ -280,8 +290,11 @@ def resolve(request, data, comment_id):
             return JsonResponse({'error':'Only the person who started this discussion can resolve or reopen it.'},status=403)
         if type(data.get('resolved')) is not bool:
             raise ValidationError('Choose resolved or open.')
+        changed = comment.resolved != data['resolved']
         comment.resolved = data['resolved']
         comment.save(update_fields=['resolved'])
+        if changed:
+            discussion_activity(comment,request.user,'resolved')
     return JsonResponse({'ok':True})
 
 
@@ -292,6 +305,9 @@ def report(request, data, comment_id):
         return JsonResponse({'error':'This comment is already unavailable.'},status=400)
     PassageReport.objects.update_or_create(comment=comment,reporter=request.user,
         defaults={'reason':text_value(data,'reason',2000),'reviewed':False})
+    from accounts.models import User
+    notify(User.objects.filter(is_staff=True,is_active=True).values_list('pk',flat=True),
+           request.user,comment.passage.submission.paper,'report',thread=comment.root or comment)
     return JsonResponse({'ok':True})
 
 
@@ -301,5 +317,7 @@ def link_pr(request, data, comment_id):
     if comment.parent_id or comment.is_hidden or comment.is_deleted:
         return JsonResponse({'error':'Link a PR to a visible top-level discussion.'},status=400)
     pr = get_object_or_404(PullRequest,pk=data.get('pr'),contributor=request.user,paper_id=comment.passage.submission.paper_id)
-    PassagePRLink.objects.get_or_create(thread=comment,pull_request=pr,defaults={'user':request.user})
+    link, created = PassagePRLink.objects.get_or_create(thread=comment,pull_request=pr,defaults={'user':request.user})
+    if created:
+        link_activity(link)
     return JsonResponse({'ok':True})

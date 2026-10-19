@@ -236,7 +236,7 @@ class DraftConcurrencyTests(TransactionTestCase):
 class PRMigrationTests(TransactionTestCase):
     def test_populated_history_is_grouped_without_rehashing(self):
         before=[('publishing','0004_submission_subjects')]
-        after=[('publishing','0008_passage_passagecomment_passagecommentrevision_and_more')]
+        after=[('publishing','0009_submissionsource_notification')]
         MigrationExecutor(connection).migrate(before)
         try:
             owner=User.objects.create_user('legacy-author',email_verified=True)

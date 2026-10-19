@@ -17,6 +17,7 @@
     <a href="#passage-discussions">Discuss a passage</a>
     <a href="#history">Understand the history</a>
     <a href="#local-tools">Use local files and AI tools</a>
+    <a href="#inbox">Your notification inbox</a>
     <a href="#account">Manage your account</a>
     <a href="#about">About Peerpedia</a>
   </nav>
@@ -72,7 +73,7 @@
       <p>A new discussion needs both a rating from 1 to 5 and a written comment. Each person has one active rating per passage. Open <strong>⋯</strong> beside your comment and choose <strong>Edit</strong> to update it; earlier edits remain in <strong>History</strong>. The same menu holds resolution, reporting, and PR links. These ratings are separate from the paper’s overall rating. Replies need text only and can continue at any depth. Up and down thumbs help useful comments rise; click the same thumb again to remove your vote.</p>
       <p>Only the person who started a discussion can resolve or reopen it. A contributor can link their PR as a proposed fix. Accepting that change asks the commenter to review it; acceptance does not close the discussion automatically. Deleting a comment leaves a placeholder and preserves its replies. Use <strong>Report</strong> to ask an administrator to review a comment.</p>
       <p>Discussions work on accepted versions and PR snapshots. An exact, unambiguous passage match carries its discussion forward. Changed passages show earlier discussions as historical links, without carrying their ratings onto the new text. Original quotations and version links remain available.</p>
-      <p>Participation requires a verified account on the website. API tokens cannot post comments, rate passages, vote, or resolve threads. CLI access to read passage feedback is planned for the next stage.</p>
+      <p>Participation requires a verified account on the website. API tokens cannot post comments, rate passages, vote, or resolve threads. Use the CLI commands below to read feedback and propose fixes. AI tools have no write access to comments, ratings, votes, or thread resolution.</p>
     </section>
     <section id="history">
       <h2>Understand the history</h2>
@@ -116,9 +117,26 @@ peerpedia push -m "Initial publication"</code></pre>
           <p>If a push loses its connection before you get a result, use <code>peerpedia push --retry</code>. This resends the saved submission, even if you edited your files afterward, without creating a duplicate.</p>
           <h3>Work with a local AI assistant</h3>
           <p>Let the assistant edit your local files, inspect the diff, and use the same client to submit. For an automated runner, supply <code>PEERPEDIA_TOKEN</code> securely and set <code>PEERPEDIA_SERVER</code> to <code>{{ site_url }}</code>. Commands support <code>--json</code> for structured output. Keep tokens out of paper files and public repositories.</p>
+          <h3>Read feedback and propose a fix</h3>
+          <p>CLI 0.3 adds public, read-only feedback commands. Inside a cloned paper directory, run:</p>
+<pre><code>peerpedia feedback --all --json
+peerpedia reviews --all --json
+peerpedia discussion PASSAGE_ID --all --json
+peerpedia comment-history COMMENT_ID --all --json</code></pre>
+          <p>The feedback list supplies passage IDs, exact quotations, original version hashes, and current or historical locations. A discussion supplies top-level thread IDs, ratings, replies, votes, resolution, and linked PRs. <code>--all</code> reads every page; on <code>discussion</code> it includes every reply. Use <code>feedback --submission SUBMISSION_ID</code> to inspect a frozen PR snapshot. Public reading does not require a token.</p>
+<pre><code>peerpedia push -m "Clarify the explanation" --address THREAD_ID --ai-assisted
+peerpedia pr PR_ID --json
+peerpedia push -m "Extend the proposed fix" --pr PR_ID --expected-head FULL_HEAD_HASH --address THREAD_ID --ai-assisted</code></pre>
+          <p>Repeat <code>--address</code> to link several discussions. Use the top-level thread ID from the discussion output. The first push opens a PR; the second example adds an immutable snapshot to that same PR. Obtain the full head hash with <code>peerpedia pr</code>. If the head or accepted base changed, fetch and review the new version before retrying. Acceptance remains a separate action for the corresponding author.</p>
+          <p>Tool submissions show your username and <strong>via CLI</strong>. Add <code>--ai-assisted</code> when AI helped prepare the snapshot; this label is self-declared. Use <code>peerpedia pr-comments PR_ID --all --json</code> for the PR conversation, or <code>peerpedia replies THREAD_ID --all --json</code> for replies alone. The CLI does not read private drafts or your inbox.</p>
           <p>See the <a href="{{ repository_url }}#local-editing-and-command-line-pushes">full CLI guide</a> for retry behavior, conflict handling, and credential storage.</p>
         </div>
       </details>
+    </section>
+    <section id="inbox">
+      <h2>Your notification inbox</h2>
+      <p>The bell in the main navigation opens your inbox. It shows activity on your papers and conversations, including replies, reviews, proposed changes, linked fixes, and decisions. Related updates are grouped together; your own actions do not notify you.</p>
+      <p>Choose <strong>View discussion</strong>, <strong>View PR</strong>, or <strong>View paper</strong> to open an update and mark it read. Use <strong>Unread</strong> to catch up or <strong>Mark all read</strong> to clear older activity. New activity arriving while you read remains unread. Notifications stay on the website; no notification emails are sent.</p>
     </section>
     <section id="account">
       <h2>Manage your account</h2>

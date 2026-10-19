@@ -54,6 +54,21 @@ class Submission(FrozenRecord):
     secondary_categories = models.JSONField(default=list, blank=True)
 
     @property
+    def via_cli(self):
+        try:
+            self.source
+            return True
+        except SubmissionSource.DoesNotExist:
+            return self.apipush_set.exists()
+
+    @property
+    def ai_assisted(self):
+        try:
+            return self.source.ai_assisted
+        except SubmissionSource.DoesNotExist:
+            return False
+
+    @property
     def subjects(self):
         from .subjects import subject_links
         return subject_links(self.primary_category, self.secondary_categories)
@@ -289,3 +304,29 @@ class PassagePRLink(models.Model):
 
     class Meta:
         constraints = [models.UniqueConstraint(fields=['thread','pull_request'], name='unique_passage_pr_link')]
+
+
+class SubmissionSource(FrozenRecord):
+    """Tool attribution is append-only metadata, separate from the document hash."""
+    submission = models.OneToOneField(Submission, on_delete=models.PROTECT, related_name='source')
+    ai_assisted = models.BooleanField(default=False)
+    created_at = models.DateTimeField(default=timezone.now)
+
+
+class Notification(models.Model):
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='notifications')
+    actor = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name='+')
+    paper = models.ForeignKey(Paper, on_delete=models.CASCADE)
+    thread = models.ForeignKey(PassageComment, null=True, blank=True, on_delete=models.CASCADE)
+    pull_request = models.ForeignKey(PullRequest, null=True, blank=True, on_delete=models.CASCADE)
+    kind = models.CharField(max_length=24)
+    group_key = models.CharField(max_length=150)
+    count = models.PositiveIntegerField(default=1)
+    revision = models.PositiveIntegerField(default=1)
+    unread = models.BooleanField(default=True)
+    updated_at = models.DateTimeField(default=timezone.now)
+
+    class Meta:
+        ordering = ['-updated_at', '-pk']
+        constraints = [models.UniqueConstraint(fields=['user', 'group_key'], name='unique_notification_group')]
+        indexes = [models.Index(fields=['user','unread','-updated_at'], name='notification_inbox_idx')]

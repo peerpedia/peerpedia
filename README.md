@@ -315,7 +315,7 @@ Draft access is owner-only, including for administrators through the application
 
 Review binds the draft ID, owner, and saved revision in an expiring signed token. Submission locks the draft, revalidates permissions and the accepted base, creates a frozen snapshot, and clears the working contents. Repeat confirmation returns the existing submission. Another edit after preview invalidates that preview. Drafts never alter accepted documents or existing manifests.
 
-A PullRequest groups immutable PullRequestCommit membership records. Existing revision submissions migrate to one-snapshot PRs without changing any submission, hash, decision, or comment. Update PR starts from its current head and appends a snapshot. Only the PR contributor can append, only the latest snapshot can receive a decision, and only the corresponding author can accept/reject. Comments from all snapshots appear in the common conversation, labeled with their source snapshot. The CLI continues to create separate proposals; it does not read or write online drafts in this release. PR membership is protected by database triggers; the grouping migration refuses downgrade once PRs or drafts exist to prevent accidental historical deletion.
+A PullRequest groups immutable PullRequestCommit membership records. Existing revision submissions migrate to one-snapshot PRs without changing any submission, hash, decision, or comment. Update PR starts from its current head and appends a snapshot. Only the PR contributor can append, only the latest snapshot can receive a decision, and only the corresponding author can accept/reject. Comments from all snapshots appear in the common conversation, labeled with their source snapshot. The CLI creates new proposals by default; CLI 0.3 can append snapshots with an explicit PR ID and expected head hash. It does not read or write online drafts. PR membership is protected by database triggers; the grouping migration refuses downgrade once PRs or drafts exist to prevent accidental historical deletion.
 
 To verify editor changes, run `python manage.py test publishing.test_drafts`; use the PostgreSQL test helper for real row-lock concurrency coverage. Preview rendering, autosave, recovery, conflict resolution, mobile layout, and the submission journey also require browser verification. Existing published hashes can be checked with `python manage.py verify_history`.
 
@@ -327,7 +327,7 @@ Drafts store only their selected source plus a range on the immutable base. Revi
 
 On review, an unchanged section can advance onto the latest accepted paper while preserving unrelated source and metadata changes. A changed, deleted, or ambiguous section requires a comparison and explicit target selection. Rebase preserves the private text; users must incorporate the displayed accepted changes before confirming. Acceptance racing with final submission requires another review. An existing section PR resumes its proposed section and appends another immutable snapshot after review. Section scope is stored in the immutable PR membership record; historical submission hashes are unchanged. SQLite membership triggers are reinstalled after its table-rebuilding migration.
 
-Tests: `python manage.py test publishing.test_sections publishing.test_drafts`; the PostgreSQL helper covers the full suite, migrations, concurrency, and restore checks. This stage does not yet implement passage discussions, ratings, notifications, or CLI feedback access.
+Tests: `python manage.py test publishing.test_sections publishing.test_drafts`; the PostgreSQL helper covers the full suite, migrations, concurrency, and restore checks. Passage discussions and CLI feedback are described in the later stages below.
 
 ### Passage discussions (local stage 2)
 
@@ -346,9 +346,54 @@ history exists.
 
 Commenters resolve their own threads. PR contributors can link proposed fixes;
 accepted changes await the commenter's review. Administrators review reports and
-hide or restore comments, with moderation audit records. CLI feedback reading and
-notification inbox are reserved for stage 3.
+hide or restore comments, with moderation audit records. CLI feedback reading and the notification inbox are implemented in stage 3 below.
 
 Verification uses isolated Django test databases and the temporary PostgreSQL
 runner. Browser checks use the separate local preview database on port 8011.
 Nothing in this stage changes the deployed site.
+
+### Feedback CLI and inbox (local stage 3)
+
+CLI 0.3 provides public read-only commands. From a cloned paper directory:
+
+- `peerpedia feedback --all --json` lists passage anchors, original quotes and full hashes, current mappings, ratings, and historical locations.
+- `peerpedia discussion PASSAGE_ID --all --json` reads every root and reply for that location.
+- `peerpedia replies THREAD_ID --all --json` reads replies alone.
+- `peerpedia comment-history COMMENT_ID --all --json` reads public edit history.
+- `peerpedia reviews --all --json` reads overall paper reviews.
+- `peerpedia pr PR_ID --all --json` reads frozen snapshot membership and the current head hash.
+- `peerpedia pr-comments PR_ID --all --json` reads the PR conversation.
+
+Use `feedback --submission SUBMISSION_ID` for a particular snapshot. Outside a
+project, supply `--server ORIGIN` and `--paper PAPER_ID` where applicable. Commands
+return a numeric `next` offset unless `--all` exhausts the pages; `--offset N`
+resumes a page. Reading sends no bearer credentials and writes no project files.
+These endpoints accept GET only. Hidden papers and moderated comment histories
+are excluded. Private drafts, inboxes, and moderation reports are not exported.
+
+After reconciling the local files with the accepted base, submit a fix with
+`peerpedia push -m "Explain the correction" --address THREAD_ID --ai-assisted`.
+Repeat `--address` to address several top-level discussion IDs. Append another
+snapshot using `--pr PR_ID --expected-head FULL_HEAD_HASH`. These writes create
+paper proposals only; the tool cannot post comments, rate, vote, resolve threads,
+or accept a PR. A stale head is rejected. Retrying a lost response reuses the exact
+saved payload, attribution, links, and idempotency key.
+
+Submissions retain the contributor's identity and show “via CLI”. The optional
+AI-assisted declaration is append-only attribution stored separately from the
+document manifest; existing hashes and manifest verification are unchanged.
+The declaration is self-reported, not an AI detector.
+
+The private website inbox groups activity by conversation/PR and event type.
+It covers discussions, replies, edits, votes, linked fixes, PR activity/decisions,
+and paper reviews. Report alerts go only to active staff. Own actions are excluded;
+there are no notification emails. Opening an item marks only the displayed revision
+read. Mark-all uses the page's load time, preserving newer arrivals. Hidden papers
+are excluded from both the inbox and unread badge.
+
+Migration 0009 adds notifications and immutable submission attribution. Attribution
+has database update/delete guards; rollback refuses to discard populated attribution.
+Test with the isolated PostgreSQL runner and `publishing.test_feedback`; the CLI
+integration journey covers public reads, linked fixes, stale heads, snapshot updates,
+and explicit reversion to the accepted base. The local preview remains separate
+from the deployed pilot.

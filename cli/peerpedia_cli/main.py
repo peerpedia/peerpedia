@@ -260,6 +260,14 @@ def initialize(args):
 
 
 def push(root, state, args):
+    pr_id = getattr(args,'pr',None)
+    expected_head = getattr(args,'expected_head',None)
+    discussion_ids = getattr(args,'address',[]) or []
+    ai_assisted = getattr(args,'ai_assisted',False)
+    if args.retry and (pr_id or expected_head or discussion_ids or ai_assisted):
+        raise ClientError("invalid_arguments","Retry reuses the saved request. Do not add PR, discussion, or AI flags.")
+    if bool(pr_id) != bool(expected_head):
+        raise ClientError("invalid_arguments","Updating a PR needs both --pr and --expected-head (the current full hash).")
     pending_path = root / ".peerpedia/pending.json"
     pending = read_json(pending_path) if pending_path.exists() else None
     if args.retry:
@@ -275,12 +283,18 @@ def push(root, state, args):
         base = base_record(root)
         if base and base["hash"] != state["base_hash"]:
             raise ClientError("invalid_state", "Stored base and state do not agree.")
-        if not changed(root, base):
+        if not changed(root, base) and not pr_id:
             return {"status": "unchanged", "message": "No local changes to push."}
         pending = {"server": state["server"], "key": str(uuid.uuid4()), "payload": {
             "paper_id": state["paper_id"], "base_hash": state["base_hash"],
             **local_document(root), "explanation": args.message,
         }}
+        if pr_id:
+            pending['payload'].update(pull_request_id=str(uuid.UUID(pr_id)),expected_head=expected_head)
+        if discussion_ids:
+            pending['payload']['discussion_ids'] = [str(uuid.UUID(value)) for value in discussion_ids]
+        if ai_assisted:
+            pending['payload']['ai_assisted'] = True
         previous_path = root / ".peerpedia/last-push.json"
         if previous_path.exists():
             previous = read_json(previous_path)
@@ -294,7 +308,7 @@ def push(root, state, args):
     try:
         record = verify(request(state["server"], "/api/v1/push/", token=token_for(state["server"]), payload=pending["payload"], key=pending["key"]))
     except ClientError as error:
-        if error.code in {"stale_base", "invalid_document", "invalid_request", "too_large", "insufficient_scope", "not_found"}:
+        if error.code in {"stale_base", "invalid_document", "invalid_request", "too_large", "insufficient_scope", "not_found", "stale_pr", "invalid_discussion", "forbidden"}:
             pending_path.unlink()  # Definitive rejection: safe to fix and submit anew.
         raise
     submitted = pending["payload"]
@@ -314,11 +328,69 @@ def push(root, state, args):
     else:
         write_json(root / ".peerpedia/state.json", state)
     pending_path.unlink()
-    return {"submission_id": record["manifest"]["submission_id"], "hash": record["hash"], "status": record["status"],
+    return {"pull_request": record.get("pull_request"), "via_cli":record.get("via_cli",True),
+            "ai_assisted":record.get("ai_assisted",False),
+            "submission_id": record["manifest"]["submission_id"], "hash": record["hash"], "status": record["status"],
             "url": state["server"] + f'/submissions/{record["manifest"]["submission_id"]}/'}
 
 
+READ_COMMANDS = {"feedback","discussion","replies","comment-history","reviews","pr","pr-comments"}
+
+
+def read_feedback(args):
+    if args.server:
+        server = server_for(args)
+        paper_id = getattr(args,'paper',None)
+    else:
+        _, state = project()
+        server, paper_id = state['server'], getattr(args,'paper',None) or state['paper_id']
+    if args.offset < 0:
+        raise ClientError("invalid_arguments","Offset must be nonnegative.")
+    def uid(value):
+        if not value:
+            raise ClientError("paper_required","Use --paper with --server, or run inside a published paper directory.")
+        return str(uuid.UUID(value))
+    if args.command == 'feedback':
+        submission_id = getattr(args,'submission',None)
+        path = f'/api/v1/submissions/{uid(submission_id)}/feedback/' if submission_id else f'/api/v1/papers/{uid(paper_id)}/feedback/'
+        key = 'passages'
+    elif args.command == 'reviews':
+        path, key = f'/api/v1/papers/{uid(paper_id)}/reviews/', 'reviews'
+    else:
+        target = uid(args.target)
+        path, key = {
+            'discussion':(f'/api/v1/passages/{target}/','threads'),
+            'replies':(f'/api/v1/discussion-comments/{target}/replies/','replies'),
+            'comment-history':(f'/api/v1/discussion-comments/{target}/history/','revisions'),
+            'pr':(f'/api/v1/prs/{target}/','snapshots'),
+            'pr-comments':(f'/api/v1/prs/{target}/comments/','comments'),
+        }[args.command]
+    def pages(path,key,offset=0):
+        result = request(server,path+'?offset='+str(offset))
+        seen = {offset}
+        while args.all and result.get('next') is not None:
+            at = result['next']
+            if type(at) is not int or at <= offset or at in seen:
+                raise ClientError("invalid_response","The server returned an invalid page cursor.")
+            seen.add(at)
+            offset = at
+            page = request(server,path+'?offset='+str(at))
+            result[key].extend(page[key])
+            result['next'] = page.get('next')
+        return result
+    result = pages(path,key,args.offset)
+    if args.all and args.command=='discussion':
+        for thread in result['threads']:
+            if thread['next_replies'] is not None:
+                extra=pages(f"/api/v1/discussion-comments/{uid(thread['id'])}/replies/",'replies',thread['next_replies'])
+                thread['replies'].extend(extra['replies'])
+                thread['next_replies']=None
+    return result
+
+
 def run(args):
+    if args.command in READ_COMMANDS:
+        return read_feedback(args)
     if args.command == "categories":
         return request(server_for(args), "/api/v1/categories/")
     if args.command == "login":
@@ -383,7 +455,7 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--json", action="store_true", help="Machine-readable output")
     commands = parser.add_subparsers(dest="command", required=True)
-    for command in ("login", "logout", "init", "clone", "diff", "status", "push", "pull", "fetch", "rebase", "categories"):
+    for command in ("login", "logout", "init", "clone", "diff", "status", "push", "pull", "fetch", "rebase", "categories", *sorted(READ_COMMANDS)):
         child = commands.add_parser(command)
         child.add_argument("--json", action="store_true", default=argparse.SUPPRESS)
         if command == "login":
@@ -396,7 +468,22 @@ def main(argv=None):
             child.add_argument("directory", nargs="?")
         if command == "init":
             child.add_argument("directory")
+        if command in READ_COMMANDS:
+            child.add_argument("--server")
+            child.add_argument("--offset",type=int,default=0)
+            child.add_argument("--all",action="store_true",help="Read all pages; discussion also includes all replies")
+            if command in {"feedback","reviews"}:
+                targets=child.add_mutually_exclusive_group()
+                targets.add_argument("--paper")
+                if command=="feedback":
+                    targets.add_argument("--submission")
+            else:
+                child.add_argument("target",help="Passage, comment, or PR UUID")
         if command == "push":
+            child.add_argument("--pr",help="Append an immutable snapshot to your existing PR")
+            child.add_argument("--expected-head",help="Full hash currently at the PR head")
+            child.add_argument("--address",action="append",default=[],metavar="THREAD_ID",help="Link a top-level discussion; repeat for several")
+            child.add_argument("--ai-assisted",action="store_true",help="Declare AI assistance on this snapshot")
             child.add_argument("-m", "--message")
             child.add_argument("--retry", action="store_true")
         if command == "rebase":

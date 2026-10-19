@@ -1,8 +1,11 @@
 from django.urls import path
 from django.views.generic import TemplateView
-from . import views, drafts, discussions
+from . import views, drafts, discussions, notifications
 
 urlpatterns = [
+    path("inbox/", notifications.inbox, name="inbox"),
+    path("inbox/read/", notifications.mark_read, name="inbox_read"),
+    path("inbox/<int:notification_id>/open/", notifications.open_notification, name="inbox_open"),
     path("submissions/<uuid:submission_id>/passages/", discussions.index, name="passage_index"),
     path("submissions/<uuid:submission_id>/discussions/", discussions.create, name="passage_create"),
     path("passages/<uuid:passage_id>/", discussions.detail, name="passage_detail"),

@@ -87,6 +87,46 @@ class CLIJourneys(StaticLiveServerTestCase):
     def fixture_paper(self):
         return publish(self.owner, document())
 
+    def test_read_feedback_and_push_linked_multi_snapshot_pr(self):
+        from publishing.models import Passage, PassageComment, PassageCommentRevision
+        from publishing.passages import validate
+        paper=self.fixture_paper()
+        spans,quote,key=validate(paper.current.markdown,[{'block':'b1','start':0,'end':11}])
+        anchor=Passage.objects.create(submission=paper.current,spans=spans,quote=quote,key=key)
+        thread=PassageComment.objects.create(passage=anchor,user=self.owner,score=3,text='Explain the equation.')
+        PassageCommentRevision.objects.create(comment=thread,number=1,text=thread.text,score=3)
+        for i in range(33):
+            PassageComment.objects.create(passage=anchor,user=self.owner,parent=thread,root=thread,depth=1,text=f'Follow-up {i}')
+        # Public reads work before logging in, without writing local project state.
+        feedback=self.command('feedback','--server',self.live_server_url,'--paper',str(paper.pk),'--all')
+        self.assertEqual(feedback['passages'][0]['original_hash'],paper.current.hash)
+        detail=self.command('discussion',str(anchor.pk),'--server',self.live_server_url,'--all')
+        self.assertEqual(len(detail['threads'][0]['replies']),33)
+        history=self.command('comment-history',str(thread.pk),'--server',self.live_server_url,'--all')
+        self.assertEqual(history['revisions'][0]['text'],thread.text)
+        self.login(self.other_token)
+        self.command('clone',str(paper.pk),'feedback-work')
+        work=self.root/'feedback-work'
+        self.assertEqual(self.command('feedback',folder=work)['paper_id'],str(paper.pk))
+        (work/'paper.md').write_text('# A test paper\n\nA clearer equation.\n',encoding='utf-8')
+        first=self.command('push','-m','Explain the equation.','--address',str(thread.pk),'--ai-assisted',folder=work)
+        self.assertTrue(first['ai_assisted'])
+        pr_id=first['pull_request']['id']
+        pr=self.command('pr',pr_id,folder=work)
+        self.assertEqual(pr['head_hash'],first['hash'])
+        self.assertEqual(pr['discussion_ids'],[str(thread.pk)])
+        (work/'paper.md').write_text('# A test paper\n\nA complete explanation.\n',encoding='utf-8')
+        second=self.command('push','-m','Expand the explanation.','--pr',pr_id,'--expected-head',first['hash'],'--address',str(thread.pk),'--ai-assisted',folder=work)
+        self.assertEqual(second['pull_request']['snapshot'],2)
+        self.command('push','-m','A stale update.','--pr',pr_id,'--expected-head',first['hash'],folder=work,failure='stale_pr')
+        self.assertFalse((work/'.peerpedia/pending.json').exists())
+        self.assertEqual(len(self.command('pr',pr_id,'--all',folder=work)['snapshots']),2)
+        self.command('push','-m','Missing concurrency check.','--pr',pr_id,folder=work,failure='invalid_arguments')
+        # A PR can explicitly return to its accepted base without silently becoming a no-op.
+        (work/'paper.md').write_text(paper.current.markdown,encoding='utf-8')
+        reverted=self.command('push','-m','Reconsider the proposed rewrite.','--pr',pr_id,'--expected-head',second['hash'],folder=work)
+        self.assertEqual(reverted['pull_request']['snapshot'],3)
+
     def test_new_publication_clone_proposal_retry_accept_and_pull(self):
         self.login(self.owner_token)
         self.command("init", "original")

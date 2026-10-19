@@ -53,6 +53,8 @@ def propose(user, paper_id, base_id, data, *, pull_request_id=None, expected_hea
         pr = PullRequest.objects.create(paper=paper, contributor=user, head=submission)
         number = 1
     PullRequestCommit.objects.create(request=pr, submission=submission, number=number, section=section or {})
+    from .notifications import notify
+    notify([paper.owner_id],user,paper,'proposal',pr=pr)
     return submission
 
 
@@ -82,4 +84,9 @@ def decide(user, submission_id, action):
         paper.current = proposal
         paper.accepted_at = event.created_at
         paper.save(update_fields=["current", "accepted_at"])
+    from .notifications import notify
+    notify([proposal.contributor_id],user,paper,'decision',pr=pr if commit else None)
+    if commit:
+        for link in pr.linked_threads.select_related('thread'):
+            notify([link.thread.user_id],user,paper,'decision',thread=link.thread,pr=pr)
     return event
