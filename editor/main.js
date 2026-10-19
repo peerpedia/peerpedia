@@ -1,4 +1,4 @@
-import { EditorView } from "@codemirror/view";
+import { EditorView, placeholder } from "@codemirror/view";
 import { EditorState } from "@codemirror/state";
 import { basicSetup } from "codemirror";
 import { markdown } from "@codemirror/lang-markdown";
@@ -50,6 +50,9 @@ const view = new EditorView({
     extensions: [
       basicSetup,
       markdown(),
+      placeholder(
+        "# Your note title\n\nStart writing in Markdown…\n\nUse ## for sections, $x^2$ for inline math, and $$ for display equations.",
+      ),
       EditorView.lineWrapping,
       EditorView.contentAttributes.of({
         "aria-label": "Markdown source",
@@ -127,6 +130,10 @@ function changed() {
 details.addEventListener("input", changed);
 details.addEventListener("change", changed);
 details.addEventListener("submit", (event) => event.preventDefault());
+$("close-details").addEventListener("click", () => {
+  $("paper-details").open = false;
+  $("paper-details").querySelector("summary").focus();
+});
 async function post(url, body, options = {}) {
   const response = await fetch(url, {
     method: "POST",
@@ -321,6 +328,25 @@ $("review-form").addEventListener("submit", async (event) => {
   try {
     await save();
     if (serial() !== saved) await save();
+    if (!initial.base) {
+      const missing = ["title", "authors", "abstract", "primary_category"].find(
+        (name) => !details.elements[name].value.trim(),
+      );
+      if (missing) {
+        $("paper-details").open = true;
+        details.elements[missing].focus();
+        throw new Error(
+          "Add your title, authors, abstract, and primary subject in Paper details before reviewing. Your draft is saved.",
+        );
+      }
+      if (!view.state.doc.toString().trim()) {
+        $("paper-details").open = false;
+        view.focus();
+        throw new Error(
+          "Write your note or import a Markdown file before reviewing. Your details are saved.",
+        );
+      }
+    }
     leaving = true;
     $("review-form").submit();
   } catch (error) {
@@ -428,8 +454,9 @@ async function updatePreview() {
         if (window.MathJax?.typesetPromise)
           await window.MathJax.typesetPromise([preview]);
         headings = Array.from(preview.querySelectorAll("[data-source-line]"));
-        $("preview-status").textContent =
-          "Preview · same renderer as the published paper";
+        $("preview-status").textContent = source.trim()
+          ? "Preview · same renderer as the published paper"
+          : "Your formatted note will appear here as you write.";
         if (!openedSection) {
           openedSection = true;
           const heading = headings.find((el) => el.id === initial.section);
