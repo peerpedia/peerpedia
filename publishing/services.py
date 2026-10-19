@@ -43,6 +43,9 @@ def publish(user, data):
     paper.current = submission
     paper.accepted_at = decision.created_at
     paper.save(update_fields=["current", "accepted_at"])
+    from .diagram_cache import enqueue
+
+    enqueue(submission)
     return paper
 
 
@@ -113,6 +116,9 @@ def propose(
     from .notifications import notify
 
     notify([paper.owner_id], user, paper, "proposal", pr=pr)
+    from .diagram_cache import enqueue
+
+    enqueue(submission)
     return submission
 
 

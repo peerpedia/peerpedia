@@ -715,6 +715,43 @@ class BrowserJourneys(StaticLiveServerTestCase):
         finally:
             no_script.close()
 
+    def render_saved_diagrams(self):
+        import socket
+        import subprocess
+        from urllib.request import build_opener, ProxyHandler
+        from publishing.management.commands.process_diagrams import process_one
+
+        with socket.socket() as listener:
+            listener.bind(("127.0.0.1", 0))
+            port = listener.getsockname()[1]
+        root = Path(__file__).resolve().parent.parent
+        server = subprocess.Popen(
+            ["node", "diagram_renderer/server.mjs"],
+            cwd=root,
+            env={"PATH": os.environ["PATH"], "PORT": str(port)},
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        try:
+            origin = f"http://127.0.0.1:{port}"
+            opener = build_opener(ProxyHandler({}))
+            for _ in range(50):
+                try:
+                    with opener.open(origin + "/health", timeout=1):
+                        break
+                except OSError:
+                    time.sleep(0.1)
+
+            def drain():
+                with override_settings(DIAGRAM_RENDERER_URL=origin):
+                    while process_one():
+                        pass
+
+            self.database_call(drain)
+        finally:
+            server.terminate()
+            server.wait(timeout=5)
+
     def test_diagrams_reader_preview_and_error_recovery(self):
         source = r"""# Diagrams
 
@@ -740,6 +777,16 @@ C \arrow[r, "k"'] & D
 ```
 """
         paper = self.fixture_paper(source)
+        self.render_saved_diagrams()
+        compiler_requests = []
+        self.context.on(
+            "request",
+            lambda request: (
+                compiler_requests.append(request.url)
+                if "diagram-worker" in request.url or "core.bin" in request.url
+                else None
+            ),
+        )
         self.page.goto(f"{self.live_server_url}/papers/{paper.pk}/read/")
         diagrams = self.page.locator("[data-diagram]")
         expect(self.page.locator("mjx-container")).to_have_count(1)
@@ -747,9 +794,14 @@ C \arrow[r, "k"'] & D
         for diagram in diagrams.all():
             diagram.scroll_into_view_if_needed()
             expect(diagram).to_have_attribute("data-diagram-state", "ready", timeout=60000)
-        expect(self.page.locator(".diagram-output svg")).to_have_count(2)
-        expect(self.page.locator(".diagram-output text")).not_to_have_count(0)
-        self.assertTrue(self.page.evaluate("() => document.fonts.check('10px cmmi10')"))
+        expect(self.page.locator(".diagram-output img")).to_have_count(2)
+        self.page.wait_for_function(
+            "Array.from(document.querySelectorAll('.diagram-output img')).every(i => i.complete && i.naturalWidth > 0)"
+        )
+        self.assertEqual(compiler_requests, [])
+        self.page.reload()
+        expect(self.page.locator(".diagram-output img")).to_have_count(2)
+        self.assertEqual(compiler_requests, [])
         folder = Path(os.environ["PEERPEDIA_BROWSER_ARTIFACTS"])
         folder.mkdir(parents=True, exist_ok=True)
         self.page.screenshot(path=str(folder / "diagrams-desktop.png"), full_page=True)
@@ -793,7 +845,8 @@ C \arrow[r, "k"'] & D
             ),
         )
         paper = self.fixture_paper("```tikzpicture\nignored\n```")
-        self.page.goto(f"{self.live_server_url}/papers/{paper.pk}/read/")
+        self.login()
+        self.page.goto(f"{self.live_server_url}/papers/{paper.pk}/edit/")
         expect(self.page.locator("[data-diagram]")).to_have_attribute("data-diagram-state", "ready")
         output = self.page.locator(".diagram-output")
         expect(
@@ -807,7 +860,7 @@ C \arrow[r, "k"'] & D
         expect(output.locator("use").first).to_have_attribute("href", "#" + local_id)
         self.assertIsNone(output.locator("use").last.get_attribute("href"))
 
-    def test_diagram_timeout_does_not_block_reader(self):
+    def test_diagram_timeout_does_not_block_editor(self):
         source = r"""# Timeout
 ```tikzpicture
 \def\forever{\forever}\forever
@@ -818,8 +871,9 @@ C \arrow[r, "k"'] & D
 ```
 """
         paper = self.fixture_paper(source)
-        self.page.goto(f"{self.live_server_url}/papers/{paper.pk}/read/")
-        expect(self.page.locator(".reader-home")).to_be_visible()
+        self.login()
+        self.page.goto(f"{self.live_server_url}/papers/{paper.pk}/edit/")
+        expect(self.page.locator(".cm-content")).to_be_visible()
         expect(self.page.locator("[data-diagram]").first).to_have_attribute(
             "data-diagram-state", "error", timeout=60000
         )

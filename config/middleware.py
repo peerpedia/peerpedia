@@ -28,5 +28,9 @@ class SecurityHeadersMiddleware:
                 "default-src 'none'; script-src 'self' 'wasm-unsafe-eval'; "
                 "connect-src 'self'; object-src 'none'"
             )
+        if request.resolver_match and request.resolver_match.url_name == "diagram_svg":
+            response["Content-Security-Policy"] = (
+                "default-src 'none'; style-src 'unsafe-inline'; font-src data:; sandbox"
+            )
         response["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
         return response

@@ -117,6 +117,49 @@ function failure(node, message, log = "") {
   }
 }
 
+async function savedDiagram(node) {
+  const start = Date.now();
+  let delay = 1000;
+  while (node.isConnected && Date.now() - start < 120000) {
+    try {
+      const response = await fetch(node.dataset.savedUrl, {
+        credentials: "omit",
+      });
+      if (!response.ok) throw new Error("Diagram is not ready yet.");
+      const data = await response.json();
+      if (data.status === "error") return failure(node, data.error);
+      if (data.status === "ready") {
+        const url = new URL(data.url, location.origin);
+        if (
+          url.origin !== location.origin ||
+          !/^\/diagrams\/[a-f0-9]{64}\.svg$/.test(url.pathname)
+        )
+          throw new Error("Invalid diagram URL.");
+        const img = document.createElement("img");
+        img.alt = "TeX diagram";
+        img.onload = () => {
+          node.dataset.diagramState = "ready";
+          node.querySelector(".diagram-status").hidden = true;
+        };
+        img.onerror = () =>
+          failure(node, "Could not load this diagram. Reload to try again.");
+        img.src = url.href;
+        node.querySelector(".diagram-output").replaceChildren(img);
+        return;
+      }
+    } catch {
+      /* A queued job or temporary outage should not prevent reading. */
+    }
+    await new Promise((resolve) => setTimeout(resolve, delay));
+    delay = Math.min(delay * 1.5, 10000);
+  }
+  if (node.isConnected)
+    failure(
+      node,
+      "This diagram is still being prepared. Reload later; its source is available below.",
+    );
+}
+
 function next() {
   if (active) return;
   let node;
@@ -124,6 +167,10 @@ function next() {
     node = queue.shift();
   } while (node && !node.isConnected);
   if (!node) return;
+  if (node.dataset.savedUrl) {
+    savedDiagram(node);
+    return next();
+  }
   const source = node.querySelector(".diagram-source code").textContent;
   if (cache.has(source)) {
     display(node, cache.get(source));
