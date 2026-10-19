@@ -6,7 +6,7 @@ A small, public research-publishing application built with Django and PostgreSQL
 
 [Website](https://peerpedia.dev) · [Usage guide](https://peerpedia.dev/help/) · [Source](https://github.com/peerpedia/peerpedia)
 
-Developed by [Chenqi Meng](https://github.com/Chenqitrg).
+Developer information is on the [About page](https://peerpedia.dev/about/).
 
 ## What is implemented
 
