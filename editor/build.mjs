@@ -11,6 +11,15 @@ await build({
   legalComments: "eof",
   outfile: destination + "/editor.js",
 });
+await build({
+  entryPoints: ["diagrams.js"],
+  bundle: true,
+  minify: true,
+  format: "iife",
+  target: "es2020",
+  legalComments: "eof",
+  outfile: destination + "/diagrams.js",
+});
 const lock = JSON.parse(await readFile("package-lock.json", "utf8"));
 const licenses = [];
 for (const name of Object.keys(lock.packages).filter((name) =>

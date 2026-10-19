@@ -12,6 +12,7 @@
     <a href="#subjects">Find papers by subject</a>
     <a href="#read">Read and discover</a>
     <a href="#publish">Publish a paper or note</a>
+    <a href="#diagrams">Draw diagrams</a>
     <a href="#contribute">Propose a change</a>
     <a href="#review">Review and discuss</a>
     <a href="#passage-discussions">Discuss a passage</a>
@@ -49,6 +50,36 @@
       <p>If saving conflicts with another tab or device, download your text before choosing which copy to keep. If a newer paper version is accepted, compare its changes and explicitly update your draft base. Your text is preserved. Browser recovery is a fallback during connection failures, not a replacement for checking the Saved indicator.</p>
       <p>Images, PDF uploads, and multiple-file submissions are not supported yet. The online editor offers a private autosaved draft and a live preview. Check the content and attribution of AI-assisted notes before publishing.</p>
       <div class="notice"><strong>Publication is public and permanent in the history.</strong> Once confirmed, a submission’s document and metadata are frozen. To correct them, submit a new version.</div>
+    </section>
+    <section id="diagrams">
+      <h2>Draw diagrams in Markdown</h2>
+      <p>Use <code>CD</code> (uppercase) inside a display equation for a simple commutative diagram:</p>
+      <pre><code>$$
+\begin{CD}
+A @&gt;f&gt;&gt; B \\
+@VgVV @VVhV \\
+C @&gt;k&gt;&gt; D
+\end{CD}
+$$</code></pre>
+      <p>For labelled or diagonal arrows, use a <code>tikzcd</code> code block. Keep the environment inside the block:</p>
+      <pre><code>```tikzcd
+\begin{tikzcd}
+A \arrow[r, "f"] \arrow[d, "g"'] &amp; B \arrow[d, "h"] \\
+C \arrow[r, "k"'] &amp; D
+\end{tikzcd}
+```</code></pre>
+      <p>For general drawings, use <code>tikzpicture</code> (or <code>tikz</code>):</p>
+      <pre><code>```tikzpicture
+\begin{tikzpicture}
+\draw[-&gt;] (0,0) -- (3,0) node[right] {$x$};
+\draw[-&gt;] (0,0) -- (0,2) node[above] {$y$};
+\draw[blue, thick] (0,0) parabola (2,1.5);
+\end{tikzpicture}
+```</code></pre>
+      <p>The editor preview, submission review, and reader use the same renderer. Diagrams compile in your browser as they approach the visible part of the page. The compiler is downloaded from Peerpedia on first use (about 10 MB), so the first diagram may take a moment. It needs a modern browser with WebAssembly. No diagram source is sent to an external service.</p>
+      <p>Keep each diagram below 32 KB. A compilation taking longer than eight seconds is stopped; other diagrams continue. Errors appear beside the source. After fixing a diagram in the editor, its preview updates automatically. Reload the reader to retry a failed download.</p>
+      <p>Start with basic TikZ drawing commands and <code>tikzcd</code>. This is not a complete LaTeX installation: only bundled libraries are available. External files, images, and arbitrary packages are not supported. Unsupported commands produce a compiler message. Use a <code>latex</code> code block when you want to show code without compiling it.</p>
+      <p>The Markdown source stays in the immutable submission and in its diff. Rendering a diagram does not change the submission or its hash. Expand <strong>Diagram source</strong> to inspect the original code.</p>
     </section>
     <section id="contribute">
       <h2>Propose a change</h2>

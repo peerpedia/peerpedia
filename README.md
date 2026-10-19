@@ -33,6 +33,7 @@ Use Python 3.12–3.14. Python 3.13 is used by the production image.
 python3 -m venv .venv
 .venv/bin/python -m pip install -r requirements.lock
 .venv/bin/python scripts/fetch_mathjax.py
+.venv/bin/python scripts/fetch_diagrams.py
 .venv/bin/python manage.py migrate
 .venv/bin/python manage.py runserver 127.0.0.1:8000
 ```
@@ -335,6 +336,7 @@ Install the browser dependencies into the application development environment, a
 .venv/bin/python -m pip install -r requirements-browser.txt
 .venv/bin/python -m playwright install chromium
 .venv/bin/python scripts/fetch_mathjax.py
+.venv/bin/python scripts/fetch_diagrams.py
 .test-tools/bin/python scripts/test_browser.py --python .venv/bin/python
 ```
 
@@ -702,3 +704,39 @@ and [submission agreement](https://info.arxiv.org/help/policies/submission_agree
 Peerpedia's terms are original and adapt to public PRs; they do not assert arXiv
 affiliation or copy its jurisdiction and liability waivers. Content licensing is
 separate from licensing of this application's source code.
+
+### Markdown diagrams
+
+`CD` environments inside `$$...$$` use the local MathJax AMSCD extension.
+Fenced `tikzcd`, `tikzpicture`, and `tikz` blocks compile to static SVG in the
+reader, upload/revision review, and live editor preview. Each block must include
+its `\begin{...}` / `\end{...}` environment. See `/help/#diagrams` for examples.
+Ordinary `latex` fences remain literal code. Source and passage anchors are
+unchanged; compilation is a presentation operation, not a new snapshot.
+
+Run `python scripts/fetch_diagrams.py` when setting up local assets. It verifies
+SHA-256 pins for the TikZJax v1 distribution, its matching TeX memory image and
+WebAssembly engine, and the fonts from node-tikzjax 1.0.5. The generated
+`peerpedia-engine.js` replaces the pinned bundle's DOM entry point with a worker
+function. The original bundle and LPPL license are distributed beside it;
+BaKoMa's font license is retained. The adaptation is maintained by Peerpedia in
+`scripts/fetch_diagrams.py`. DOMPurify is pinned in the editor lockfile and its
+license is included in the built asset license file.
+
+Compilation runs in one disposable browser worker at a time, with a 32 KB input
+limit, 45-second asset-load deadline and eight-second compile deadline. The WASM
+memory is fixed at 2,500 pages (about 156 MiB), plus compiler and conversion
+buffers; low-memory devices may be unable to compile large diagrams. The first
+use downloads roughly 10 MB of compiler assets. Near-viewport diagrams are
+queued lazily; a bounded in-memory cache avoids recompiling unchanged preview
+blocks. Replacing a preview terminates obsolete work. No TeX runs in Django, no
+source goes to third parties, and the worker fetch wrapper allows only the two
+pinned local binary assets without credentials.
+
+Only `/diagram-worker.js` permits `wasm-unsafe-eval` in its CSP. Ordinary pages
+retain their existing script policy. The worker exposes only a virtual TeX
+filesystem. Its converter output passes through DOMPurify and a static SVG
+allowlist, rejecting executable/interactive elements, external references and
+arbitrary CSS. Dimensions, output size, diagnostics and DOM node counts are
+bounded. This supports basic TikZ and tikz-cd, not arbitrary LaTeX packages,
+external files or a full Overleaf environment.

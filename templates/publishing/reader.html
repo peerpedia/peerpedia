@@ -8,8 +8,7 @@
   <script defer src="{% static 'reader.js' %}"></script>
   <link rel="stylesheet" href="{% static 'discussions.css' %}">
   <script defer src="{% static 'discussions.js' %}"></script>
-  <script defer src="{% static 'math.js' %}"></script>
-  <script defer src="{% static 'vendor/mathjax/tex-svg.js' %}"></script>
+  {% include "includes/math.html" %}
 </head>
 <body class="reader{% if contents %} has-contents{% endif %}">
   <a class="reader-skip" href="#paper-text">Skip to paper</a>

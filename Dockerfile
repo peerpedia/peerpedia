@@ -13,6 +13,7 @@ RUN pip install --no-cache-dir -r requirements.lock
 COPY . .
 COPY --from=editor-assets /app/static/vendor/editor /app/static/vendor/editor
 RUN python scripts/fetch_mathjax.py \
+ && python scripts/fetch_diagrams.py \
     && DEBUG=0 SECRET_KEY=static-build-only-not-a-runtime-secret DATABASE_URL=postgresql://unused@localhost/unused python manage.py collectstatic --noinput \
     && useradd --create-home --uid 10001 peerpedia
 USER peerpedia

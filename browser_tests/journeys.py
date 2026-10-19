@@ -3,6 +3,7 @@
 from publishing.test_support import consenting_user
 
 import os
+import json
 from pathlib import Path
 import re
 import time
@@ -90,7 +91,7 @@ class BrowserJourneys(StaticLiveServerTestCase):
         self.page.get_by_role("button", name="Sign in", exact=True).click()
         expect(self.page.get_by_role("button", name="Sign out")).to_be_visible()
 
-    def fixture_paper(self):
+    def fixture_paper(self, source=SOURCE):
         return self.database_call(
             lambda: publish(
                 self.owner,
@@ -101,7 +102,7 @@ class BrowserJourneys(StaticLiveServerTestCase):
                     "title": "Browser paper",
                     "authors": "Ada Example",
                     "abstract": "A private-to-metadata abstract.",
-                    "markdown": SOURCE,
+                    "markdown": source,
                     "explanation": "Initial publication.",
                 },
             )
@@ -713,6 +714,117 @@ class BrowserJourneys(StaticLiveServerTestCase):
             expect(page.locator("#section-last-section")).to_be_in_viewport()
         finally:
             no_script.close()
+
+    def test_diagrams_reader_preview_and_error_recovery(self):
+        source = r"""# Diagrams
+
+$$
+\begin{CD}
+A @>f>> B \\
+@VgVV @VVhV \\
+C @>k>> D
+\end{CD}
+$$
+
+```tikzcd
+\begin{tikzcd}
+A \arrow[r, "f"] \arrow[d, "g"'] & B \arrow[d, "h"] \\
+C \arrow[r, "k"'] & D
+\end{tikzcd}
+```
+
+```tikzpicture
+\begin{tikzpicture}
+\draw[blue, thick] (0,0) circle (1);
+\end{tikzpicture}
+```
+"""
+        paper = self.fixture_paper(source)
+        self.page.goto(f"{self.live_server_url}/papers/{paper.pk}/read/")
+        diagrams = self.page.locator("[data-diagram]")
+        expect(self.page.locator("mjx-container")).to_have_count(1)
+        expect(self.page.locator("[data-mml-node='merror']")).to_have_count(0)
+        for diagram in diagrams.all():
+            diagram.scroll_into_view_if_needed()
+            expect(diagram).to_have_attribute("data-diagram-state", "ready", timeout=60000)
+        expect(self.page.locator(".diagram-output svg")).to_have_count(2)
+        expect(self.page.locator(".diagram-output text")).not_to_have_count(0)
+        self.assertTrue(self.page.evaluate("() => document.fonts.check('10px cmmi10')"))
+        folder = Path(os.environ["PEERPEDIA_BROWSER_ARTIFACTS"])
+        folder.mkdir(parents=True, exist_ok=True)
+        self.page.screenshot(path=str(folder / "diagrams-desktop.png"), full_page=True)
+        self.page.set_viewport_size({"width": 390, "height": 844})
+        self.assert_no_page_overflow()
+        self.page.set_viewport_size({"width": 1365, "height": 900})
+        self.login()
+        self.page.goto(f"{self.live_server_url}/papers/{paper.pk}/edit/")
+        expect(self.page.locator(".cm-content")).to_be_visible()
+        expect(self.page.locator("[data-diagram-state='ready']")).to_have_count(2, timeout=60000)
+        self.page.locator(".cm-content").fill(
+            "```tikzpicture\n\\begin{tikzpicture}\\notARealCommand\\end{tikzpicture}\n```"
+        )
+        expect(self.page.locator("[data-diagram-state='error']")).to_have_count(1, timeout=60000)
+        expect(self.page.locator(".diagram-status")).to_contain_text("could not compile")
+        self.page.locator(".cm-content").fill(source)
+        expect(self.page.locator("[data-diagram-state='ready']")).to_have_count(2, timeout=60000)
+
+    def test_diagram_output_removes_active_content(self):
+        # Treat compiler output as hostile, independently of TeX's own behavior.
+        payload = {
+            "type": "result",
+            "result": {
+                "width": 100,
+                "height": 100,
+                "html": '<svg onload="window.pwned=1"><script>window.pwned=1</script>'
+                '<foreignObject><iframe src="https://bad.test/"></iframe></foreignObject>'
+                '<image href="https://bad.test/image" />'
+                '<a href="javascript:alert(1)"><text>unsafe link</text></a>'
+                '<path id="pgf1" d="M0 0L10 10" style="fill:url(https://bad.test/style)" />'
+                '<use href="#pgf1"/><use href="https://bad.test/#shape"/>'
+                '<text style="font-family: cmmi10;">A</text></svg>',
+            },
+        }
+        self.context.route(
+            "**/diagram-worker.js",
+            lambda route: route.fulfill(
+                content_type="application/javascript",
+                body="self.onmessage=()=>self.postMessage(" + json.dumps(payload) + ");",
+            ),
+        )
+        paper = self.fixture_paper("```tikzpicture\nignored\n```")
+        self.page.goto(f"{self.live_server_url}/papers/{paper.pk}/read/")
+        expect(self.page.locator("[data-diagram]")).to_have_attribute("data-diagram-state", "ready")
+        output = self.page.locator(".diagram-output")
+        expect(
+            output.locator("script,foreignObject,iframe,image,a,[onload],[style]")
+        ).to_have_count(0)
+        self.assertIsNone(self.page.evaluate("window.pwned"))
+        expect(output.locator("text[font-family=cmmi10]")).to_have_count(1)
+        local_id = output.locator("path").get_attribute("id")
+        self.assertTrue(local_id.startswith("diagram-"))
+        expect(output.locator("use").first).to_have_attribute("href", "#" + local_id)
+        self.assertIsNone(output.locator("use").last.get_attribute("href"))
+
+    def test_diagram_timeout_does_not_block_reader(self):
+        source = r"""# Timeout
+```tikzpicture
+\def\forever{\forever}\forever
+```
+
+```tikzpicture
+\begin{tikzpicture}\draw (0,0) -- (1,1);\end{tikzpicture}
+```
+"""
+        paper = self.fixture_paper(source)
+        self.page.goto(f"{self.live_server_url}/papers/{paper.pk}/read/")
+        expect(self.page.locator(".reader-home")).to_be_visible()
+        expect(self.page.locator("[data-diagram]").first).to_have_attribute(
+            "data-diagram-state", "error", timeout=60000
+        )
+        expect(self.page.locator(".diagram-status").first).to_contain_text("timed out")
+        expect(self.page.locator("[data-diagram]").last).to_have_attribute(
+            "data-diagram-state", "ready", timeout=60000
+        )
 
     def test_access_token_creation_one_time_display_and_revocation(self):
         self.login()

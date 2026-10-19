@@ -24,6 +24,7 @@ def main():
         for member, name in [
             ("package/es5/tex-svg.js", "tex-svg.js"),
             ("package/LICENSE", "LICENSE"),
+            ("package/es5/input/tex/extensions/amscd.js", "amscd.js"),
         ]:
             entry = archive.getmember(member)
             if not entry.isfile():
