@@ -328,3 +328,27 @@ Drafts store only their selected source plus a range on the immutable base. Revi
 On review, an unchanged section can advance onto the latest accepted paper while preserving unrelated source and metadata changes. A changed, deleted, or ambiguous section requires a comparison and explicit target selection. Rebase preserves the private text; users must incorporate the displayed accepted changes before confirming. Acceptance racing with final submission requires another review. An existing section PR resumes its proposed section and appends another immutable snapshot after review. Section scope is stored in the immutable PR membership record; historical submission hashes are unchanged. SQLite membership triggers are reinstalled after its table-rebuilding migration.
 
 Tests: `python manage.py test publishing.test_sections publishing.test_drafts`; the PostgreSQL helper covers the full suite, migrations, concurrency, and restore checks. This stage does not yet implement passage discussions, ratings, notifications, or CLI feedback access.
+
+### Passage discussions (local stage 2)
+
+The reader supports text-range discussions, whole-equation/table/code discussions,
+1–5 passage ratings, nested replies, reversible helpfulness votes, and comment edit
+history. These ratings are separate from overall paper reviews. Browser writes
+require a verified session and CSRF; bearer credentials cannot write feedback.
+
+Anchors store canonical quoted text and the immutable source version. Only exact,
+unambiguous matches in accepted ancestry or earlier snapshots of the same PR carry
+discussions forward. Changed or ambiguous passages retain historical links and
+do not inherit scores. Deleted/hidden comments leave placeholders with replies;
+public history excludes unavailable comments. Database triggers protect original
+anchors and comment revisions. Migration 0008 refuses rollback while passage
+history exists.
+
+Commenters resolve their own threads. PR contributors can link proposed fixes;
+accepted changes await the commenter's review. Administrators review reports and
+hide or restore comments, with moderation audit records. CLI feedback reading and
+notification inbox are reserved for stage 3.
+
+Verification uses isolated Django test databases and the temporary PostgreSQL
+runner. Browser checks use the separate local preview database on port 8011.
+Nothing in this stage changes the deployed site.

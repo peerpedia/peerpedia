@@ -6,6 +6,8 @@
   {% include "includes/icons.html" %}
   <link rel="stylesheet" href="{% static 'reader.css' %}">
   <script defer src="{% static 'reader.js' %}"></script>
+  <link rel="stylesheet" href="{% static 'discussions.css' %}">
+  <script defer src="{% static 'discussions.js' %}"></script>
   <script defer src="{% static 'math.js' %}"></script>
   <script defer src="{% static 'vendor/mathjax/tex-svg.js' %}"></script>
 </head>
@@ -14,6 +16,7 @@
   <aside class="reader-sidebar" aria-label="Paper navigation">
     <a class="reader-home" href="{% url 'browse' %}" aria-label="Peerpedia home" title="Peerpedia home"><img src="{% static 'favicon.svg' %}" width="32" height="32" alt=""><span>Peerpedia</span></a>
     <a class="reader-edit" href="{% url 'edit_paper' submission.paper_id %}" aria-label="{% if submission.pk != submission.paper.current_id %}Edit latest accepted version{% else %}Edit paper{% endif %}" title="{% if submission.pk != submission.paper.current_id %}Edit latest accepted version{% else %}Edit paper{% endif %}"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="m15 4 5 5M4 20l5-1L21 7a2 2 0 0 0-5-5L4 14z"/></svg><span>{% if submission.pk != submission.paper.current_id %}Edit latest{% else %}Edit{% endif %}</span></a>
+    <button type="button" class="reader-discussions" id="discussions-open" aria-controls="discussion-panel" aria-expanded="false">Discussions <span id="discussion-count"></span></button>
     {% if contents %}
     <details class="reader-contents" open>
       <summary><span>Contents</span><span class="reader-current" aria-hidden="true"></span></summary>
@@ -26,5 +29,13 @@
     {% endif %}
   </aside>
   <main id="paper-text" class="markdown-body" tabindex="-1">{{ body }}</main>
+  <button type="button" id="passage-selection" hidden>Comment &amp; rate</button>
+  <aside id="discussion-panel" class="discussion-panel" aria-label="Passage discussions" hidden>
+    <header class="discussion-header"><div><h2>Discussions</h2><p>{{ submission.short_hash }} · {{ submission.status }}</p></div><button type="button" id="discussions-close" aria-label="Close discussions">✕</button></header>
+    <p id="discussion-message" role="status" aria-live="polite"></p>
+    <div id="discussion-body"></div>
+  </aside>
+  <div hidden>{% csrf_token %}</div>
+  {{ discussion_config|json_script:"discussion-config" }}
 </body>
 </html>

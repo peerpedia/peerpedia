@@ -61,3 +61,44 @@ class CommentAdmin(ModeratedAdmin):
 admin.site.register(Submission, ImmutableAdmin)
 admin.site.register(Decision, ImmutableAdmin)
 admin.site.register(ModerationEvent, ImmutableAdmin)
+
+
+from .models import Passage, PassageComment, PassageCommentRevision, PassageReport
+
+
+@admin.register(PassageComment)
+class PassageCommentAdmin(ModeratedAdmin):
+    list_display = ('user', 'passage', 'score', 'is_hidden', 'is_deleted', 'created_at')
+    list_filter = ('is_hidden', 'is_deleted')
+    search_fields = ('text', 'user__username', 'passage__quote')
+
+
+@admin.register(PassageReport)
+class PassageReportAdmin(admin.ModelAdmin):
+    list_display = ('comment', 'reporter', 'created_at', 'reviewed')
+    list_filter = ('reviewed',)
+    actions = ('hide_reported',)
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+    def get_readonly_fields(self, request, obj=None):
+        return [f.name for f in self.model._meta.fields if f.name != 'reviewed']
+
+    @admin.action(description='Hide reported comments and mark reports reviewed')
+    def hide_reported(self, request, queryset):
+        from django.db import transaction
+        with transaction.atomic():
+            comments = PassageComment.objects.filter(pk__in=queryset.values('comment_id'), is_hidden=False)
+            for comment in comments:
+                comment.is_hidden = True
+                comment.save(update_fields=['is_hidden'])
+                ModerationEvent.objects.create(actor=request.user, target=f'{comment._meta.label}:{comment.pk}', reason='Hidden after reviewing a passage report')
+            queryset.update(reviewed=True)
+
+
+admin.site.register(Passage, ImmutableAdmin)
+admin.site.register(PassageCommentRevision, ImmutableAdmin)

@@ -57,10 +57,13 @@ def heading_tokens(tokens):
     return headings
 
 
-def render_reader(source, source_lines=False, edit_url=None):
+def render_reader(source, source_lines=False, edit_url=None, passage_annotations=False):
     """Render safe Markdown with the same section boundaries used by the editor."""
     md = parser()
     tokens = md.parse(source)
+    if passage_annotations:
+        from .passages import annotate
+        annotate(md, tokens, decorate=True)
     headings = heading_tokens(tokens)
     contents = []
     for item in headings:

@@ -58,7 +58,7 @@ class PublishingTests(TestCase):
 
     def test_reader_has_no_platform_chrome(self):
         response = self.client.get(reverse("read_paper", args=[self.paper.pk]))
-        self.assertContains(response, '<h1 id="section-a-test-paper">A test paper</h1>', html=True)
+        self.assertContains(response, '<h1 id="section-a-test-paper" data-passage="b0" data-passage-kind="text" data-passage-text="A test paper">A test paper</h1>', html=True)
         for forbidden in ["site-header", "site-footer", "Go back", "Sign in"]:
             self.assertNotContains(response, forbidden)
 

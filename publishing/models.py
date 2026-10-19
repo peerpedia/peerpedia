@@ -209,3 +209,83 @@ class Draft(models.Model):
     @property
     def title(self):
         return self.data.get("title") or "Untitled paper"
+
+
+class Passage(FrozenRecord):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    submission = models.ForeignKey(Submission, on_delete=models.PROTECT, related_name="passages")
+    key = models.CharField(max_length=64)
+    spans = models.JSONField()
+    quote = models.TextField()
+    created_at = models.DateTimeField(default=timezone.now)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=['submission', 'key'], name='unique_version_passage')]
+
+
+class PassageComment(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    passage = models.ForeignKey(Passage, on_delete=models.PROTECT, related_name='comments')
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT)
+    parent = models.ForeignKey('self', null=True, blank=True, on_delete=models.PROTECT, related_name='replies')
+    root = models.ForeignKey('self', null=True, blank=True, on_delete=models.PROTECT, related_name='descendants')
+    depth = models.PositiveIntegerField(default=0)
+    text = models.TextField(max_length=5000)
+    score = models.PositiveSmallIntegerField(null=True, blank=True)
+    revision = models.PositiveIntegerField(default=1)
+    is_deleted = models.BooleanField(default=False)
+    is_hidden = models.BooleanField(default=False)
+    resolved = models.BooleanField(default=False)
+    created_at = models.DateTimeField(default=timezone.now)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['created_at', 'pk']
+        constraints = [
+            models.CheckConstraint(condition=(models.Q(parent__isnull=True, root__isnull=True, score__gte=1, score__lte=5, score__isnull=False) | models.Q(parent__isnull=False, root__isnull=False, score__isnull=True)), name='passage_root_requires_rating'),
+            models.UniqueConstraint(fields=['passage','user'], condition=models.Q(parent__isnull=True, is_deleted=False), name='one_active_passage_rating'),
+        ]
+
+
+class PassageCommentRevision(FrozenRecord):
+    comment = models.ForeignKey(PassageComment, on_delete=models.PROTECT, related_name='history')
+    number = models.PositiveIntegerField()
+    text = models.TextField()
+    score = models.PositiveSmallIntegerField(null=True)
+    is_deleted = models.BooleanField(default=False)
+    created_at = models.DateTimeField(default=timezone.now)
+
+    class Meta:
+        ordering = ['number']
+        constraints = [models.UniqueConstraint(fields=['comment','number'], name='unique_passage_comment_revision')]
+
+
+class PassageVote(models.Model):
+    comment = models.ForeignKey(PassageComment, on_delete=models.PROTECT, related_name='votes')
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT)
+    value = models.SmallIntegerField()
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=['comment','user'], name='one_passage_vote'),
+                       models.CheckConstraint(condition=models.Q(value__in=[-1,1]), name='valid_passage_vote')]
+
+
+class PassageReport(models.Model):
+    comment = models.ForeignKey(PassageComment, on_delete=models.PROTECT, related_name='reports')
+    reporter = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT)
+    reason = models.TextField(max_length=2000)
+    created_at = models.DateTimeField(default=timezone.now)
+    reviewed = models.BooleanField(default=False)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=['comment','reporter'], name='one_passage_report')]
+
+
+class PassagePRLink(models.Model):
+    thread = models.ForeignKey(PassageComment, on_delete=models.PROTECT, related_name='linked_prs')
+    pull_request = models.ForeignKey(PullRequest, on_delete=models.PROTECT, related_name='linked_threads')
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT)
+    created_at = models.DateTimeField(default=timezone.now)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=['thread','pull_request'], name='unique_passage_pr_link')]

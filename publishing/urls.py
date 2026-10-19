@@ -1,8 +1,20 @@
 from django.urls import path
 from django.views.generic import TemplateView
-from . import views, drafts
+from . import views, drafts, discussions
 
 urlpatterns = [
+    path("submissions/<uuid:submission_id>/passages/", discussions.index, name="passage_index"),
+    path("submissions/<uuid:submission_id>/discussions/", discussions.create, name="passage_create"),
+    path("passages/<uuid:passage_id>/", discussions.detail, name="passage_detail"),
+    path("discussion-comments/<uuid:comment_id>/replies/", discussions.replies, name="passage_replies"),
+    path("discussion-comments/<uuid:comment_id>/reply/", discussions.reply, name="passage_reply"),
+    path("discussion-comments/<uuid:comment_id>/edit/", discussions.edit, name="passage_edit"),
+    path("discussion-comments/<uuid:comment_id>/history/", discussions.history, name="passage_history"),
+    path("discussion-comments/<uuid:comment_id>/vote/", discussions.vote, name="passage_vote"),
+    path("discussion-comments/<uuid:comment_id>/resolve/", discussions.resolve, name="passage_resolve"),
+    path("discussion-comments/<uuid:comment_id>/report/", discussions.report, name="passage_report"),
+    path("discussion-comments/<uuid:comment_id>/link_pr/", discussions.link_pr, name="passage_link_pr"),
+
     path("write/", drafts.start, name="write"),
     path("papers/<uuid:paper_id>/edit/", drafts.start, name="edit_paper"),
     path("prs/<uuid:pr_id>/edit/", drafts.start, name="edit_pr"),

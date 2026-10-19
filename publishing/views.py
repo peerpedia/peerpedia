@@ -106,8 +106,18 @@ def read_submission(request, submission_id):
 
 def reader(request, submission):
     edit_url = reverse("edit_paper", args=[submission.paper_id]) + "?version=" + str(submission.pk) if submission.pk == submission.paper.current_id else None
-    body, contents = render_reader(submission.markdown, edit_url=edit_url)
-    return render(request, "publishing/reader.html", {"submission": submission, "body": mark_safe(body), "contents": contents})
+    body, contents = render_reader(submission.markdown, edit_url=edit_url, passage_annotations=True)
+    from urllib.parse import urlencode
+    config = {
+        "index": reverse("passage_index", args=[submission.pk]),
+        "create": reverse("passage_create", args=[submission.pk]),
+        "participate": request.user.is_authenticated and request.user.is_active and request.user.email_verified,
+        "login": reverse("login") + "?" + urlencode({"next": request.get_full_path()}),
+        "version": submission.short_hash, "status": submission.status,
+    }
+    response = render(request, "publishing/reader.html", {"submission": submission, "body": mark_safe(body), "contents": contents, "discussion_config": config})
+    response["Cache-Control"] = "private, no-store"
+    return response
 
 
 def download(request, submission_id):
@@ -219,6 +229,7 @@ def submission_detail(request, submission_id):
         "stale": submission.status == "pending" and submission.base_id != submission.paper.current_id,
         "comments": comments.filter(is_hidden=False).select_related("user", "submission"), "comment_form": CommentForm(),
         "pr": pr, "commits": pr.commits.select_related("submission") if pr else [],
+        "linked_discussions": pr.linked_threads.select_related("thread__passage__submission") if pr else [],
     })
 
 
