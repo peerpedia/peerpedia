@@ -4,7 +4,7 @@
 {% block nav-breadcrumbs %}{% endblock %}
 {% block nav-sidebar %}{% endblock %}
 {% block content_title %}
-<div class="admin-intro"><p class="admin-eyebrow">PEERPEDIA ADMINISTRATION</p><h1>Care for the community.</h1><p>Review content, manage accounts, and follow the history of the work.</p></div>
+<div class="admin-intro"><p class="admin-eyebrow">PEERPEDIA ADMINISTRATION</p><h1>{% include 'includes/motto.html' %}</h1><p>Review content, manage accounts, and follow the history of the work.</p></div>
 {% endblock %}
 {% block content %}
 {% admin_sections app_list as sections %}

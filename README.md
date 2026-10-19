@@ -1,5 +1,7 @@
 # Peerpedia
 
+To a better academia
+
 A small, public research-publishing application built with Django and PostgreSQL. Researchers upload a complete Markdown document, propose frozen changes, review papers, and preserve their publication history.
 
 [Website](https://peerpedia.dev) · [Usage guide](https://peerpedia.dev/help/) · [Source](https://github.com/peerpedia/peerpedia)
