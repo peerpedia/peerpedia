@@ -60,6 +60,54 @@ services:
       <<: *app-environment
       DATABASE_URL: postgresql://${POSTGRES_USER:-peerpedia}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-peerpedia}
     command: [python, manage.py, migrate, --noinput]
+  diagrams:
+    build:
+      context: .
+      target: diagram-renderer
+    image: peerpedia-diagrams:local
+    restart: unless-stopped
+    networks: [diagram_internal]
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 768m
+    memswap_limit: 768m
+    cpus: 0.75
+    pids_limit: 64
+    logging:
+      driver: local
+      options:
+        max-size: "5m"
+        max-file: "2"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8765/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+  diagram-jobs:
+    image: peerpedia-web:local
+    restart: unless-stopped
+    command: [python, manage.py, process_diagrams, --backfill]
+    environment:
+      DEBUG: "0"
+      SECRET_KEY: diagram-background-worker-no-http-sessions
+      DATABASE_URL: postgresql://peerpedia_app:${APP_DB_PASSWORD:?Set APP_DB_PASSWORD in .env}@db:5432/${POSTGRES_DB:-peerpedia}
+      DIAGRAM_RENDERER_URL: http://diagrams:8765
+    networks: [default, diagram_internal]
+    depends_on:
+      db:
+        condition: service_healthy
+      diagrams:
+        condition: service_healthy
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 192m
+    logging:
+      driver: local
+      options:
+        max-size: "5m"
+        max-file: "2"
   caddy:
     image: caddy:2-alpine
     restart: unless-stopped
@@ -80,3 +128,7 @@ volumes:
   postgres_data:
   caddy_data:
   caddy_config:
+
+networks:
+  diagram_internal:
+    internal: true

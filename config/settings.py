@@ -170,3 +170,6 @@ SOCIALACCOUNT_EMAIL_VERIFICATION = "none"
 ACCOUNT_SIGNUP_FIELDS = ["username*", "email*"]
 ACCOUNT_LOGIN_METHODS = {"username", "email"}
 ACCOUNT_EMAIL_NOTIFICATIONS = False
+
+# Internal-only, credential-free renderer. Reading never runs TeX in a web request.
+DIAGRAM_RENDERER_URL = os.environ.get("DIAGRAM_RENDERER_URL", "http://diagrams:8765")

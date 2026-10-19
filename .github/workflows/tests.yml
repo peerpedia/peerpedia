@@ -38,11 +38,13 @@ jobs:
           cache: npm
           cache-dependency-path: editor/package-lock.json
       - run: npm ci --ignore-scripts --prefix editor
-      - run: editor/node_modules/.bin/prettier --check 'editor/*.js' 'editor/*.mjs' 'static/*.js'
-      - run: for source in static/*.js editor/*.js editor/*.mjs; do node --check "$source"; done
+      - run: editor/node_modules/.bin/prettier --check 'editor/*.js' 'editor/*.mjs' 'static/*.js' 'diagram_renderer/*.mjs'
+      - run: for source in static/*.js editor/*.js editor/*.mjs diagram_renderer/*.mjs; do node --check "$source"; done
       - run: python -m unittest discover -s scripts -p 'test_*_unit.py'
       - run: python scripts/check_plugin.py
       - run: python scripts/test_proxy.py
+      - run: docker build --target diagram-renderer -t peerpedia-diagrams:test .
+      - run: docker run --rm --network none --read-only --cap-drop ALL --security-opt no-new-privileges --memory 768m --memory-swap 768m --pids-limit 64 peerpedia-diagrams:test node --test diagram_renderer/test.mjs
   test:
     runs-on: ubuntu-latest
     services:

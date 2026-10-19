@@ -4,6 +4,8 @@ from . import views, drafts, discussions, notifications
 from . import licensing, diagrams
 
 urlpatterns = [
+    path("diagrams/<str:key>/status/", diagrams.status, name="diagram_status"),
+    path("diagrams/<str:key>.svg", diagrams.svg, name="diagram_svg"),
     path("diagram-worker.js", diagrams.worker, name="diagram_worker"),
     path("terms/", licensing.terms, name="terms"),
     path("terms/<str:version>/", licensing.terms, name="terms_version"),

@@ -105,7 +105,14 @@ def reader(request, submission):
         if submission.pk == submission.paper.current_id
         else None
     )
-    body, contents = render_reader(submission.markdown, edit_url=edit_url, passage_annotations=True)
+    from .diagram_cache import saved_for
+
+    body, contents = render_reader(
+        submission.markdown,
+        edit_url=edit_url,
+        passage_annotations=True,
+        saved_diagrams=saved_for(submission),
+    )
     from urllib.parse import urlencode
 
     config = {

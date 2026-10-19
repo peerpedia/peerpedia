@@ -493,3 +493,17 @@ class Notification(models.Model):
         indexes = [
             models.Index(fields=["user", "unread", "-updated_at"], name="notification_inbox_idx")
         ]
+
+
+class DiagramArtifact(models.Model):
+    """Rebuildable derived data; never part of a submission's immutable manifest."""
+
+    key = models.CharField(max_length=64, primary_key=True)
+    source = models.TextField()
+    status = models.CharField(max_length=12, default="pending", db_index=True)
+    svg = models.TextField(blank=True)
+    error = models.CharField(max_length=250, blank=True)
+    attempts = models.PositiveSmallIntegerField(default=0)
+    available_at = models.DateTimeField(default=timezone.now, db_index=True)
+    updated_at = models.DateTimeField(default=timezone.now)
+    submissions = models.ManyToManyField(Submission, related_name="diagram_artifacts")

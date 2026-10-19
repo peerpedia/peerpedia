@@ -723,20 +723,42 @@ BaKoMa's font license is retained. The adaptation is maintained by Peerpedia in
 `scripts/fetch_diagrams.py`. DOMPurify is pinned in the editor lockfile and its
 license is included in the built asset license file.
 
-Compilation runs in one disposable browser worker at a time, with a 32 KB input
-limit, 45-second asset-load deadline and eight-second compile deadline. The WASM
-memory is fixed at 2,500 pages (about 156 MiB), plus compiler and conversion
-buffers; low-memory devices may be unable to compile large diagrams. The first
-use downloads roughly 10 MB of compiler assets. Near-viewport diagrams are
-queued lazily; a bounded in-memory cache avoids recompiling unchanged preview
-blocks. Replacing a preview terminates obsolete work. No TeX runs in Django, no
-source goes to third parties, and the worker fetch wrapper allows only the two
-pinned local binary assets without credentials.
+Submitted diagrams are queued in `DiagramArtifact`, keyed by the exact source and
+compiler/sanitizer version. This is rebuildable derived data, outside immutable
+submission manifests. Identical figures share one result across snapshots. The
+reader serves saved SVG images with ETags; it never starts a TeX worker. Pending
+figures are polled near the viewport, and failures retain their original source.
 
-Only `/diagram-worker.js` permits `wasm-unsafe-eval` in its CSP. Ordinary pages
-retain their existing script policy. The worker exposes only a virtual TeX
-filesystem. Its converter output passes through DOMPurify and a static SVG
-allowlist, rejecting executable/interactive elements, external references and
-arbitrary CSS. Dimensions, output size, diagnostics and DOM node counts are
-bounded. This supports basic TikZ and tikz-cd, not arbitrary LaTeX packages,
-external files or a full Overleaf environment.
+`diagram-jobs` is a Django management worker that claims jobs with short database
+transactions and leases. It calls the credential-free `diagrams` container over a
+separate internal network. The renderer has no database network, credentials,
+host mounts, writable filesystem, or external network. It runs as a non-root user
+with dropped capabilities, 768 MiB memory, 0.75 CPU, and a fifteen-second deadline
+per disposable Node worker. Only the pinned engine receives source; TeX sees its
+virtual filesystem. An allowlisted fetch shim can load only its two local binary
+assets. Node's VM adapts browser APIs; Docker provides the isolation boundary.
+
+Output is bounded and validated again in Python. The SVG allowlist excludes
+scripts, external resources, foreign objects, event handlers, and arbitrary CSS.
+Only trusted bundled fonts are embedded. SVG responses have a restrictive sandbox
+CSP. Failed infrastructure calls retry up to three times; expired job leases can
+be reclaimed. TeX failures are terminal until an operator explicitly retries them.
+The per-source limit is 32 KB, with at most 32 distinct queued diagrams per snapshot.
+
+Deploy with `docker compose build web diagrams`, run migrations, then start
+`web`, `diagrams`, and `diagram-jobs`. The job service backfills existing public
+snapshots at startup without changing their content or hashes. To manually drain
+or rebuild jobs, use `python manage.py process_diagrams --backfill --once`; use
+`--retry-errors` only after resolving the cause. Bump `diagram_cache.VERSION`
+when changing the compiler, fonts, or SVG sanitization policy. Old cached versions
+are retained; backfill adds new artifacts rather than changing historical source.
+
+Editor and upload previews still use disposable browser workers with a 45-second
+asset-load deadline and eight-second compilation deadline. The WASM memory is
+fixed at 2,500 pages (about 156 MiB), plus compiler and conversion buffers. Initial
+editor use downloads roughly 10 MB. A bounded in-memory cache avoids recompiling
+unchanged preview blocks, and replacing a preview terminates obsolete work.
+Only `/diagram-worker.js` permits `wasm-unsafe-eval`; page script policies remain
+unchanged. DOMPurify validates preview output before display. No source goes to
+third parties. Basic TikZ and tikz-cd are supported, not external files or a full
+LaTeX/Overleaf environment.

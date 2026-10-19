@@ -5,7 +5,7 @@ from mdit_py_plugins.dollarmath import dollarmath_plugin
 from mdit_py_plugins.texmath import texmath_plugin
 
 
-def parser():
+def parser(saved_diagrams=None):
     md = (
         MarkdownIt("commonmark", {"html": False, "breaks": False})
         .enable("table")
@@ -22,15 +22,41 @@ def parser():
         return '<div class="math block">' + escape(tokens[idx].content) + "</div>\n"
 
     original_fence = md.renderer.rules["fence"]
+    diagram_keys = set()
 
     def diagram_fence(tokens, idx, options, env):
         token = tokens[idx]
         if token.info.strip() not in {"tikzcd", "tikzpicture", "tikz"}:
             return original_fence(tokens, idx, options, env)
+        attrs, output, message = "", "", "Diagram waiting to compile."
+        if saved_diagrams is not None:
+            from django.urls import reverse
+            from .diagram_cache import key_for, MAX_DIAGRAMS
+
+            key = key_for(token.content)
+            diagram_keys.add(key)
+            item = saved_diagrams.get(key)
+            url = reverse("diagram_status", args=[key])
+            attrs = f' data-saved-url="{url}"'
+            message = "Preparing diagram…"
+            if item and item.status == "ready":
+                attrs += ' data-diagram-state="ready"'
+                output = (
+                    '<img loading="lazy" alt="TeX diagram" src="'
+                    + reverse("diagram_svg", args=[key])
+                    + '">'
+                )
+            elif len(diagram_keys) > MAX_DIAGRAMS:
+                attrs += ' data-diagram-state="error"'
+                message = "Keep each paper below 32 distinct diagrams."
+            elif item and item.status == "error":
+                attrs += ' data-diagram-state="error"'
+                message = item.error
+        hidden = " hidden" if output else ""
         return (
-            '<figure class="tex-diagram" data-diagram>'
-            '<div class="diagram-output" role="img" aria-label="TeX diagram"></div>'
-            '<p class="diagram-status" role="status">Diagram waiting to compile.</p>'
+            '<figure class="tex-diagram" data-diagram' + attrs + ">"
+            '<div class="diagram-output" role="img" aria-label="TeX diagram">' + output + "</div>"
+            '<p class="diagram-status" role="status"' + hidden + ">" + escape(message) + "</p>"
             '<details class="diagram-source"><summary>Diagram source</summary><pre><code>'
             + escape(token.content)
             + "</code></pre></details></figure>\n"
@@ -86,9 +112,11 @@ def heading_tokens(tokens):
     return headings
 
 
-def render_reader(source, source_lines=False, edit_url=None, passage_annotations=False):
+def render_reader(
+    source, source_lines=False, edit_url=None, passage_annotations=False, saved_diagrams=None
+):
     """Render safe Markdown with the same section boundaries used by the editor."""
-    md = parser()
+    md = parser(saved_diagrams)
     tokens = md.parse(source)
     if passage_annotations:
         from .passages import annotate
