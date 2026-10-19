@@ -9,7 +9,7 @@ from django.contrib.staticfiles.testing import StaticLiveServerTestCase
 from django.core import mail
 from django.db import connections
 from django.test import override_settings
-from playwright.sync_api import expect, sync_playwright
+from playwright.sync_api import TimeoutError as PlaywrightTimeoutError, expect, sync_playwright
 
 from accounts.models import User
 from publishing.models import Paper, Review, Submission
@@ -111,6 +111,13 @@ class BrowserJourneys(StaticLiveServerTestCase):
         expect(self.page.locator("pre code mjx-container")).to_have_count(0)
 
     def assert_no_page_overflow(self):
+        # Search results can already match while the next page's styles are
+        # loading. Wait for the layout condition, retaining geometry on failure.
+        try:
+            self.page.wait_for_function(
+                "document.documentElement.scrollWidth <= window.innerWidth + 1", timeout=5000)
+        except PlaywrightTimeoutError:
+            pass
         layout = self.page.evaluate("""() => ({
             viewport: innerWidth, width: document.documentElement.scrollWidth,
             overflowing: [...document.querySelectorAll('body *')].filter(element =>
