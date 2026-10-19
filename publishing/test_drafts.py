@@ -1,3 +1,4 @@
+from publishing.test_support import consenting_user
 import json
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.db import DatabaseError, transaction
@@ -19,10 +20,10 @@ from django.test import TransactionTestCase
 class DraftTests(TestCase):
     @classmethod
     def setUpTestData(cls):
-        cls.owner = User.objects.create_user(
+        cls.owner = consenting_user(
             "writer", "writer@example.org", "test-password", email_verified=True
         )
-        cls.other = User.objects.create_user(
+        cls.other = consenting_user(
             "reader", "reader@example.org", "test-password", email_verified=True
         )
         cls.paper = publish(cls.owner, document())
@@ -176,13 +177,22 @@ class DraftTests(TestCase):
         draft = self.prepared()
         token = self.reviewed(draft)
         self.assertEqual(self.save(draft, markdown="A later change").status_code, 200)
-        response = self.client.post(reverse("draft_submit", args=[draft.pk]), {"token": token})
+        response = self.client.post(
+            reverse("draft_submit", args=[draft.pk]),
+            {"token": token, "license": "CC-BY-4.0", "rights_confirmed": "on"},
+        )
         self.assertEqual(response.url, reverse("editor", args=[draft.pk]))
         self.assertEqual(Submission.objects.count(), 1)
         draft.refresh_from_db()
         token = self.reviewed(draft)
-        first = self.client.post(reverse("draft_submit", args=[draft.pk]), {"token": token})
-        again = self.client.post(reverse("draft_submit", args=[draft.pk]), {"token": token})
+        first = self.client.post(
+            reverse("draft_submit", args=[draft.pk]),
+            {"token": token, "license": "CC-BY-4.0", "rights_confirmed": "on"},
+        )
+        again = self.client.post(
+            reverse("draft_submit", args=[draft.pk]),
+            {"token": token, "license": "CC-BY-4.0", "rights_confirmed": "on"},
+        )
         self.assertEqual(first.url, again.url)
         self.assertEqual(Submission.objects.count(), 2)
         draft.refresh_from_db()
@@ -195,7 +205,10 @@ class DraftTests(TestCase):
     def test_new_paper_is_accepted_and_owner_revision_needs_acceptance(self):
         draft = self.prepared(False)
         token = self.reviewed(draft)
-        self.client.post(reverse("draft_submit", args=[draft.pk]), {"token": token})
+        self.client.post(
+            reverse("draft_submit", args=[draft.pk]),
+            {"token": token, "license": "CC-BY-4.0", "rights_confirmed": "on"},
+        )
         draft.refresh_from_db()
         self.assertEqual(draft.submitted.status, "accepted")
         self.assertEqual(draft.submitted.paper.owner, self.owner)
@@ -211,7 +224,10 @@ class DraftTests(TestCase):
             document(markdown="Accepted elsewhere"),
         )
         decide(self.owner, update.pk, "accepted")
-        self.client.post(reverse("draft_submit", args=[draft.pk]), {"token": token})
+        self.client.post(
+            reverse("draft_submit", args=[draft.pk]),
+            {"token": token, "license": "CC-BY-4.0", "rights_confirmed": "on"},
+        )
         draft.refresh_from_db()
         self.assertIsNone(draft.submitted_id)
         review = self.client.post(
@@ -228,7 +244,10 @@ class DraftTests(TestCase):
         self.assertEqual(draft.base_id, update.pk)
         self.assertEqual(draft.markdown, old)
         token = self.reviewed(draft)
-        self.client.post(reverse("draft_submit", args=[draft.pk]), {"token": token})
+        self.client.post(
+            reverse("draft_submit", args=[draft.pk]),
+            {"token": token, "license": "CC-BY-4.0", "rights_confirmed": "on"},
+        )
         draft.refresh_from_db()
         self.assertEqual(draft.submitted.base_id, update.pk)
 
@@ -275,7 +294,10 @@ class DraftTests(TestCase):
         )
         draft.refresh_from_db()
         token = self.reviewed(draft)
-        self.client.post(reverse("draft_submit", args=[draft.pk]), {"token": token})
+        self.client.post(
+            reverse("draft_submit", args=[draft.pk]),
+            {"token": token, "license": "CC-BY-4.0", "rights_confirmed": "on"},
+        )
         draft.refresh_from_db()
         pr.refresh_from_db()
         first.refresh_from_db()
@@ -339,7 +361,7 @@ class DraftTests(TestCase):
 @override_settings(PASSWORD_HASHERS=["django.contrib.auth.hashers.MD5PasswordHasher"])
 class DraftConcurrencyTests(TransactionTestCase):
     def setUp(self):
-        self.owner = User.objects.create_user("concurrent-writer", email_verified=True)
+        self.owner = consenting_user("concurrent-writer", email_verified=True)
         self.paper = publish(self.owner, document())
 
     def test_concurrent_saves_keep_one_copy_and_return_conflict(self):
@@ -410,28 +432,76 @@ class DraftConcurrencyTests(TransactionTestCase):
 class PRMigrationTests(TransactionTestCase):
     def test_populated_history_is_grouped_without_rehashing(self):
         before = [("publishing", "0004_submission_subjects")]
-        after = [("publishing", "0009_submissionsource_notification")]
+        after = [("publishing", "0010_rightsrequest_submission_license_code_and_more")]
         MigrationExecutor(connection).migrate(before)
         try:
-            owner = User.objects.create_user("legacy-author", email_verified=True)
-            paper = publish(owner, document())
-            old = Submission.objects.create(
-                paper=paper,
-                contributor=owner,
+            apps = MigrationExecutor(connection).loader.project_state(before).apps
+            owner = apps.get_model("accounts", "User").objects.create(
+                username="legacy-author", email_verified=True
+            )
+            OldPaper = apps.get_model("publishing", "Paper")
+            OldSubmission = apps.get_model("publishing", "Submission")
+            paper = OldPaper.objects.create(owner_id=owner.pk)
+            data = document()
+            data.pop("license")
+            from django.utils import timezone
+
+            now = timezone.now()
+            base = Submission(
+                paper_id=paper.pk,
+                contributor_id=owner.pk,
                 contributor_name=owner.username,
-                base=paper.current,
-                **document(),
+                created_at=now,
+                **data,
+            )
+            original = OldSubmission.objects.create(
+                id=base.pk,
+                paper_id=paper.pk,
+                contributor_id=owner.pk,
+                contributor_name=owner.username,
+                created_at=now,
+                hash=base.calculate_hash(),
+                **data,
+            )
+            paper.current_id = original.pk
+            paper.save()
+            apps.get_model("publishing", "Decision").objects.create(
+                submission_id=original.pk, actor_id=owner.pk, action="accepted"
+            )
+            runtime = Submission(
+                paper_id=paper.pk,
+                contributor_id=owner.pk,
+                contributor_name=owner.username,
+                base=base,
+                created_at=now,
+                **data,
+            )
+            base.hash = original.hash
+            old = OldSubmission.objects.create(
+                id=runtime.pk,
+                paper_id=paper.pk,
+                contributor_id=owner.pk,
+                contributor_name=owner.username,
+                base_id=original.pk,
+                created_at=now,
+                hash=runtime.calculate_hash(),
+                **data,
             )
             digest = old.hash
-            Comment.objects.create(submission=old, user=owner, text="Legacy conversation")
+            apps.get_model("publishing", "Comment").objects.create(
+                submission_id=old.pk, user_id=owner.pk, text="Legacy conversation"
+            )
         finally:
             MigrationExecutor(connection).migrate(after)
-        old.refresh_from_db()
+        old = Submission.objects.get(pk=old.pk)
         self.assertEqual(old.hash, digest)
         self.assertEqual(old.hash, old.calculate_hash())
         self.assertEqual(old.pr_commit.request.head_id, old.pk)
         self.assertEqual(old.comments.get().text, "Legacy conversation")
         from django.db.migrations.exceptions import IrreversibleError
 
-        with self.assertRaises(IrreversibleError):
-            MigrationExecutor(connection).migrate(before)
+        try:
+            with self.assertRaises(IrreversibleError):
+                MigrationExecutor(connection).migrate(before)
+        finally:
+            MigrationExecutor(connection).migrate(after)

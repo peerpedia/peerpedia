@@ -31,11 +31,11 @@
   <main id="main" class="main-shell">
     {% if messages %}<div class="messages" role="status">{% for message in messages %}<div class="notice {{ message.tags }}">{{ message }}</div>{% endfor %}</div>{% endif %}
     {% if user.is_authenticated and not user.email_verified %}<div class="notice">Verify your email to publish, submit changes, and write reviews. <a href="{% url 'verification_needed' %}">Verify email</a></div>{% endif %}
-    {% block content %}{% endblock %}
+    {% if needs_agreement %}<div class="notice">Before publishing or commenting, <a href="{% url 'agreements' %}?next={{ request.get_full_path|urlencode }}">review the submission and discussion agreement</a>.</div>{% endif %}{% block content %}{% endblock %}
   </main>
   <footer class="site-footer">
     <span>Peerpedia · Research, with a history.</span>
-    <div class="footer-links"><a href="{% url 'privacy' %}">Privacy</a><a href="{% url 'help' %}">Help</a><a href="{{ repository_url }}">GitHub</a><span>Developed by <a href="{{ developer_url }}">{{ developer_name }}</a></span></div>
+    <div class="footer-links"><a href="{% url 'terms' %}">Terms</a><a href="{% url 'licenses' %}">Licenses</a><a href="{% url 'rights_request' %}">Rights requests</a><a href="{% url 'privacy' %}">Privacy</a><a href="{% url 'help' %}">Help</a><a href="{{ repository_url }}">GitHub</a><span>Developed by <a href="{{ developer_url }}">{{ developer_name }}</a></span></div>
   </footer>
 </body>
 </html>

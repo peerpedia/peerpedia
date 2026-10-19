@@ -1,5 +1,7 @@
 """Browser integration tests: actual forms, cookies, CSRF, JS and PostgreSQL."""
 
+from publishing.test_support import consenting_user
+
 import os
 from pathlib import Path
 import re
@@ -27,10 +29,8 @@ class BrowserJourneys(StaticLiveServerTestCase):
     host = "127.0.0.1"
 
     def setUp(self):
-        self.owner = User.objects.create_user(
-            "owner", "owner@example.org", PASSWORD, email_verified=True
-        )
-        self.contributor = User.objects.create_user(
+        self.owner = consenting_user("owner", "owner@example.org", PASSWORD, email_verified=True)
+        self.contributor = consenting_user(
             "contributor", "contributor@example.org", PASSWORD, email_verified=True
         )
         # Stop Playwright before Django flushes the test database. Its sync API
@@ -95,6 +95,7 @@ class BrowserJourneys(StaticLiveServerTestCase):
             lambda: publish(
                 self.owner,
                 {
+                    "license": "CC-BY-4.0",
                     "primary_category": "math.NT",
                     "secondary_categories": [],
                     "title": "Browser paper",
@@ -158,6 +159,53 @@ class BrowserJourneys(StaticLiveServerTestCase):
         })""")
         self.assertLessEqual(layout["width"], layout["viewport"] + 1, str(layout))
 
+    def test_author_license_choice_requires_human_agreement(self):
+        from accounts.models import User
+        from publishing.models import AgreementAcceptance
+        from publishing.licensing import VERSION
+
+        new_user = self.database_call(
+            lambda: User.objects.create_user(
+                "license-author", "license@example.org", PASSWORD, email_verified=True
+            )
+        )
+        self.login("license-author")
+        self.page.goto(self.live_server_url + "/publish/")
+        expect(self.page.get_by_role("heading", name="Before you contribute")).to_be_visible()
+        self.assertFalse(
+            self.database_call(lambda: AgreementAcceptance.objects.filter(user=new_user).exists())
+        )
+        self.page.get_by_label("I have read and accept", exact=False).check()
+        self.page.get_by_role("button", name="Accept agreement and continue").click()
+        self.assertEqual(
+            self.database_call(lambda: AgreementAcceptance.objects.get(user=new_user).version),
+            VERSION,
+        )
+        self.upload()
+        expect(self.page.get_by_label("Content license:", exact=True)).to_have_value("")
+        self.page.get_by_label("Content license:", exact=True).select_option("CC-BY-NC-ND-4.0")
+        self.page.get_by_label("I have authority to submit", exact=False).check()
+        self.page.get_by_role("button", name="Publish paper", exact=True).click()
+        expect(self.page.get_by_role("link", name="CC BY-NC-ND 4.0", exact=True)).to_be_visible()
+        paper = self.database_call(lambda: Paper.objects.get(owner=new_user))
+        self.assertEqual(self.database_call(lambda: paper.current.license_code), "CC-BY-NC-ND-4.0")
+        self.page.get_by_role("link", name="Edit paper", exact=True).click()
+        self.page.locator(".cm-content").fill(REVISED)
+        expect(self.page.locator("#save-status")).to_have_text("Saved")
+        self.page.locator("#paper-details summary").click()
+        self.page.get_by_label("What changed?", exact=True).fill("Correct the proof.")
+        self.page.get_by_role("button", name="Review changes", exact=True).click()
+        expect(self.page.get_by_role("link", name="CC BY-NC-ND 4.0", exact=True)).to_be_visible()
+        expect(self.page.get_by_label("Content license:", exact=True)).to_have_count(0)
+        self.page.get_by_label("I have authority to submit", exact=False).check()
+        self.page.get_by_role("button", name="Submit PR", exact=True).click()
+        self.assertEqual(
+            self.database_call(lambda: Submission.objects.filter(paper=paper).count()), 2
+        )
+        self.page.set_viewport_size({"width": 390, "height": 844})
+        self.page.goto(self.live_server_url + "/licenses/")
+        self.assert_no_page_overflow()
+
     def test_upload_preview_publish_reader_and_download(self):
         self.login()
         self.page.get_by_role("link", name="Upload a paper", exact=True).click()
@@ -165,6 +213,8 @@ class BrowserJourneys(StaticLiveServerTestCase):
         expect(self.page.get_by_role("heading", name="Review your upload")).to_be_visible()
         self.assertEqual(self.database_call(Paper.objects.count), 0)
         self.assert_math()
+        self.page.get_by_label("Content license:", exact=True).select_option("CC-BY-4.0")
+        self.page.get_by_label("I have authority to submit", exact=False).check()
         self.page.get_by_role("button", name="Publish paper", exact=True).click()
         expect(self.page.get_by_role("heading", name="Browser paper", exact=True)).to_be_visible()
         self.assertEqual(self.database_call(Paper.objects.count), 1)
@@ -195,6 +245,7 @@ class BrowserJourneys(StaticLiveServerTestCase):
             "+Corrected proof."
         )
         self.assertEqual(self.database_call(Submission.objects.count), 1)
+        self.page.get_by_label("I have authority to submit", exact=False).check()
         self.page.get_by_role("button", name="Publish submission", exact=True).click()
         expect(self.page.locator(".submission-heading .status")).to_have_text("Pending")
         submission_url = self.page.url
@@ -338,6 +389,7 @@ class BrowserJourneys(StaticLiveServerTestCase):
         )
         self.page.get_by_role("button", name="Review changes", exact=True).click()
         expect(self.page.get_by_role("heading", name="Review your changes")).to_be_visible()
+        self.page.get_by_label("I have authority to submit", exact=False).check()
         self.page.get_by_role("button", name="Submit PR", exact=True).click()
         expect(
             self.page.get_by_text("Clarify the proof from the online editor.", exact=True)
@@ -494,6 +546,7 @@ class BrowserJourneys(StaticLiveServerTestCase):
                 paper.pk,
                 paper.current_id,
                 {
+                    "license": "CC-BY-4.0",
                     "primary_category": "math.NT",
                     "secondary_categories": [],
                     "title": "Browser paper",
@@ -543,6 +596,7 @@ class BrowserJourneys(StaticLiveServerTestCase):
             lambda: publish(
                 self.owner,
                 {
+                    "license": "CC-BY-4.0",
                     "primary_category": "math.NT",
                     "secondary_categories": [],
                     "title": "Reading test",
@@ -654,6 +708,8 @@ class BrowserJourneys(StaticLiveServerTestCase):
         expect(
             self.page.get_by_role("link", name="hep-th — High Energy Physics - Theory", exact=True)
         ).to_be_visible()
+        self.page.get_by_label("Content license:", exact=True).select_option("CC-BY-4.0")
+        self.page.get_by_label("I have authority to submit", exact=False).check()
         self.page.get_by_role("button", name="Publish paper", exact=True).click()
         expect(
             self.page.get_by_role("link", name="hep-th — High Energy Physics - Theory", exact=True)

@@ -18,6 +18,7 @@ from accounts.models import User
 from accounts.security import verified_required, limited
 from .models import Draft, Paper, PullRequest
 from .forms import UploadForm
+from .licensing import PublicationConsentForm, agreement_required
 from .rendering import render_reader, has_images
 from .services import publish, propose
 from .subjects import METADATA_FIELDS
@@ -456,6 +457,7 @@ def refresh_section(draft):
 @verified_required
 @require_POST
 @limited("draft_submit", limit=40, seconds=3600)
+@agreement_required
 def review(request, draft_id):
     try:
         with transaction.atomic():
@@ -495,6 +497,7 @@ def review(request, draft_id):
                     "diff": diff_lines(draft.base.markdown if draft.base else "", source),
                     "metadata_changes": metadata_diff(draft.base, draft.data),
                     "subjects": form.cleaned_data,
+                    "consent_form": PublicationConsentForm(paper=draft.paper),
                 },
             )
     except ValidationError as error:
@@ -505,6 +508,7 @@ def review(request, draft_id):
 @private
 @verified_required
 @require_POST
+@agreement_required
 def submit(request, draft_id):
     try:
         token = signing.loads(request.POST.get("token", ""), salt="draft-review", max_age=3600)
@@ -531,7 +535,14 @@ def submit(request, draft_id):
                 raise ValidationError(
                     "The draft is not ready for submission. Review its contents and details."
                 )
+            consent = PublicationConsentForm(request.POST, paper=draft.paper)
+            if not consent.is_valid():
+                raise ValidationError(
+                    "Choose a license for a new paper and confirm your authority to submit. Your draft is preserved."
+                )
             data = form.submission_data()
+            if not draft.paper_id:
+                data["license"] = consent.code()
             if draft.paper_id:
                 submitted = propose(
                     request.user,

@@ -1,3 +1,4 @@
+from publishing.test_support import consenting_user
 import hashlib
 import json
 import threading
@@ -18,6 +19,7 @@ from .comparisons import diff_lines
 
 def document(**changes):
     data = {
+        "license": "CC-BY-4.0",
         "primary_category": "math.NT",
         "secondary_categories": [],
         "title": "A test paper",
@@ -34,13 +36,13 @@ def document(**changes):
 class PublishingTests(TestCase):
     @classmethod
     def setUpTestData(cls):
-        cls.owner = User.objects.create_user(
+        cls.owner = consenting_user(
             "owner", "owner@example.org", "a-test-password", email_verified=True
         )
-        cls.other = User.objects.create_user(
+        cls.other = consenting_user(
             "other", "other@example.org", "another-password", email_verified=True
         )
-        cls.unverified = User.objects.create_user("newuser", "new@example.org", "another-password")
+        cls.unverified = consenting_user("newuser", "new@example.org", "another-password")
         cls.paper = publish(cls.owner, document())
 
     def login(self, user=None):
@@ -309,10 +311,16 @@ class PublishingTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(Paper.objects.count(), count)
         token = response.context["token"]
-        confirm = self.client.post(reverse("publish"), {"action": "confirm", "token": token})
+        confirm = self.client.post(
+            reverse("publish"),
+            {"action": "confirm", "token": token, "license": "CC-BY-4.0", "rights_confirmed": "on"},
+        )
         self.assertEqual(confirm.status_code, 302)
         self.assertEqual(Paper.objects.count(), count + 1)
-        self.client.post(reverse("publish"), {"action": "confirm", "token": token})
+        self.client.post(
+            reverse("publish"),
+            {"action": "confirm", "token": token, "license": "CC-BY-4.0", "rights_confirmed": "on"},
+        )
         self.assertEqual(Paper.objects.count(), count + 1)
 
     def test_preview_token_is_bound_to_user_and_cannot_be_modified(self):
@@ -323,7 +331,15 @@ class PublishingTests(TestCase):
         token = response.context["token"]
         self.login(self.other)
         self.assertEqual(
-            self.client.post(reverse("publish"), {"action": "confirm", "token": token}).status_code,
+            self.client.post(
+                reverse("publish"),
+                {
+                    "action": "confirm",
+                    "token": token,
+                    "license": "CC-BY-4.0",
+                    "rights_confirmed": "on",
+                },
+            ).status_code,
             400,
         )
         self.login()
@@ -347,7 +363,13 @@ class PublishingTests(TestCase):
         decide(self.owner, s.pk, "accepted")
         self.assertEqual(
             self.client.post(
-                url, {"action": "confirm", "token": response.context["token"]}
+                url,
+                {
+                    "action": "confirm",
+                    "token": response.context["token"],
+                    "license": "CC-BY-4.0",
+                    "rights_confirmed": "on",
+                },
             ).status_code,
             409,
         )
@@ -471,7 +493,7 @@ class PublishingTests(TestCase):
 @override_settings(PASSWORD_HASHERS=["django.contrib.auth.hashers.MD5PasswordHasher"])
 class ConcurrentAcceptanceTests(TransactionTestCase):
     def test_only_one_of_two_competing_proposals_can_be_accepted(self):
-        owner = User.objects.create_user(
+        owner = consenting_user(
             "owner", "owner@example.org", "a-test-password", email_verified=True
         )
         paper = publish(owner, document())

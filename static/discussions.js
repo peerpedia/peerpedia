@@ -364,10 +364,17 @@
   function signin(container) {
     const p = node(
       "p",
-      "A verified account is needed to comment or vote. ",
+      config.agreement_required
+        ? "Review the agreement before participating. "
+        : "A verified account is needed to comment or vote. ",
       "discussion-muted",
     );
-    p.append(link("Sign in", config.login));
+    p.append(
+      link(
+        config.agreement_required ? "Review agreement" : "Sign in",
+        config.login,
+      ),
+    );
     container.append(p);
   }
   function form(container, options) {

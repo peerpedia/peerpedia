@@ -15,6 +15,7 @@ from django.utils.safestring import mark_safe
 from django.views.decorators.http import require_POST
 from accounts.security import limited, verified_required
 from .forms import CommentForm, ReviewForm, UploadForm
+from .licensing import PublicationConsentForm, agreement_required
 from .models import Comment, Review, Submission, PullRequest, PullRequestCommit
 from .rendering import render_markdown, render_reader
 from .services import decide, propose, publish
@@ -174,6 +175,18 @@ def reader(request, submission):
         "version": submission.short_hash,
         "status": submission.status,
     }
+    from .licensing import acceptance
+
+    if (
+        request.user.is_authenticated
+        and request.user.email_verified
+        and not acceptance(request.user)
+    ):
+        config.update(
+            participate=False,
+            login=reverse("agreements") + "?" + urlencode({"next": request.get_full_path()}),
+            agreement_required=True,
+        )
     response = render(
         request,
         "publishing/reader.html",
@@ -196,13 +209,21 @@ def download(request, submission_id):
     response["Content-Disposition"] = f'attachment; filename="{submission.short_hash}.md"'
     response["X-Content-SHA256"] = submission.manifest()["markdown_sha256"]
     response["X-Submission-SHA256"] = submission.hash
+    rights = submission.licensing
+    if rights["code"]:
+        response["X-Content-License"] = rights["code"]
+        response["Link"] = f'<{request.build_absolute_uri(rights["url"])}>; rel="license"'
     return response
 
 
 def manifest(request, submission_id):
     submission = get_object_or_404(submission_queryset(), pk=submission_id)
     response = JsonResponse(
-        {"hash": submission.hash, "manifest": submission.manifest()},
+        {
+            "hash": submission.hash,
+            "manifest": submission.manifest(),
+            "licensing": submission.licensing,
+        },
         json_dumps_params={"indent": 2, "ensure_ascii": False},
     )
     response["Content-Disposition"] = f'attachment; filename="{submission.short_hash}.json"'
@@ -211,6 +232,7 @@ def manifest(request, submission_id):
 
 @verified_required
 @limited("upload", limit=40, seconds=3600)
+@agreement_required
 def upload(request, paper_id=None):
     paper = get_object_or_404(public_papers(), pk=paper_id) if paper_id else None
     if request.method == "POST" and request.POST.get("action") == "confirm":
@@ -250,6 +272,7 @@ def upload(request, paper_id=None):
                     "paper": paper,
                     "data": data,
                     "token": token,
+                    "consent_form": PublicationConsentForm(paper=paper),
                     "subjects": subject_links(
                         data["primary_category"], data["secondary_categories"]
                     ),
@@ -283,6 +306,26 @@ def confirm_upload(request, paper):
     existing = Submission.objects.filter(pk=payload["data"]["id"], contributor=request.user).first()
     if existing:
         return redirect("submission", submission_id=existing.pk)
+    consent = PublicationConsentForm(request.POST, paper=paper)
+    if not consent.is_valid():
+        data = payload["data"]
+        return render(
+            request,
+            "publishing/preview.html",
+            {
+                "paper": paper,
+                "data": data,
+                "token": request.POST.get("token"),
+                "consent_form": consent,
+                "body": mark_safe(render_markdown(data["markdown"])),
+                "subjects": subject_links(data["primary_category"], data["secondary_categories"]),
+                "diff": diff_lines(paper.current.markdown, data["markdown"]) if paper else [],
+                "metadata_changes": metadata_diff(paper.current if paper else None, data),
+            },
+            status=400,
+        )
+    if not paper:
+        payload["data"]["license"] = consent.code()
     try:
         if paper:
             submission = propose(request.user, paper.pk, payload["base"], payload["data"])
@@ -367,6 +410,7 @@ def decision(request, submission_id):
 @verified_required
 @require_POST
 @limited("review", limit=30, seconds=3600)
+@agreement_required
 def review(request, paper_id):
     paper = get_object_or_404(public_papers(), pk=paper_id)
     form = ReviewForm(request.POST)
@@ -396,6 +440,7 @@ def review(request, paper_id):
 @verified_required
 @require_POST
 @limited("comment", limit=40, seconds=3600)
+@agreement_required
 def comment(request, submission_id):
     submission = get_object_or_404(submission_queryset(), pk=submission_id)
     form = CommentForm(request.POST)

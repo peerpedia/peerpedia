@@ -17,6 +17,7 @@ from .models import (
 from .feedback_queries import visible_submission, visible_comment, anchors_for, mapping
 from .notifications import discussion_activity, notify, link_activity
 from .services import require_verified
+from .licensing import require_agreement
 from . import passages
 
 
@@ -52,6 +53,7 @@ def record(comment):
 
 def create(user, data, submission_id):
     require_verified(user)
+    require_agreement(user)
     submission = visible_submission(submission_id)
     selected, quote, key = passages.validate(submission.markdown, data.get("spans"))
     text, score = text_value(data), score_value(data)
@@ -86,6 +88,7 @@ def create(user, data, submission_id):
 
 def reply(user, data, comment_id):
     require_verified(user)
+    require_agreement(user)
     with transaction.atomic():
         parent = visible_comment(comment_id, lock=True)
         comment = PassageComment.objects.create(
@@ -103,6 +106,7 @@ def reply(user, data, comment_id):
 
 def edit(user, data, comment_id):
     require_verified(user)
+    require_agreement(user)
     with transaction.atomic():
         comment = visible_comment(comment_id, lock=True)
         if comment.user_id != user.pk or comment.is_hidden or comment.is_deleted:

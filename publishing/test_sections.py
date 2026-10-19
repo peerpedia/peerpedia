@@ -1,10 +1,10 @@
+from publishing.test_support import consenting_user
 import json
 from urllib.parse import urlencode
 from django.core.exceptions import ValidationError
 from django.db import DatabaseError, transaction
 from django.test import TestCase, override_settings
 from django.urls import reverse
-from accounts.models import User
 from . import sections
 from .models import Draft, Submission, PullRequestCommit
 from .services import publish, propose, decide
@@ -16,7 +16,7 @@ SOURCE = "# Course\n\nIntro.\n\n## A\n\nAlpha.\n\n### Child\n\nProof.\n\n## B\n\
 @override_settings(PASSWORD_HASHERS=["django.contrib.auth.hashers.MD5PasswordHasher"])
 class SectionTests(TestCase):
     def setUp(self):
-        self.user = User.objects.create_user("section-writer", email_verified=True)
+        self.user = consenting_user("section-writer", email_verified=True)
         self.paper = publish(self.user, document(markdown=SOURCE))
         self.client.force_login(self.user)
 
@@ -59,7 +59,8 @@ class SectionTests(TestCase):
 
     def submit(self, draft, response):
         result = self.client.post(
-            reverse("draft_submit", args=[draft.pk]), {"token": response.context["token"]}
+            reverse("draft_submit", args=[draft.pk]),
+            {"token": response.context["token"], "license": "CC-BY-4.0", "rights_confirmed": "on"},
         )
         draft.refresh_from_db()
         return result

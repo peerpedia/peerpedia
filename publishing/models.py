@@ -60,6 +60,20 @@ class Submission(FrozenRecord):
     manifest_version = models.PositiveSmallIntegerField(default=2, editable=False)
     primary_category = models.CharField(max_length=32, blank=True, default="", db_index=True)
     secondary_categories = models.JSONField(default=list, blank=True)
+    license_code = models.CharField(max_length=40, blank=True, default="")
+    agreement = models.ForeignKey(
+        "AgreementAcceptance",
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        related_name="submissions",
+    )
+
+    @property
+    def licensing(self):
+        from .licensing import snapshot_license
+
+        return snapshot_license(self)
 
     @property
     def via_cli(self):
@@ -103,6 +117,16 @@ class Submission(FrozenRecord):
                 primary_category=self.primary_category,
                 secondary_categories=self.secondary_categories,
             )
+        if self.manifest_version >= 3:
+            manifest.update(
+                license=self.license_code,
+                agreement={
+                    "version": self.agreement.version,
+                    "sha256": self.agreement.document_hash,
+                    "accepted_at": self.agreement.created_at.isoformat(),
+                    "acceptance_id": self.agreement_id,
+                },
+            )
         return manifest
 
     def calculate_hash(self):
@@ -113,11 +137,18 @@ class Submission(FrozenRecord):
 
     def save(self, *args, **kwargs):
         if self._state.adding:
-            if self.manifest_version == 2:
+            if self.manifest_version >= 2:
                 from .subjects import validate_subjects
 
                 validate_subjects(self.primary_category, self.secondary_categories)
                 self.secondary_categories = sorted(self.secondary_categories)
+            if self.manifest_version >= 3:
+                from .licensing import LICENSES
+
+                if self.license_code not in LICENSES or not self.agreement_id:
+                    raise ValidationError("A license and agreement acceptance are required.")
+                if self.agreement.user_id != self.contributor_id:
+                    raise ValidationError("Agreement acceptance must belong to the contributor.")
             self.hash = self.calculate_hash()
         return super().save(*args, **kwargs)
 
@@ -139,6 +170,42 @@ class Submission(FrozenRecord):
 
     def __str__(self):
         return f"{self.title} · {self.short_hash}"
+
+
+class AgreementAcceptance(FrozenRecord):
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT)
+    version = models.CharField(max_length=40)
+    document_hash = models.CharField(max_length=64)
+    created_at = models.DateTimeField(default=timezone.now, editable=False)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=["user", "version"], name="one_policy_acceptance")
+        ]
+
+
+class PaperLicense(FrozenRecord):
+    paper = models.OneToOneField(
+        Paper, on_delete=models.PROTECT, related_name="license_declaration"
+    )
+    actor = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT)
+    license_code = models.CharField(max_length=40)
+    agreement_version = models.CharField(max_length=40)
+    document_hash = models.CharField(max_length=64)
+    # Legacy grants are dated declarations, never edits to an earlier manifest.
+    legacy_hashes = models.JSONField(default=list)
+    authority = models.TextField()
+    created_at = models.DateTimeField(default=timezone.now, editable=False)
+
+
+class RightsRequest(models.Model):
+    name = models.CharField(max_length=200)
+    email = models.EmailField()
+    work_url = models.URLField(max_length=1000)
+    details = models.TextField(max_length=10000)
+    created_at = models.DateTimeField(default=timezone.now)
+    resolved = models.BooleanField(default=False)
+    staff_notes = models.TextField(blank=True)
 
 
 class Decision(FrozenRecord):

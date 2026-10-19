@@ -28,7 +28,7 @@
     </details>
     {% endif %}
   </aside>
-  <main id="paper-text" class="markdown-body" tabindex="-1">{{ body }}</main>
+  <main id="paper-text" class="markdown-body" tabindex="-1">{{ body }}{% include 'includes/license.html' %}</main>
   <button type="button" id="passage-selection" hidden>Comment &amp; rate</button>
   <aside id="discussion-panel" class="discussion-panel" aria-label="Passage discussions" hidden>
     <header class="discussion-header"><div><h2>Discussions</h2><p>{{ submission.short_hash }} · {{ submission.status }}</p></div><button type="button" id="discussions-close" aria-label="Close discussions">✕</button></header>

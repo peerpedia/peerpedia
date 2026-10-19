@@ -24,6 +24,12 @@ class Command(BaseCommand):
             )
             user.set_unusable_password()
             user.save()
+            from publishing.models import AgreementAcceptance
+            from publishing.licensing import VERSION, document_hash
+
+            AgreementAcceptance.objects.get_or_create(
+                user=user, version=VERSION, defaults={"document_hash": document_hash()}
+            )
             users.append(user)
         author, contributor, reviewer = users
         examples = [
@@ -51,6 +57,7 @@ class Command(BaseCommand):
             paper = publish(
                 author,
                 {
+                    "license": "CC-BY-4.0",
                     "primary_category": category,
                     "secondary_categories": [],
                     "title": title,
@@ -68,6 +75,7 @@ class Command(BaseCommand):
             )
             if i == 0:
                 data = {
+                    "license": "CC-BY-4.0",
                     "primary_category": category,
                     "secondary_categories": [],
                     "title": title,

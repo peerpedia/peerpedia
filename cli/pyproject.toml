@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "peerpedia-cli"
-version = "0.3.0"
+version = "0.4.0"
 description = "Edit Markdown locally and submit frozen Peerpedia proposals"
 requires-python = ">=3.12"
 dependencies = []

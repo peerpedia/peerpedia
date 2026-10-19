@@ -1,3 +1,4 @@
+from publishing.test_support import consenting_user
 import json
 import uuid
 from datetime import timedelta
@@ -5,7 +6,6 @@ from django.db import DatabaseError, transaction
 from django.test import TestCase, Client, override_settings
 from django.urls import reverse
 from django.utils import timezone
-from accounts.models import User
 from accounts.tokens import issue_token
 from .models import (
     Passage,
@@ -26,9 +26,9 @@ from .tests import document
 @override_settings(PASSWORD_HASHERS=["django.contrib.auth.hashers.MD5PasswordHasher"])
 class FeedbackTests(TestCase):
     def setUp(self):
-        self.owner = User.objects.create_user("owner", "owner@example.org", email_verified=True)
-        self.reader = User.objects.create_user("reader", "reader@example.org", email_verified=True)
-        self.third = User.objects.create_user("third", "third@example.org", email_verified=True)
+        self.owner = consenting_user("owner", "owner@example.org", email_verified=True)
+        self.reader = consenting_user("reader", "reader@example.org", email_verified=True)
+        self.third = consenting_user("third", "third@example.org", email_verified=True)
         self.paper = publish(self.owner, document())
         self.base = self.paper.current
         spans, quote, key = validate(self.base.markdown, [{"block": "b1", "start": 0, "end": 11}])
