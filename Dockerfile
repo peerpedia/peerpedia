@@ -5,7 +5,7 @@ RUN npm ci --ignore-scripts
 COPY editor/ ./
 RUN npm run build
 
-FROM python:3.13-slim AS web
+FROM python:3.14-slim AS web
 ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1
 WORKDIR /app
 COPY requirements.lock .
