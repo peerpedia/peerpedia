@@ -1,10 +1,10 @@
-Django>=5.2.8,<5.3
-psycopg[binary]>=3.2,<4
-markdown-it-py>=3,<5
-mdit-py-plugins>=0.4,<1
-gunicorn>=23,<24
-whitenoise>=6.8,<7
-argon2-cffi>=23,<26
+Django>=6.1.2,<6.2
+psycopg[binary]>=3.3.6,<4
+markdown-it-py>=4.2.0,<5
+mdit-py-plugins>=0.6.1,<1
+gunicorn>=26.2.0,<27
+whitenoise>=6.12.0,<7
+argon2-cffi>=25.1.0,<26
 django-otp>=1.7.5,<1.8
 segno>=1.6.6,<2
 django-allauth[socialaccount]>=65.20,<66
