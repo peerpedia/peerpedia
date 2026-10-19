@@ -22,7 +22,7 @@ def publish(user, data):
 
 
 @transaction.atomic
-def propose(user, paper_id, base_id, data, *, pull_request_id=None, expected_head=None):
+def propose(user, paper_id, base_id, data, *, pull_request_id=None, expected_head=None, section=None):
     require_verified(user)
     paper = Paper.objects.select_for_update().get(pk=paper_id, is_hidden=False)
     if str(paper.current_id) != str(base_id):
@@ -34,6 +34,16 @@ def propose(user, paper_id, base_id, data, *, pull_request_id=None, expected_hea
             raise PermissionDenied("Only the PR contributor can add snapshots.")
         if str(pr.head_id) != str(expected_head) or pr.head.status != "pending":
             raise ValidationError("This PR has changed or closed. Your draft has been preserved. Open the PR to review its latest state.")
+    if section:
+        from . import sections
+        from .subjects import METADATA_FIELDS
+        if sections.find(paper.current.markdown, section.get('anchor')) != section:
+            raise ValidationError("The section boundary does not match the accepted base.")
+        replacement = sections.extract(paper.current.markdown, section, data['markdown'])
+        if sections.combine(paper.current.markdown, section, replacement) != data['markdown']:
+            raise ValidationError("The section does not form a complete document.")
+        if any(data.get(k) != getattr(paper.current,k) for k in METADATA_FIELDS):
+            raise ValidationError("Section PRs cannot change paper metadata.")
     submission = Submission.objects.create(paper=paper, contributor=user, contributor_name=user.username, base_id=base_id, **data)
     if pr:
         number = pr.commits.count() + 1
@@ -42,7 +52,7 @@ def propose(user, paper_id, base_id, data, *, pull_request_id=None, expected_hea
     else:
         pr = PullRequest.objects.create(paper=paper, contributor=user, head=submission)
         number = 1
-    PullRequestCommit.objects.create(request=pr, submission=submission, number=number)
+    PullRequestCommit.objects.create(request=pr, submission=submission, number=number, section=section or {})
     return submission
 
 

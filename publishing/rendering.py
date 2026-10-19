@@ -28,11 +28,9 @@ def render_markdown(source):
     return parser().render(source)
 
 
-def render_reader(source, source_lines=False):
-    """Build section links from parsed headings without changing stored Markdown."""
-    md = parser()
-    tokens = md.parse(source)
-    contents = []
+def heading_tokens(tokens):
+    """Assign shared reader/editor anchors, including duplicate heading suffixes."""
+    headings = []
     used_ids = set()
     first_heading = True
     for index, token in enumerate(tokens):
@@ -51,13 +49,31 @@ def render_reader(source, source_lines=False):
             suffix += 1
         used_ids.add(anchor)
         token.attrSet("id", anchor)
-        if source_lines:
-            token.attrSet("data-source-line", str(token.map[0] + 1))
         level = int(token.tag[1])
-        # The opening title is not a section; later H1s still belong in the outline.
-        if label and not (first_heading and level == 1):
-            contents.append({"id": anchor, "label": label, "level": level, "line": token.map[0] + 1})
+        headings.append({'id': anchor, 'label': label, 'level': level,
+                         'line': token.map[0] + 1, 'token': token, 'index': index,
+                         'title': first_heading and level == 1})
         first_heading = False
+    return headings
+
+
+def render_reader(source, source_lines=False, edit_url=None):
+    """Render safe Markdown with the same section boundaries used by the editor."""
+    md = parser()
+    tokens = md.parse(source)
+    headings = heading_tokens(tokens)
+    contents = []
+    for item in headings:
+        if source_lines:
+            item['token'].attrSet('data-source-line', str(item['line']))
+        if item['label'] and not item['title']:
+            contents.append({k: item[k] for k in ('id', 'label', 'level', 'line')})
+        if edit_url and not item['title'] and item['token'].level == 0:
+            from urllib.parse import urlencode
+            from markdown_it.token import Token
+            link = Token('html_inline', '', 0)
+            link.content = '<a class="section-edit" aria-label="Edit section ' + escape(item['label'], quote=True) + '" href="' + escape(edit_url + '&' + urlencode({'scope': item['id']}), quote=True) + '">Edit</a>'
+            tokens[item['index'] + 1].children.append(link)
     if contents:
         base_level = min(item["level"] for item in contents)
         for item in contents:

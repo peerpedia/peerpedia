@@ -3,3 +3,5 @@
 #paper-details{overflow:visible;margin:0 0 0 auto;border:0;background:transparent}#paper-details>summary{margin:0;border:0;padding:6px 9px}.editor-controls{min-height:50px}.details-panel .field>label{display:block;margin-bottom:6px}.details-panel .field input,.details-panel .field textarea,.details-panel .field select{font:14px system-ui}.editor-header,.editor-controls,.editor-banner,.editor-messages,.pending-notice{flex-shrink:0}
 
 .editor-page .pending-notice{margin:0;border:0;border-bottom:1px solid #e5d7b1;border-radius:0;padding:0 22px}.editor-page .pending-notice>summary{margin:0;padding:9px 0;border:0;background:transparent}
+
+.section-scope{padding:10px 22px;background:#edf3ed;color:#355247;font-size:13px;flex-shrink:0}.section-rebase pre{white-space:pre-wrap;overflow-wrap:anywhere;max-height:50vh;overflow:auto;padding:18px;background:#f2f5f0}

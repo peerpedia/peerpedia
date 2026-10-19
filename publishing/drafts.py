@@ -20,6 +20,7 @@ from .forms import UploadForm
 from .rendering import render_reader, has_images
 from .services import publish, propose
 from .subjects import METADATA_FIELDS
+from . import sections
 from .views import diff_lines, metadata_diff
 
 
@@ -69,7 +70,7 @@ def owned(request, pk, lock=False):
 def state(draft):
     latest = draft.paper.current if draft.paper_id else None
     return {'id': str(draft.pk), 'revision': draft.revision, 'data': draft.data,
-            'markdown': draft.markdown, 'updated_at': draft.updated_at.isoformat(),
+            'is_section': bool(draft.section), 'markdown': draft.markdown, 'updated_at': draft.updated_at.isoformat(),
             'base': str(draft.base_id) if draft.base_id else None,
             'latest': str(latest.pk) if latest else None,
             'stale': bool(latest and latest.pk != draft.base_id),
@@ -102,9 +103,20 @@ def start(request, paper_id=None, pr_id=None):
         if pr.head.status != 'pending':
             messages.info(request, 'This PR is closed. Edit the latest accepted paper to propose another change.')
             return redirect('edit_paper', paper_id=paper.pk)
+    source = pr.head if pr else paper.current if paper else None
+    section = pr.head.pr_commit.section if pr else {}
+    scope = section.get('anchor', '') if pr else request.GET.get('scope', '')[:200]
+    if scope and not pr:
+        if not source or request.GET.get('version') != str(source.pk):
+            messages.error(request, 'The paper changed since you opened it. Choose a section from the latest version.')
+            return redirect('read_paper', paper_id=paper.pk) if paper else redirect('browse')
+        section = sections.find(source.markdown, scope)
+        if not section:
+            messages.error(request, 'That section is no longer available. Choose a section from the latest paper.')
+            return redirect('read_paper', paper_id=paper.pk)
     if request.method == 'GET':
         if paper:
-            existing = Draft.objects.filter(owner=request.user, paper=paper, submitted__isnull=True).first()
+            existing = Draft.objects.filter(owner=request.user, paper=paper, scope_key=scope, submitted__isnull=True).first()
             if existing:
                 messages.info(request, 'Resumed your draft.' if existing.pull_request_id == (pr.pk if pr else None) else 'Resumed your existing draft for this paper. Finish or discard it before starting a different change.')
                 return redirect(reverse('editor', args=[existing.pk]) + section_query(request))
@@ -113,7 +125,7 @@ def start(request, paper_id=None, pr_id=None):
     with transaction.atomic():
         User.objects.select_for_update().get(pk=request.user.pk)
         if paper:
-            existing = Draft.objects.filter(owner=request.user, paper=paper, submitted__isnull=True).first()
+            existing = Draft.objects.filter(owner=request.user, paper=paper, scope_key=scope, submitted__isnull=True).first()
             if existing:
                 return redirect(reverse('editor', args=[existing.pk]) + section_query(request))
         source = pr.head if pr else paper.current if paper else None
@@ -121,7 +133,8 @@ def start(request, paper_id=None, pr_id=None):
         data['explanation'] = ''
         draft = Draft.objects.create(owner=request.user, paper=paper, base=source.base if pr else source,
                                      pull_request=pr, pr_head=source if pr else None,
-                                     data=data, markdown=source.markdown if source else '')
+                                     scope_key=scope, section=section, data=data,
+                                     markdown=sections.extract(source.base.markdown, section, source.markdown) if section and pr else sections.text(source.markdown, section) if section else source.markdown if source else '')
     return redirect(reverse('editor', args=[draft.pk]) + section_query(request))
 
 
@@ -174,6 +187,9 @@ def save(request, draft_id):
             json.dumps(fields, ensure_ascii=False).encode('utf-8')
         except UnicodeEncodeError:
             return JsonResponse({'error': 'Use valid UTF-8 paper details.'}, status=400)
+        if draft.section:
+            if any(fields[k] != draft.data.get(k, [] if k == 'secondary_categories' else '') for k in METADATA_FIELDS):
+                return JsonResponse({'error': 'Use the full-paper editor to change paper details.'}, status=400)
         form = DraftForm({**fields, 'markdown': data['markdown']})
         if not form.is_valid():
             return JsonResponse({'error': 'Check the draft contents.', 'fields': form.errors.get_json_data()}, status=400)
@@ -211,6 +227,13 @@ def rebase(request, draft_id):
         if not draft.paper_id or draft.submitted_id:
             return redirect('editor', draft_id=draft.pk)
         latest = draft.paper.current
+        if draft.section:
+            target = sections.find(latest.markdown, request.GET.get('target', '')) if request.GET.get('target') else sections.match(draft.base.markdown, draft.section, latest.markdown)
+            return render(request, 'publishing/section_rebase.html', {
+                'draft': draft, 'latest': latest, 'target': target, 'choices': sections.sections(latest.markdown),
+                'original': sections.text(draft.base.markdown, draft.section),
+                'latest_text': sections.text(latest.markdown, target) if target else '',
+                'unchanged': bool(target and sections.text(latest.markdown, target) == sections.text(draft.base.markdown, draft.section))})
         return render(request, 'publishing/draft_rebase.html', {'draft': draft, 'latest': latest,
             'diff': diff_lines(draft.base.markdown, latest.markdown),
             'metadata_changes': metadata_diff(draft.base, {k:getattr(latest,k) for k in METADATA_FIELDS})})
@@ -223,10 +246,40 @@ def rebase(request, draft_id):
             return conflict(draft)
         if not draft.paper_id or str(draft.paper.current_id) != data.get('latest'):
             return JsonResponse({'error': 'The accepted version changed again. Refresh the comparison.'}, status=409)
+        if draft.section:
+            target = sections.find(draft.paper.current.markdown, data.get('target', ''))
+            if not target or target['level'] != draft.section['level']:
+                return JsonResponse({'error': 'Select a replacement section at the same heading level.'}, status=400)
+            if Draft.objects.filter(owner=request.user, paper=draft.paper, scope_key=target['anchor'], submitted__isnull=True).exclude(pk=draft.pk).exists():
+                return JsonResponse({'error': 'You already have a draft for that section. Finish or discard it first.'}, status=409)
+            draft.section = target
+            draft.scope_key = target['anchor']
+            draft.data.update({k:getattr(draft.paper.current,k) for k in METADATA_FIELDS})
         draft.base = draft.paper.current
         draft.revision += 1
-        draft.save(update_fields=['base', 'revision', 'updated_at'])
+        draft.save(update_fields=['base', 'section', 'scope_key', 'data', 'revision', 'updated_at'])
     return JsonResponse(state(draft))
+
+
+def full_markdown(draft):
+    return sections.combine(draft.base.markdown, draft.section, draft.markdown) if draft.section else draft.markdown
+
+
+def refresh_section(draft):
+    """Advance only an unchanged, unambiguous section; the next page reviews the result."""
+    latest = draft.paper.current
+    if draft.base_id == latest.pk:
+        return False
+    target = sections.match(draft.base.markdown, draft.section, latest.markdown)
+    if not target or sections.text(latest.markdown, target) != sections.text(draft.base.markdown, draft.section):
+        raise ValidationError('Your section changed or moved ambiguously. Compare the latest version and resolve the section before submitting. Your draft is preserved.')
+    if Draft.objects.filter(owner=draft.owner, paper=draft.paper, scope_key=target['anchor'], submitted__isnull=True).exclude(pk=draft.pk).exists():
+        raise ValidationError('Another draft already occupies this section. Finish or discard that draft first.')
+    draft.base, draft.section, draft.scope_key = latest, target, target['anchor']
+    draft.data.update({k:getattr(latest,k) for k in METADATA_FIELDS})
+    draft.revision += 1
+    draft.save(update_fields=['base','section','scope_key','data','revision','updated_at'])
+    return True
 
 
 @private
@@ -234,21 +287,28 @@ def rebase(request, draft_id):
 @require_POST
 @limited('draft_submit', limit=40, seconds=3600)
 def review(request, draft_id):
-    draft = owned(request, draft_id)
-    if draft.submitted_id:
-        return redirect('submission', submission_id=draft.submitted_id)
-    if request.POST.get('revision') != str(draft.revision):
-        messages.error(request, 'Your draft changed. Review the latest saved copy before submitting.')
-        return redirect('editor', draft_id=draft.pk)
-    form = UploadForm({**draft.data, 'base': draft.base_id}, {'file': SimpleUploadedFile('paper.md', draft.markdown.encode('utf-8'))}, initial_publication=not draft.paper_id)
-    if not form.is_valid() or (draft.paper_id and draft.base_id != draft.paper.current_id):
-        messages.error(request, 'Complete the paper details and change description, and update to the latest accepted version before submitting.' if form.is_valid() else ' '.join(f'{key}: {", ".join(errors)}' for key,errors in form.errors.items()))
-        return redirect('editor', draft_id=draft.pk)
-    body, _ = render_reader(draft.markdown)
-    token = signing.dumps({'draft': str(draft.pk), 'revision': draft.revision, 'owner': request.user.pk}, salt='draft-review')
-    return render(request, 'publishing/draft_review.html', {'draft': draft, 'token': token, 'body': body,
-        'diff': diff_lines(draft.base.markdown if draft.base else '', draft.markdown),
-        'metadata_changes': metadata_diff(draft.base, draft.data), 'subjects': form.cleaned_data})
+    try:
+        with transaction.atomic():
+            draft = owned(request, draft_id, lock=True)
+            if draft.submitted_id:
+                return redirect('submission', submission_id=draft.submitted_id)
+            if request.POST.get('revision') != str(draft.revision):
+                raise ValidationError('Your draft changed. Review the latest saved copy before submitting.')
+            refreshed = refresh_section(draft) if draft.section else False
+            source = full_markdown(draft)
+            form = UploadForm({**draft.data, 'base': draft.base_id}, {'file': SimpleUploadedFile('paper.md', source.encode('utf-8'))}, initial_publication=not draft.paper_id)
+            if not form.is_valid():
+                raise ValidationError(' '.join(f'{key}: {", ".join(errors)}' for key,errors in form.errors.items()))
+            if draft.paper_id and draft.base_id != draft.paper.current_id:
+                raise ValidationError('Update to the latest accepted version before submitting.')
+            body, _ = render_reader(source)
+            token = signing.dumps({'draft': str(draft.pk), 'revision': draft.revision, 'owner': request.user.pk}, salt='draft-review')
+            return render(request, 'publishing/draft_review.html', {'draft': draft, 'token': token, 'body': body,
+                'refreshed': refreshed, 'diff': diff_lines(draft.base.markdown if draft.base else '', source),
+                'metadata_changes': metadata_diff(draft.base, draft.data), 'subjects': form.cleaned_data})
+    except ValidationError as error:
+        messages.error(request, ' '.join(error.messages))
+        return redirect('editor', draft_id=draft_id)
 
 
 @private
@@ -269,13 +329,13 @@ def submit(request, draft_id):
                 return redirect('submission', submission_id=draft.submitted_id)
             if token['revision'] != draft.revision:
                 raise ValidationError('Your draft changed after this preview. Review it again before submitting.')
-            form = UploadForm({**draft.data, 'base': draft.base_id}, {'file': SimpleUploadedFile('paper.md', draft.markdown.encode())}, initial_publication=not draft.paper_id)
+            form = UploadForm({**draft.data, 'base': draft.base_id}, {'file': SimpleUploadedFile('paper.md', full_markdown(draft).encode())}, initial_publication=not draft.paper_id)
             if not form.is_valid():
                 raise ValidationError('The draft is not ready for submission. Review its contents and details.')
             data = form.submission_data()
             if draft.paper_id:
                 submitted = propose(request.user, draft.paper_id, draft.base_id, data,
-                                    pull_request_id=draft.pull_request_id, expected_head=draft.pr_head_id)
+                                    pull_request_id=draft.pull_request_id, expected_head=draft.pr_head_id, section=draft.section)
             else:
                 submitted = publish(request.user, data).current
             draft.submitted = submitted

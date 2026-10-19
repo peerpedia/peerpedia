@@ -180,6 +180,7 @@ class PullRequestCommit(FrozenRecord):
     request = models.ForeignKey(PullRequest, on_delete=models.PROTECT, related_name="commits")
     submission = models.OneToOneField(Submission, on_delete=models.PROTECT, related_name="pr_commit")
     number = models.PositiveIntegerField()
+    section = models.JSONField(default=dict, blank=True)
 
     class Meta:
         ordering = ["number"]
@@ -193,6 +194,8 @@ class Draft(models.Model):
     base = models.ForeignKey(Submission, null=True, blank=True, on_delete=models.PROTECT, related_name="draft_bases")
     pull_request = models.ForeignKey(PullRequest, null=True, blank=True, on_delete=models.PROTECT)
     pr_head = models.ForeignKey(Submission, null=True, blank=True, on_delete=models.PROTECT, related_name="draft_pr_heads")
+    scope_key = models.CharField(max_length=200, blank=True, default="")
+    section = models.JSONField(default=dict, blank=True)
     data = models.JSONField(default=dict)
     markdown = models.TextField(blank=True)
     revision = models.PositiveIntegerField(default=1)
@@ -201,7 +204,7 @@ class Draft(models.Model):
 
     class Meta:
         ordering = ["-updated_at"]
-        constraints = [models.UniqueConstraint(fields=["owner", "paper"], condition=models.Q(submitted__isnull=True, paper__isnull=False), name="one_active_paper_draft")]
+        constraints = [models.UniqueConstraint(fields=["owner", "paper", "scope_key"], condition=models.Q(submitted__isnull=True, paper__isnull=False), name="one_active_scope_draft")]
 
     @property
     def title(self):

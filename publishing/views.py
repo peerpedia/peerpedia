@@ -105,7 +105,8 @@ def read_submission(request, submission_id):
 
 
 def reader(request, submission):
-    body, contents = render_reader(submission.markdown)
+    edit_url = reverse("edit_paper", args=[submission.paper_id]) + "?version=" + str(submission.pk) if submission.pk == submission.paper.current_id else None
+    body, contents = render_reader(submission.markdown, edit_url=edit_url)
     return render(request, "publishing/reader.html", {"submission": submission, "body": mark_safe(body), "contents": contents})
 
 

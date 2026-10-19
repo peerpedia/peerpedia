@@ -37,6 +37,7 @@ const view = new EditorView({
 });
 function data() {
   const fields = new FormData(details), result = {};
+  if(initial.is_section) return {data:{...initial.data, explanation:fields.get('explanation') || ''}, markdown:view.state.doc.toString()};
   for (const key of ['title','authors','abstract','primary_category','explanation']) result[key] = fields.get(key) || '';
   result.secondary_categories = fields.getAll('secondary_categories').sort();
   return {data:result, markdown:view.state.doc.toString()};
@@ -51,7 +52,7 @@ function backup() {
 }
 function clearBackup() { try {localStorage.removeItem(recoveryKey);} catch (_) {} }
 function changed() {
-  $('draft-title').textContent = details.elements.title.value || 'Untitled paper';
+  $('draft-title').textContent = details.elements.title?.value || initial.data.title || 'Untitled paper';
   status('Unsaved changes'); backup();
   clearTimeout(saveTimer); saveTimer=setTimeout(()=>save().catch(()=>{}),850);
   clearTimeout(previewTimer); previewTimer=setTimeout(updatePreview,500);
@@ -106,7 +107,7 @@ function replaceCopy(contents) {
   changingCopy=true;
   view.dispatch({changes:{from:0,to:view.state.doc.length,insert:contents.markdown}});
   changingCopy=false;
-  for(const key of ['title','authors','abstract','primary_category','explanation']) details.elements[key].value=contents.data[key]||'';
+  for(const key of ['title','authors','abstract','primary_category','explanation']) if(details.elements[key]) details.elements[key].value=contents.data[key]||'';
   details.querySelectorAll('[name=secondary_categories]').forEach(el=>{el.checked=(contents.data.secondary_categories||[]).includes(el.value);});
   $('draft-title').textContent=contents.data.title||'Untitled paper';
   updatePreview();
