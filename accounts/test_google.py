@@ -272,3 +272,13 @@ class GoogleTests(TestCase):
         response, _ = self.callback(state)
         self.assertEqual(response.status_code, 400)
         self.assertFalse(SocialAccount.objects.exists())
+
+    def test_google_form_redirect_is_allowed_only_on_auth_pages(self):
+        login_policy = self.client.get(reverse("login"))["Content-Security-Policy"]
+        self.assertIn("form-action 'self' https://accounts.google.com", login_policy)
+        browse_policy = self.client.get(reverse("browse"))["Content-Security-Policy"]
+        self.assertNotIn("accounts.google.com", browse_policy)
+        with override_settings(GOOGLE_LOGIN_ENABLED=False):
+            self.assertNotIn(
+                "accounts.google.com", self.client.get(reverse("login"))["Content-Security-Policy"]
+            )
