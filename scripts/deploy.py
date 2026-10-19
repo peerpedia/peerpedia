@@ -17,7 +17,7 @@ REPOSITORY = "peerpedia/peerpedia"
 REQUIRED_JOBS = {"test", "browser", "quality"}
 ROOT = Path(__file__).resolve().parent.parent
 BACKUP_PATH_FILTER = (
-    r"sed -n 's/^Backup written to \([^ ]*\.dump\).*$/\1/p; t; /^backups\/.*\.dump$/p'"
+    r"sed -n -e 's/^Backup written to \([^ ]*\.dump\).*$/\1/p' -e t -e '/^backups\/.*\.dump$/p'"
 )
 
 
