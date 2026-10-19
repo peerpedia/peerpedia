@@ -37,7 +37,7 @@ from .models import (
 )
 from .subjects import TAXONOMY
 from .services import propose, publish
-from .queries import public_papers, submission_queryset
+from .queries import public_papers, submission_queryset, search_papers
 from .licensing import require_agreement, acceptance, VERSION, LICENSES
 
 
@@ -158,6 +158,80 @@ def licenses(request):
                 {"code": code, "label": item[0], "url": item[1], "description": item[2]}
                 for code, item in LICENSES.items()
             ],
+        }
+    )
+
+
+@endpoint()
+def search(request):
+    query = request.GET.get("q", "").strip()
+    subject = request.GET.get("subject", "")
+    sort = request.GET.get("sort", "latest")
+    if len(query) > 200 or len(subject) > 100 or sort not in {"latest", "rating"}:
+        raise APIError(
+            "invalid_request", "Use a query up to 200 characters and latest or rating sort."
+        )
+    start = offset(request.GET.get("offset"))
+    try:
+        papers = search_papers(query, subject, sort)
+    except Http404:
+        raise APIError("invalid_request", "Unknown subject filter.")
+    rows = list(papers[start : start + 26])
+    return JsonResponse(
+        {
+            "query": query,
+            "subject": subject,
+            "sort": sort,
+            "papers": [
+                {
+                    "paper_id": str(item.pk),
+                    "title": item.current.title,
+                    "authors": item.current.authors,
+                    "abstract": item.current.abstract,
+                    "primary_category": item.current.primary_category,
+                    "secondary_categories": item.current.secondary_categories,
+                    "corresponding_author": item.owner.username,
+                    "average_rating": item.average,
+                    "rating_count": item.review_count,
+                    "accepted_at": item.accepted_at,
+                    "submission_id": str(item.current_id),
+                    "hash": item.current.hash,
+                    "url": reverse("paper", args=[item.pk]),
+                    "read_url": reverse("read_paper", args=[item.pk]),
+                }
+                for item in rows[:25]
+            ],
+            "next": start + 25 if len(rows) > 25 else None,
+        }
+    )
+
+
+@endpoint()
+def paper_prs(request, paper_id):
+    item = get_object_or_404(public_papers(), pk=paper_id)
+    start = offset(request.GET.get("offset"))
+    prs = list(
+        PullRequest.objects.filter(paper=item)
+        .select_related("head__decision", "contributor")
+        .order_by("-created_at", "-pk")[start : start + 101]
+    )
+    return JsonResponse(
+        {
+            "paper_id": str(item.pk),
+            "prs": [
+                {
+                    "id": str(pr.pk),
+                    "contributor": pr.contributor.username,
+                    "head_id": str(pr.head_id),
+                    "head_hash": pr.head.hash,
+                    "status": pr.head.status,
+                    "explanation": pr.head.explanation,
+                    "created_at": pr.created_at,
+                    "url": reverse("submission", args=[pr.head_id]),
+                }
+                for pr in prs[:100]
+            ],
+            "next": start + 100 if len(prs) > 100 else None,
         }
     )
 
@@ -479,6 +553,8 @@ def pr_comments(request, pr_id):
 
 
 urlpatterns = [
+    path("papers/", search),
+    path("papers/<uuid:paper_id>/prs/", paper_prs),
     path("licenses/", licenses),
     path("papers/<uuid:paper_id>/feedback/", feedback),
     path("submissions/<uuid:submission_id>/feedback/", feedback),

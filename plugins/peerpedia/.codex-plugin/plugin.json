@@ -1,0 +1,16 @@
+{
+  "name": "peerpedia",
+  "version": "0.1.0",
+  "description": "Find research, understand reader feedback, and propose improvements on Peerpedia.",
+  "skills": "./skills/",
+  "requires_local_executor": true,
+  "interface": {
+    "displayName": "Peerpedia",
+    "shortDescription": "Read research and improve it with reader feedback",
+    "developerName": "Chenqi Meng",
+    "category": "Productivity",
+    "websiteURL": "https://peerpedia.dev/",
+    "composerIcon": "./assets/icon.svg",
+    "logo": "./assets/icon.svg"
+  }
+}
