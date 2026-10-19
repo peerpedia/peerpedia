@@ -111,7 +111,14 @@ class BrowserJourneys(StaticLiveServerTestCase):
         expect(self.page.locator("pre code mjx-container")).to_have_count(0)
 
     def assert_no_page_overflow(self):
-        self.assertTrue(self.page.evaluate("document.documentElement.scrollWidth <= window.innerWidth + 1"), "Content overflows the viewport")
+        layout = self.page.evaluate("""() => ({
+            viewport: innerWidth, width: document.documentElement.scrollWidth,
+            overflowing: [...document.querySelectorAll('body *')].filter(element =>
+                element.getBoundingClientRect().right > innerWidth + 1
+            ).map(element => ({tag: element.tagName, id: element.id, classes: element.className,
+                right: element.getBoundingClientRect().right})).slice(0, 15)
+        })""")
+        self.assertLessEqual(layout['width'], layout['viewport'] + 1, str(layout))
 
     def test_upload_preview_publish_reader_and_download(self):
         self.login()
@@ -131,7 +138,9 @@ class BrowserJourneys(StaticLiveServerTestCase):
         self.page.get_by_role("link", name="Read paper", exact=True).click()
         expect(self.page).to_have_url(metadata_url + "read/")
         self.assert_math()
-        expect(self.page.locator(".site-header, .site-footer, nav, button")).to_have_count(0)
+        expect(self.page.locator(".site-header, .site-footer")).to_have_count(0)
+        expect(self.page.get_by_role("link", name="Peerpedia home")).to_be_visible()
+        expect(self.page.get_by_role("button", name="Discussions", exact=True)).to_be_visible()
         self.page.go_back()
         expect(self.page.get_by_role("heading", name="Abstract", exact=True)).to_be_visible()
         self.page.get_by_role("link", name="History", exact=True).click()
@@ -142,7 +151,7 @@ class BrowserJourneys(StaticLiveServerTestCase):
         original_id = paper.current_id
         self.login("contributor")
         self.page.goto(f"{self.live_server_url}/papers/{paper.pk}/")
-        self.page.get_by_role("link", name="Submit a change", exact=True).click()
+        self.page.get_by_role("link", name="Upload a change", exact=True).click()
         self.upload(REVISED, proposal=True)
         expect(self.page.get_by_role("region", name="Markdown source differences")).to_contain_text("+Corrected proof.")
         self.assertEqual(self.database_call(Submission.objects.count), 1)
@@ -178,14 +187,16 @@ class BrowserJourneys(StaticLiveServerTestCase):
         paper = self.fixture_paper()
         self.login("contributor")
         self.page.goto(f"{self.live_server_url}/papers/{paper.pk}/")
-        self.page.get_by_label("5 stars", exact=True).check()
+        self.page.locator('label.paper-star[title="5 stars"]').click()
+        expect(self.page.get_by_label("5 stars", exact=True)).to_be_checked()
         self.page.get_by_role("button", name="Publish review").click()
         self.assertFalse(self.page.get_by_label("Your review:", exact=True).evaluate("element => element.validity.valid"))
         self.assertEqual(self.database_call(Review.objects.count), 0)
         self.page.get_by_label("Your review:", exact=True).fill("A useful and clear proof.")
         self.page.get_by_role("button", name="Publish review").click()
         expect(self.page.locator(".rating-summary")).to_contain_text("5.0")
-        self.page.get_by_label("4 stars", exact=True).check()
+        self.page.get_by_label("5 stars", exact=True).press("ArrowLeft")
+        expect(self.page.get_by_label("4 stars", exact=True)).to_be_checked()
         self.page.get_by_label("Your review:", exact=True).fill("Useful, with one remaining question.")
         self.page.get_by_role("button", name="Save review").click()
         expect(self.page.locator("#reviews .review")).to_have_count(1)
@@ -350,7 +361,7 @@ class BrowserJourneys(StaticLiveServerTestCase):
         self.page.get_by_role('button', name='Search', exact=True).click()
         expect(self.page.get_by_label('Subject', exact=True)).to_have_value('hep-th')
         expect(self.page.get_by_role('link', name='Browser paper', exact=True)).to_be_visible()
-        self.assertFalse(self.page.evaluate('document.documentElement.scrollWidth > window.innerWidth'))
+        self.assert_no_page_overflow()
         self.page.get_by_label('Subject', exact=True).select_option('math.PR')
         self.page.get_by_role('button', name='Apply', exact=True).click()
         expect(self.page.get_by_role('heading', name='No papers found')).to_be_visible()
