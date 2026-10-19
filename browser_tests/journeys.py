@@ -2,6 +2,7 @@
 import os
 from pathlib import Path
 import re
+import time
 from concurrent.futures import ThreadPoolExecutor
 from urllib.parse import urlsplit
 
@@ -9,7 +10,7 @@ from django.contrib.staticfiles.testing import StaticLiveServerTestCase
 from django.core import mail
 from django.db import connections
 from django.test import override_settings
-from playwright.sync_api import TimeoutError as PlaywrightTimeoutError, expect, sync_playwright
+from playwright.sync_api import expect, sync_playwright
 
 from accounts.models import User
 from publishing.models import Paper, Review, Submission
@@ -113,11 +114,14 @@ class BrowserJourneys(StaticLiveServerTestCase):
     def assert_no_page_overflow(self):
         # Search results can already match while the next page's styles are
         # loading. Wait for the layout condition, retaining geometry on failure.
-        try:
-            self.page.wait_for_function(
-                "document.documentElement.scrollWidth <= window.innerWidth + 1", timeout=5000)
-        except PlaywrightTimeoutError:
-            pass
+        # wait_for_function evaluates its predicate inside the page and can
+        # conflict with our strict CSP. Poll through the automation evaluation
+        # context instead, without bypassing CSP for any application scripts.
+        deadline = time.monotonic() + 5
+        while time.monotonic() < deadline:
+            if self.page.evaluate("() => document.documentElement.scrollWidth <= window.innerWidth + 1"):
+                break
+            self.page.wait_for_timeout(50)
         layout = self.page.evaluate("""() => ({
             viewport: innerWidth, width: document.documentElement.scrollWidth,
             overflowing: [...document.querySelectorAll('body *')].filter(element =>

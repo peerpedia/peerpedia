@@ -34,7 +34,9 @@ class AdministrationTests(TestCase):
                       'passage', 'passagecomment', 'passagereport', 'passagecommentrevision', 'submissionsource']:
             self.assertEqual(self.client.get(reverse(f'admin:publishing_{model}_changelist')).status_code, 200)
         url = reverse('admin:publishing_submission_change', args=[self.paper.current_id])
-        self.assertNotContains(self.client.get(url), 'name="_save"')
+        detail = self.client.get(url)
+        self.assertContains(detail, self.paper.current.hash)
+        self.assertNotContains(detail, 'name="_save"')
         self.assertEqual(self.client.post(url, {'title': 'Overwrite'}).status_code, 403)
         self.paper.current.refresh_from_db()
         self.assertEqual(self.paper.current.title, 'A test paper')
