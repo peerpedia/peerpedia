@@ -350,7 +350,7 @@ class BrowserJourneys(StaticLiveServerTestCase):
         self.page.get_by_role("link", name="I saved my codes · Continue", exact=True).click()
         self.page.set_viewport_size({"width": 1365, "height": 900})
         self.page.get_by_role("link", name="Admin", exact=True).click()
-        expect(self.page.get_by_role("heading", name="Care for the community.")).to_be_visible()
+        expect(self.page.get_by_role("heading", name="To a better academia")).to_be_visible()
         expect(self.page.get_by_role("link", name=re.compile("Reported comments"))).to_be_visible()
         self.page.get_by_role("link", name=re.compile("Paper snapshots")).click()
         expect(self.page.get_by_role("link", name="Browser paper", exact=True)).to_be_visible()
@@ -367,7 +367,7 @@ class BrowserJourneys(StaticLiveServerTestCase):
             )
         )
         self.page.get_by_role("link", name="Peerpedia home", exact=True).click()
-        expect(self.page.get_by_role("heading", name="Research, in revision.")).to_be_visible()
+        expect(self.page.get_by_role("heading", name="To a better academia")).to_be_visible()
 
     def test_new_note_from_navigation_to_initial_publication(self):
         self.login()

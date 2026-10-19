@@ -1,7 +1,7 @@
 {% extends 'base.html' %}
 {% block title %}Browse research · Peerpedia{% endblock %}
 {% block content %}
-<div class="page-heading"><div><div class="eyebrow">THE OPEN RESEARCH LIBRARY</div><h1>Research, in revision.</h1><p class="lede">Read, review, and contribute to a growing body of knowledge.</p></div></div>
+<div class="page-heading"><div><div class="eyebrow">PEERPEDIA</div><h1>{% include 'includes/motto.html' %}</h1><p class="lede">Read, review, and contribute to a growing body of knowledge.</p></div></div>
 <form class="search-bar" method="get" role="search">
   <div class="search-input"><label class="sr-only" for="search">Search papers</label><input id="search" name="q" type="search" value="{{ query }}" placeholder="Search by title, author, or keyword"><button type="submit">Search</button></div>
   <div class="subject-filter"><label for="subject">Subject</label>{{ subject_select }}</div>
