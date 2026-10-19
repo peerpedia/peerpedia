@@ -222,6 +222,26 @@ class BrowserJourneys(StaticLiveServerTestCase):
         self.page.get_by_role("button", name="Apply", exact=True).click()
         expect(self.page.locator(".paper-row .rating-cell")).to_contain_text("4.0")
 
+    def test_administration_navigation_and_readonly_history(self):
+        paper = self.fixture_paper()
+        self.database_call(lambda: User.objects.filter(pk=self.owner.pk).update(is_staff=True, is_superuser=True))
+        self.login()
+        self.page.get_by_role('link', name='Admin', exact=True).click()
+        expect(self.page.get_by_role('heading', name='Care for the community.')).to_be_visible()
+        expect(self.page.get_by_role('link', name=re.compile('Reported comments'))).to_be_visible()
+        self.page.get_by_role('link', name=re.compile('Paper snapshots')).click()
+        expect(self.page.get_by_role('link', name='Browser paper', exact=True)).to_be_visible()
+        self.page.get_by_role('link', name='Browser paper', exact=True).click()
+        expect(self.page.get_by_text(paper.current.hash, exact=True)).to_be_visible()
+        expect(self.page.locator('input[name="_save"]')).to_have_count(0)
+        self.page.get_by_role('link', name='Administration', exact=True).click()
+        self.page.set_viewport_size({'width': 390, 'height': 844})
+        expect(self.page.get_by_role('heading', name='Moderation', exact=True)).to_be_visible()
+        self.assert_no_page_overflow()
+        self.assertTrue(self.page.evaluate("document.querySelector('#user-tools').getBoundingClientRect().bottom <= document.querySelector('#header').getBoundingClientRect().bottom"))
+        self.page.get_by_role('link', name='Peerpedia home', exact=True).click()
+        expect(self.page.get_by_role('heading', name='Research, in revision.')).to_be_visible()
+
     def test_signup_verification_logout_and_password_recovery(self):
         self.page.goto(self.live_server_url + "/")
         self.page.get_by_role("link", name="Create account", exact=True).click()

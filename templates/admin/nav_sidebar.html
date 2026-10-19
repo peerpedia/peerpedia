@@ -1,0 +1,12 @@
+{% load admin_navigation %}
+<button class="sticky toggle-nav-sidebar" id="toggle-nav-sidebar" aria-label="Toggle navigation"></button>
+<nav class="sticky" id="nav-sidebar" aria-label="Administration tools">
+  <input type="search" id="nav-filter" placeholder="Find a tool…" aria-label="Filter navigation items">
+  {% admin_sections available_apps as sections %}
+  {% for section in sections %}<div class="module"><table>
+    <caption>{{ section.title }}</caption>
+    <tbody>{% for item in section.items %}<tr{% if item.admin_url and item.admin_url in request.path %} class="current-model"{% endif %}>
+      <th scope="row">{% if item.admin_url %}<a href="{{ item.admin_url }}"{% if item.admin_url in request.path %} aria-current="page"{% endif %}>{{ item.label }}</a>{% else %}{{ item.label }}{% endif %}</th>
+    </tr>{% endfor %}</tbody>
+  </table></div>{% endfor %}
+</nav>

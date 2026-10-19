@@ -1,0 +1,51 @@
+from django.contrib.auth.models import Permission
+from django.test import TestCase
+from django.urls import reverse
+from accounts.models import User
+from .models import ModerationEvent
+from .services import publish
+from .tests import document
+
+
+class AdministrationTests(TestCase):
+    def setUp(self):
+        self.owner = User.objects.create_user('author', 'author@example.org', email_verified=True)
+        self.admin = User.objects.create_user('administrator', 'admin@example.org', is_staff=True, is_superuser=True)
+        self.paper = publish(self.owner, document())
+
+    def test_dashboard_respects_model_permissions(self):
+        self.client.force_login(self.owner)
+        self.assertEqual(self.client.get(reverse('admin:index')).status_code, 302)
+        staff = User.objects.create_user('moderator', 'moderator@example.org', is_staff=True)
+        staff.user_permissions.add(Permission.objects.get(content_type__app_label='publishing', codename='view_review'))
+        self.client.force_login(staff)
+        page = self.client.get(reverse('admin:index'))
+        self.assertContains(page, 'Paper reviews')
+        self.assertNotContains(page, reverse('admin:accounts_user_changelist'))
+        self.assertNotContains(page, reverse('admin:publishing_passagereport_changelist'))
+        self.assertNotContains(page, reverse('admin:publishing_submission_changelist'))
+
+    def test_dashboard_and_lists_render_with_immutable_snapshots(self):
+        self.client.force_login(self.admin)
+        response = self.client.get(reverse('admin:index'))
+        for heading in ['Moderation', 'Accounts', 'History', 'Reported comments', 'Your recent activity']:
+            self.assertContains(response, heading)
+        for model in ['paper', 'review', 'comment', 'submission', 'decision', 'moderationevent',
+                      'passage', 'passagecomment', 'passagereport', 'passagecommentrevision', 'submissionsource']:
+            self.assertEqual(self.client.get(reverse(f'admin:publishing_{model}_changelist')).status_code, 200)
+        url = reverse('admin:publishing_submission_change', args=[self.paper.current_id])
+        self.assertNotContains(self.client.get(url), 'name="_save"')
+        self.assertEqual(self.client.post(url, {'title': 'Overwrite'}).status_code, 403)
+        self.paper.current.refresh_from_db()
+        self.assertEqual(self.paper.current.title, 'A test paper')
+
+    def test_moderation_still_records_visibility_changes(self):
+        self.client.force_login(self.admin)
+        url = reverse('admin:publishing_paper_changelist')
+        original_hash = self.paper.current.hash
+        response = self.client.post(url, {'action': 'hide_selected', '_selected_action': [str(self.paper.pk)]})
+        self.assertEqual(response.status_code, 302)
+        self.paper.refresh_from_db()
+        self.assertTrue(self.paper.is_hidden)
+        self.assertEqual(self.paper.current.hash, original_hash)
+        self.assertEqual(ModerationEvent.objects.filter(actor=self.admin).count(), 1)

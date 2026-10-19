@@ -1,0 +1,3 @@
+{% extends "admin/change_list.html" %}
+{% load admin_navigation %}
+{% block content_title %}<h1>{% admin_model_label cl.opts.app_label cl.opts.object_name cl.opts.verbose_name_plural %}</h1>{% endblock %}

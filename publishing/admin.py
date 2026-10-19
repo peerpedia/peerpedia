@@ -3,6 +3,7 @@ from .models import Comment, Decision, ModerationEvent, Paper, Review, Submissio
 
 
 class ImmutableAdmin(admin.ModelAdmin):
+    list_per_page = 30
     def has_add_permission(self, request):
         return False
     def has_change_permission(self, request, obj=None):
@@ -13,6 +14,7 @@ class ImmutableAdmin(admin.ModelAdmin):
 
 class ModeratedAdmin(admin.ModelAdmin):
     actions = ["hide_selected", "restore_selected"]
+    list_per_page = 30
 
     def has_add_permission(self, request):
         return False
@@ -46,21 +48,47 @@ class PaperAdmin(ModeratedAdmin):
     list_display = ("__str__", "owner", "accepted_at", "is_hidden")
     list_filter = ("is_hidden",)
     search_fields = ("current__title", "current__authors")
+    list_select_related = ('current', 'owner')
 
 
 @admin.register(Review)
 class ReviewAdmin(ModeratedAdmin):
     list_display = ("paper", "user", "score", "is_hidden")
+    list_filter = ('is_hidden', 'score')
+    search_fields = ('paper__current__title', 'user__username', 'text')
+    list_select_related = ('paper__current', 'user')
 
 
 @admin.register(Comment)
 class CommentAdmin(ModeratedAdmin):
     list_display = ("submission", "user", "created_at", "is_hidden")
+    list_filter = ('is_hidden',)
+    search_fields = ('submission__title', 'user__username', 'text')
+    list_select_related = ('submission', 'user')
 
 
-admin.site.register(Submission, ImmutableAdmin)
-admin.site.register(Decision, ImmutableAdmin)
-admin.site.register(ModerationEvent, ImmutableAdmin)
+@admin.register(Submission)
+class SubmissionAdmin(ImmutableAdmin):
+    list_display = ('title', 'short_hash', 'contributor_name', 'created_at')
+    search_fields = ('title', 'authors', 'hash', 'contributor_name')
+    ordering = ('-created_at',)
+
+
+@admin.register(Decision)
+class DecisionAdmin(ImmutableAdmin):
+    list_display = ('submission', 'action', 'actor', 'created_at')
+    list_filter = ('action',)
+    search_fields = ('submission__title', 'actor__username')
+    list_select_related = ('submission', 'actor')
+    ordering = ('-created_at',)
+
+
+@admin.register(ModerationEvent)
+class ModerationEventAdmin(ImmutableAdmin):
+    list_display = ('reason', 'actor', 'target', 'created_at')
+    search_fields = ('reason', 'actor__username', 'target')
+    list_select_related = ('actor',)
+    ordering = ('-created_at',)
 
 
 from .models import Passage, PassageComment, PassageCommentRevision, PassageReport
@@ -68,16 +96,33 @@ from .models import Passage, PassageComment, PassageCommentRevision, PassageRepo
 
 @admin.register(PassageComment)
 class PassageCommentAdmin(ModeratedAdmin):
-    list_display = ('user', 'passage', 'score', 'is_hidden', 'is_deleted', 'created_at')
+    list_display = ('comment_excerpt', 'paper_title', 'user', 'score', 'is_hidden', 'is_deleted')
     list_filter = ('is_hidden', 'is_deleted')
-    search_fields = ('text', 'user__username', 'passage__quote')
+    search_fields = ('text', 'user__username', 'passage__quote', 'passage__submission__title')
+    list_select_related = ('passage__submission', 'user')
+
+    @admin.display(description='Comment')
+    def comment_excerpt(self, obj):
+        return obj.text[:100] + ('…' if len(obj.text) > 100 else '')
+
+    @admin.display(description='Paper', ordering='passage__submission__title')
+    def paper_title(self, obj):
+        return obj.passage.submission.title
 
 
 @admin.register(PassageReport)
 class PassageReportAdmin(admin.ModelAdmin):
-    list_display = ('comment', 'reporter', 'created_at', 'reviewed')
+    list_display = ('reason', 'comment_excerpt', 'reporter', 'created_at', 'reviewed')
     list_filter = ('reviewed',)
     actions = ('hide_reported',)
+    list_per_page = 30
+    search_fields = ('reason', 'comment__text', 'reporter__username')
+    list_select_related = ('comment', 'reporter')
+    ordering = ('reviewed', '-created_at')
+
+    @admin.display(description='Reported comment')
+    def comment_excerpt(self, obj):
+        return obj.comment.text[:100] + ('…' if len(obj.comment.text) > 100 else '')
 
     def has_add_permission(self, request):
         return False
@@ -100,8 +145,30 @@ class PassageReportAdmin(admin.ModelAdmin):
             queryset.update(reviewed=True)
 
 
-admin.site.register(Passage, ImmutableAdmin)
-admin.site.register(PassageCommentRevision, ImmutableAdmin)
+@admin.register(Passage)
+class PassageAdmin(ImmutableAdmin):
+    list_display = ('quote_excerpt', 'submission', 'created_at')
+    search_fields = ('quote', 'submission__title')
+    list_select_related = ('submission',)
+
+    @admin.display(description='Quotation')
+    def quote_excerpt(self, obj):
+        return obj.quote[:120] + ('…' if len(obj.quote) > 120 else '')
+
+
+@admin.register(PassageCommentRevision)
+class PassageCommentRevisionAdmin(ImmutableAdmin):
+    list_display = ('comment_excerpt', 'number', 'score', 'is_deleted', 'created_at')
+    search_fields = ('text', 'comment__user__username')
+
+    @admin.display(description='Comment text')
+    def comment_excerpt(self, obj):
+        return obj.text[:100] + ('…' if len(obj.text) > 100 else '')
 
 from .models import SubmissionSource
-admin.site.register(SubmissionSource, ImmutableAdmin)
+@admin.register(SubmissionSource)
+class SubmissionSourceAdmin(ImmutableAdmin):
+    list_display = ('submission', 'ai_assisted', 'created_at')
+    list_filter = ('ai_assisted',)
+    search_fields = ('submission__title', 'submission__contributor_name')
+    list_select_related = ('submission',)

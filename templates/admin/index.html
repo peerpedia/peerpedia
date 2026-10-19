@@ -1,0 +1,38 @@
+{% extends "admin/base_site.html" %}
+{% load admin_navigation log %}
+{% block bodyclass %}{{ block.super }} peerpedia-dashboard{% endblock %}
+{% block nav-breadcrumbs %}{% endblock %}
+{% block nav-sidebar %}{% endblock %}
+{% block content_title %}
+<div class="admin-intro"><p class="admin-eyebrow">PEERPEDIA ADMINISTRATION</p><h1>Care for the community.</h1><p>Review content, manage accounts, and follow the history of the work.</p></div>
+{% endblock %}
+{% block content %}
+{% admin_sections app_list as sections %}
+<div class="admin-dashboard-layout">
+  <div class="admin-sections">
+    {% for section in sections %}
+    <section class="admin-section" aria-labelledby="admin-section-{{ forloop.counter }}">
+      <div class="admin-section-heading"><h2 id="admin-section-{{ forloop.counter }}">{{ section.title }}</h2><p>{{ section.description }}</p></div>
+      <div class="admin-tool-list">
+        {% for item in section.items %}
+        <div class="admin-tool">
+          {% if item.admin_url %}<a class="admin-tool-main" href="{{ item.admin_url }}"><span class="admin-tool-title">{{ item.label }}</span><span class="admin-tool-description">{{ item.description }}</span><span class="admin-tool-arrow" aria-hidden="true">↗</span></a>
+          {% else %}<div class="admin-tool-main"><span class="admin-tool-title">{{ item.label }}</span><span class="admin-tool-description">{{ item.description }}</span></div>{% endif %}
+          {% if item.add_url %}<a class="admin-add-link" href="{{ item.add_url }}" aria-label="Add {{ item.name }}">Add</a>{% endif %}
+        </div>
+        {% endfor %}
+      </div>
+    </section>
+    {% empty %}<p>You do not have permission to view or edit any administration tools.</p>{% endfor %}
+  </div>
+  <aside class="admin-activity" aria-labelledby="activity-heading">
+    <h2 id="activity-heading">Your recent activity</h2>
+    {% get_admin_log 8 as admin_log for_user user %}
+    {% if admin_log %}<ul>{% for entry in admin_log %}<li>
+      {% if not entry.is_deletion and entry.get_admin_url %}<a href="{{ entry.get_admin_url }}">{{ entry.object_repr }}</a>{% else %}<span>{{ entry.object_repr }}</span>{% endif %}
+      <small>{% if entry.is_addition %}Added{% elif entry.is_change %}Updated{% else %}Deleted{% endif %} · {{ entry.action_time|date:"j M, H:i" }}</small>
+    </li>{% endfor %}</ul>{% else %}<p>Your administration activity will appear here as you work.</p>{% endif %}
+    <div class="admin-history-note"><h3>Research keeps its history</h3><p>Moderation changes visibility. Published snapshots and recorded decisions stay preserved.</p></div>
+  </aside>
+</div>
+{% endblock %}

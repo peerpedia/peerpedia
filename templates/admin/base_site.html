@@ -1,0 +1,24 @@
+{% extends "admin/base.html" %}
+{% load static %}
+
+{% block title %}{% if subtitle %}{{ subtitle }} · {% endif %}{{ title }} · Peerpedia administration{% endblock %}
+{% block responsive %}{{ block.super }}
+  {% include "includes/icons.html" %}
+  <link rel="stylesheet" href="{% static 'administration.css' %}">
+{% endblock %}
+
+{% block branding %}
+<a class="admin-wordmark" href="{% url 'browse' %}" aria-label="Peerpedia home">peer<span>pedia</span><i aria-hidden="true">.</i></a>
+<a class="admin-area" href="{% url 'admin:index' %}">Administration</a>
+{% endblock %}
+
+{% block welcome-msg %}<span class="admin-user">{{ user.get_username }}</span>{% endblock %}
+{% block userlinks %}
+  <a href="{% url 'browse' %}">View site</a>
+  <a href="{% url 'help' %}">Help</a>
+  {% if user.has_usable_password %}<a href="{% url 'admin:password_change' %}">Password</a>{% endif %}
+  <form id="logout-form" method="post" action="{% url 'admin:logout' %}">{% csrf_token %}<button type="submit">Sign out</button></form>
+  {% include "admin/color_theme_toggle.html" %}
+{% endblock %}
+
+{% block footer %}<div class="admin-footer">Peerpedia · Research, with a history.</div>{% endblock %}
