@@ -28,6 +28,7 @@
     dialog.querySelector("[name=markdown]").value =
       `[${button.getAttribute("aria-label").replace("Copy reference to ", "")}](${url})`;
     dialog.querySelector("[name=internal]").value = button.dataset.reference;
+    document.getElementById("reference-copy-status").textContent = "";
     dialog.showModal();
   });
   document.querySelectorAll("[data-copy-field]").forEach((button) => {
@@ -38,10 +39,11 @@
       input.select();
       try {
         await navigator.clipboard.writeText(input.value);
-        button.querySelector("[data-copy-label]").textContent = "Copied";
+        document.getElementById("reference-copy-status").textContent =
+          "Copied to clipboard.";
       } catch (_) {
-        button.querySelector("[data-copy-label]").textContent =
-          "Select and copy";
+        document.getElementById("reference-copy-status").textContent =
+          "Select the text and copy it with your keyboard.";
       }
     });
   });

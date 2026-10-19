@@ -1,4 +1,12 @@
-<dialog id="reference-copy-dialog" class="reference-dialog"><form method="dialog"><button class="ui-icon-button" aria-label="Close reference tools" title="Close">{% include "includes/ui_icon.html" with name="close" %}</button></form><h2>Copy reference</h2><p>This link points to the version you are reading.</p>
-<label>Permalink<input readonly name="permalink"></label><button type="button" data-copy-field="permalink">{% include "includes/ui_icon.html" with name="copy" %}<span data-copy-label>Copy link</span></button>
-<label>Markdown link<input readonly name="markdown"></label><button type="button" data-copy-field="markdown">{% include "includes/ui_icon.html" with name="copy" %}<span data-copy-label>Copy Markdown</span></button>
-<label>Within this paper<input readonly name="internal"></label><button type="button" data-copy-field="internal">{% include "includes/ui_icon.html" with name="copy" %}<span data-copy-label>Copy reference</span></button></dialog>
+<dialog id="reference-copy-dialog" class="reference-dialog">
+  <form method="dialog"><button class="ui-icon-button" aria-label="Close reference tools" title="Close">{% include "includes/ui_icon.html" with name="close" %}</button></form>
+  <h2>Copy reference</h2>
+  <p>This link points to the version you are reading.</p>
+  <label for="reference-permalink">Permalink</label>
+  <div class="reference-copy-row"><input id="reference-permalink" readonly name="permalink"><button type="button" class="ui-icon-button" data-copy-field="permalink" aria-label="Copy link" title="Copy link">{% include "includes/ui_icon.html" with name="copy" %}</button></div>
+  <label for="reference-markdown">Markdown link</label>
+  <div class="reference-copy-row"><input id="reference-markdown" readonly name="markdown"><button type="button" class="ui-icon-button" data-copy-field="markdown" aria-label="Copy Markdown" title="Copy Markdown">{% include "includes/ui_icon.html" with name="copy" %}</button></div>
+  <label for="reference-internal">Within this paper</label>
+  <div class="reference-copy-row"><input id="reference-internal" readonly name="internal"><button type="button" class="ui-icon-button" data-copy-field="internal" aria-label="Copy reference" title="Copy reference">{% include "includes/ui_icon.html" with name="copy" %}</button></div>
+  <p id="reference-copy-status" role="status" aria-live="polite"></p>
+</dialog>

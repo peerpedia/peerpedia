@@ -153,3 +153,8 @@
   .chapter-tools button { flex:none; }
 }
 @media print { .copy-reference,.section-edit,.chapter-footer button,#reading-return { display:none!important; } }
+
+.reference-copy-row { display:flex; align-items:center; gap:8px; }
+.reference-copy-row input { flex:1; min-width:0; }
+.reference-dialog .reference-copy-row .ui-icon-button { width:36px; height:36px; flex:0 0 36px; }
+#reference-copy-status { min-height:1.6em; margin:12px 0 0; color:var(--control-ink); font-size:13px; }
