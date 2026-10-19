@@ -67,6 +67,20 @@ def worker_engine(source):
         "l=new Uint8Array(t.result,0,65536*c)",
         't.err||!t.result||t.result.length!==65536*c?(()=>{throw Error("Invalid compiler memory image")})():l=new Uint8Array(t.result,0,65536*c)',
     )
+    # The isolated Node renderer can inflate the trusted memory image natively.
+    # Browsers retain the pinned JavaScript inflater. Validate the identical size
+    # before either route can initialize TeX's fixed WebAssembly memory.
+    inflate_start = (
+        "const e=(await i()(self.diagramAssets.core)).body.getReader(),t=new B.a.Inflate;"
+    )
+    if entry.count(inflate_start) != 1:
+        raise RuntimeError("The pinned engine's core loader changed")
+    entry = entry.replace(
+        inflate_start,
+        "if(self.loadDiagramCore){l=await self.loadDiagramCore();"
+        "if(!(l instanceof Uint8Array)||l.length!==65536*c)"
+        'throw Error("Invalid compiler memory image");return;}' + inflate_start,
+    )
     # Bound output while the converter is writing, before concatenating huge strings.
     entry = entry.replace(
         "a+=A.toString(),t()",

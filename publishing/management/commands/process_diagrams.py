@@ -12,7 +12,7 @@ from django.db import transaction
 from django.db.models import Q
 from django.utils import timezone
 
-from publishing.diagram_cache import enqueue, sanitize
+from publishing.diagram_cache import enqueue, key_for, sanitize
 from publishing.models import DiagramArtifact, Submission
 
 
@@ -51,6 +51,16 @@ def process_one():
     item = claim()
     if item is None:
         return False
+    if item.key != key_for(item.source):
+        # An upgrade must not write new-engine output under an old cache key.
+        DiagramArtifact.objects.filter(
+            key=item.key, status="processing", attempts=item.attempts
+        ).update(
+            status="obsolete",
+            error="The diagram renderer changed. Reload this page.",
+            updated_at=timezone.now(),
+        )
+        return True
     try:
         request = Request(
             settings.DIAGRAM_RENDERER_URL.rstrip("/") + "/compile",
@@ -58,7 +68,7 @@ def process_one():
             headers={"Content-Type": "application/json"},
             method="POST",
         )
-        with open_renderer(request, timeout=25) as response:
+        with open_renderer(request, timeout=40) as response:
             raw = response.read(2100001)
         if len(raw) > 2100000:
             raise ValueError("Diagram output is too large.")

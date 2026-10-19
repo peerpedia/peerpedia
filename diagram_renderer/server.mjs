@@ -63,7 +63,7 @@ const server = http.createServer((req, res) => {
         finish(200, {
           error: "Diagram compilation timed out. Simplify its source.",
         }),
-      15000,
+      30000,
     );
     worker.once("message", (data) => {
       if (JSON.stringify(data).length > 2100000)
