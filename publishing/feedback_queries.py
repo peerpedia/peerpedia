@@ -228,7 +228,9 @@ def passage_detail(passage_id, user, start=0):
         ranked.prefetch_related(
             Prefetch(
                 "linked_prs",
-                queryset=PassagePRLink.objects.select_related("pull_request__head__decision"),
+                queryset=PassagePRLink.objects.select_related(
+                    "pull_request__head__decision", "pull_request__head__pr_commit__request"
+                ),
                 to_attr="feedback_links",
             ),
             Prefetch(

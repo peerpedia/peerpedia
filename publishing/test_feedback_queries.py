@@ -8,8 +8,8 @@ from django.test.utils import CaptureQueriesContext
 from accounts.models import User
 from . import api, passages
 from .feedback_queries import passage_index, passage_detail, comment_replies
-from .models import Passage, PassageComment, PassageVote
-from .services import publish
+from .models import Passage, PassageComment, PassageVote, PassagePRLink
+from .services import publish, propose
 from .tests import document
 
 
@@ -59,6 +59,10 @@ class FeedbackQueryTests(TestCase):
                     passage=self.anchors[0], user=user, text=f"Root {i}", score=3
                 )
             )
+        proposal = propose(self.owner, self.paper.pk, self.paper.current_id, document())
+        PassagePRLink.objects.create(
+            thread=roots[0], pull_request=proposal.pr_commit.request, user=self.owner
+        )
         PassageVote.objects.create(comment=roots[0], user=self.owner, value=1)
         for i in range(100):
             child = PassageComment.objects.create(
@@ -76,6 +80,7 @@ class FeedbackQueryTests(TestCase):
         self.assertEqual(len(first["threads"]), 10)
         self.assertEqual(first["threads"][0]["id"], str(roots[0].pk))
         self.assertEqual(first["threads"][0]["vote"], 1)
+        self.assertEqual(first["threads"][0]["links"][0]["status"], "pending")
         self.assertEqual(len(first["threads"][0]["replies"]), 30)
         self.assertEqual(first["threads"][0]["next_replies"], 30)
         pages = (
