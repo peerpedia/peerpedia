@@ -1062,8 +1062,22 @@ C \arrow[r, "k"'] & D
         self.page.get_by_role("link", name="Equation (2.1)", exact=True).click()
         expect(self.page).to_have_url(re.compile(r"chapter=proof#eq%3Aone"))
         expect(self.page.get_by_role("button", name="Back to where you were")).to_be_visible()
-        self.page.get_by_role("button", name="Back to where you were").click()
+        pending_progress = []
+        progress_url = self.live_server_url + f"/papers/{paper.pk}/progress/"
+
+        def hold_progress(route):
+            if route.request.method == "GET":
+                pending_progress.append(route)
+            else:
+                route.continue_()
+
+        self.page.route(progress_url, hold_progress)
+        with self.page.expect_request(progress_url):
+            self.page.get_by_role("button", name="Back to where you were").click()
         expect(self.page).to_have_url(re.compile(r"chapter=intro$"))
+        expect(self.page.locator("#chapter-complete")).to_be_disabled()
+        pending_progress[0].continue_()
+        self.page.unroute(progress_url, hold_progress)
         self.page.get_by_role("button", name="Mark complete and continue").click()
         expect(self.page).to_have_url(re.compile(r"chapter=proof$"))
         expect(self.page.locator('[data-chapter-state="intro"]')).to_have_text("✓")

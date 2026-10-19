@@ -143,6 +143,7 @@
     decorate();
   }
   complete.addEventListener("click", async () => {
+    if (!ready) return;
     const mark = !state.completed[chapter.id];
     complete.disabled = true;
     try {
@@ -159,7 +160,8 @@
     try {
       if (config.progress_url) {
         const response = await fetch(config.progress_url);
-        if (response.ok) state = await response.json();
+        if (!response.ok) throw new Error("Progress unavailable");
+        state = await response.json();
       } else state = JSON.parse(localStorage.getItem(key)) || state;
       state.completed ||= {};
       if (!config.explicit && !location.hash && state.chapter) {
@@ -184,9 +186,16 @@
         if (document.readyState === "complete") restore();
         else window.addEventListener("load", restore, { once: true });
       }
-    } catch (_) {}
+    } catch (_) {
+      if (config.progress_url) {
+        document.getElementById("reading-status").textContent =
+          "Could not load reading progress. Reload the page to try again.";
+        return;
+      }
+    }
     ready = true;
     decorate();
+    complete.disabled = false;
   })();
   window.addEventListener(
     "scroll",
