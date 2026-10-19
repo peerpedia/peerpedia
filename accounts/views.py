@@ -19,7 +19,12 @@ logger = logging.getLogger(__name__)
 def send_verification(user):
     token = signing.dumps({"user": user.pk, "email": user.email}, salt="verify-email")
     url = settings.SITE_URL + reverse("verify_email", args=[token])
-    send_mail("Verify your Peerpedia email", f"Welcome to Peerpedia.\n\nVerify your email to publish, submit changes, and review papers:\n{url}\n\nThis link expires in 24 hours. If you did not create this account, ignore this email.", settings.DEFAULT_FROM_EMAIL, [user.email])
+    send_mail(
+        "Verify your Peerpedia email",
+        f"Welcome to Peerpedia.\n\nVerify your email to publish, submit changes, and review papers:\n{url}\n\nThis link expires in 24 hours. If you did not create this account, ignore this email.",
+        settings.DEFAULT_FROM_EMAIL,
+        [user.email],
+    )
 
 
 @limited("signup", limit=10, seconds=3600)
@@ -34,7 +39,10 @@ def signup(request):
             send_verification(user)
         except Exception:
             logger.exception("Verification email delivery failed")
-            messages.error(request, "Your account was created, but email delivery failed. Please try sending the verification email again.")
+            messages.error(
+                request,
+                "Your account was created, but email delivery failed. Please try sending the verification email again.",
+            )
         return redirect("verification_needed")
     return render(request, "accounts/signup.html", {"form": form})
 
@@ -84,7 +92,15 @@ def verify_email(request, token):
         data = signing.loads(token, salt="verify-email", max_age=86400)
         user = User.objects.get(pk=data["user"], email=data["email"], is_active=True)
     except (signing.BadSignature, User.DoesNotExist, KeyError):
-        return render(request, "error.html", {"heading": "Verification link unavailable", "detail": "This link is invalid or expired. Sign in and request a new verification email."}, status=400)
+        return render(
+            request,
+            "error.html",
+            {
+                "heading": "Verification link unavailable",
+                "detail": "This link is invalid or expired. Sign in and request a new verification email.",
+            },
+            status=400,
+        )
     if request.method == "POST":
         user.email_verified = True
         user.save(update_fields=["email_verified"])

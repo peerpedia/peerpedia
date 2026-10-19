@@ -7,17 +7,36 @@ urlpatterns = [
     path("inbox/read/", notifications.mark_read, name="inbox_read"),
     path("inbox/<int:notification_id>/open/", notifications.open_notification, name="inbox_open"),
     path("submissions/<uuid:submission_id>/passages/", discussions.index, name="passage_index"),
-    path("submissions/<uuid:submission_id>/discussions/", discussions.create, name="passage_create"),
+    path(
+        "submissions/<uuid:submission_id>/discussions/", discussions.create, name="passage_create"
+    ),
     path("passages/<uuid:passage_id>/", discussions.detail, name="passage_detail"),
-    path("discussion-comments/<uuid:comment_id>/replies/", discussions.replies, name="passage_replies"),
+    path(
+        "discussion-comments/<uuid:comment_id>/replies/",
+        discussions.replies,
+        name="passage_replies",
+    ),
     path("discussion-comments/<uuid:comment_id>/reply/", discussions.reply, name="passage_reply"),
     path("discussion-comments/<uuid:comment_id>/edit/", discussions.edit, name="passage_edit"),
-    path("discussion-comments/<uuid:comment_id>/history/", discussions.history, name="passage_history"),
+    path(
+        "discussion-comments/<uuid:comment_id>/history/",
+        discussions.history,
+        name="passage_history",
+    ),
     path("discussion-comments/<uuid:comment_id>/vote/", discussions.vote, name="passage_vote"),
-    path("discussion-comments/<uuid:comment_id>/resolve/", discussions.resolve, name="passage_resolve"),
-    path("discussion-comments/<uuid:comment_id>/report/", discussions.report, name="passage_report"),
-    path("discussion-comments/<uuid:comment_id>/link_pr/", discussions.link_pr, name="passage_link_pr"),
-
+    path(
+        "discussion-comments/<uuid:comment_id>/resolve/",
+        discussions.resolve,
+        name="passage_resolve",
+    ),
+    path(
+        "discussion-comments/<uuid:comment_id>/report/", discussions.report, name="passage_report"
+    ),
+    path(
+        "discussion-comments/<uuid:comment_id>/link_pr/",
+        discussions.link_pr,
+        name="passage_link_pr",
+    ),
     path("write/", drafts.start, name="write"),
     path("papers/<uuid:paper_id>/edit/", drafts.start, name="edit_paper"),
     path("prs/<uuid:pr_id>/edit/", drafts.start, name="edit_pr"),
@@ -30,7 +49,8 @@ urlpatterns = [
     path("drafts/<uuid:draft_id>/review/", drafts.review, name="draft_review"),
     path("drafts/<uuid:draft_id>/submit/", drafts.submit, name="draft_submit"),
     path("drafts/<uuid:draft_id>/discard/", drafts.discard, name="draft_discard"),
-    path("", views.browse, name="browse"), path("health/", views.health, name="health"),
+    path("", views.browse, name="browse"),
+    path("health/", views.health, name="health"),
     path("help/", TemplateView.as_view(template_name="publishing/help.html"), name="help"),
     path("publish/", views.upload, name="publish"),
     path("papers/<uuid:paper_id>/", views.paper_detail, name="paper"),

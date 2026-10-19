@@ -14,6 +14,10 @@ class Command(BaseCommand):
                 raise CommandError(f"Cross-paper base: {submission.pk}")
             count += 1
         for paper in Paper.objects.select_related("current__decision"):
-            if not paper.current_id or paper.current.paper_id != paper.pk or paper.current.status != "accepted":
+            if (
+                not paper.current_id
+                or paper.current.paper_id != paper.pk
+                or paper.current.status != "accepted"
+            ):
                 raise CommandError(f"Invalid current version: {paper.pk}")
         self.stdout.write(self.style.SUCCESS(f"Verified {count} immutable submissions."))

@@ -1,21 +1,19 @@
 """Browser integration tests: actual forms, cookies, CSRF, JS and PostgreSQL."""
+
 import os
 from pathlib import Path
 import re
 import time
 from concurrent.futures import ThreadPoolExecutor
 from urllib.parse import urlsplit
-
 from django.contrib.staticfiles.testing import StaticLiveServerTestCase
 from django.core import mail
 from django.db import connections
 from django.test import override_settings
 from playwright.sync_api import expect, sync_playwright
-
 from accounts.models import User
-from publishing.models import Paper, Review, Submission
+from publishing.models import Draft, Paper, Review, Submission, PassageComment
 from publishing.services import publish, propose
-
 
 PASSWORD = "Browser-Only-Password-938!"
 SOURCE = "# Browser paper\n\nOriginal proof. Inline $x^2$.\n\n$$\nx=1\n$$\n\n```python\nvalue = '$notmath$'\n```\n"
@@ -27,21 +25,30 @@ class BrowserJourneys(StaticLiveServerTestCase):
     host = "127.0.0.1"
 
     def setUp(self):
-        self.owner = User.objects.create_user("owner", "owner@example.org", PASSWORD, email_verified=True)
-        self.contributor = User.objects.create_user("contributor", "contributor@example.org", PASSWORD, email_verified=True)
+        self.owner = User.objects.create_user(
+            "owner", "owner@example.org", PASSWORD, email_verified=True
+        )
+        self.contributor = User.objects.create_user(
+            "contributor", "contributor@example.org", PASSWORD, email_verified=True
+        )
         # Stop Playwright before Django flushes the test database. Its sync API
         # keeps an asyncio loop running on this thread while the browser is open.
         self.playwright = sync_playwright().start()
         self.addCleanup(self.playwright.stop)
         self.browser = self.playwright.chromium.launch()
         self.addCleanup(self.browser.close)
-        self.context = self.browser.new_context(viewport={"width": 1365, "height": 900}, service_workers="block")
+        self.context = self.browser.new_context(
+            viewport={"width": 1365, "height": 900}, service_workers="block"
+        )
         self.context.set_default_timeout(10000)
         self.context.tracing.start(screenshots=True, snapshots=True, sources=True)
         self.page_errors = []
         self.external_requests = []
         self.context.route("**/*", self.local_requests_only)
-        self.context.on("page", lambda page: page.on("pageerror", lambda error: self.page_errors.append(str(error))))
+        self.context.on(
+            "page",
+            lambda page: page.on("pageerror", lambda error: self.page_errors.append(str(error))),
+        )
         self.page = self.context.new_page()
         self.addCleanup(self.finish_browser)
         self.origin = self.settings(SITE_URL=self.live_server_url)
@@ -82,7 +89,20 @@ class BrowserJourneys(StaticLiveServerTestCase):
         expect(self.page.get_by_role("button", name="Sign out")).to_be_visible()
 
     def fixture_paper(self):
-        return self.database_call(lambda: publish(self.owner, {"primary_category": "math.NT", "secondary_categories": [], "title": "Browser paper", "authors": "Ada Example", "abstract": "A private-to-metadata abstract.", "markdown": SOURCE, "explanation": "Initial publication."}))
+        return self.database_call(
+            lambda: publish(
+                self.owner,
+                {
+                    "primary_category": "math.NT",
+                    "secondary_categories": [],
+                    "title": "Browser paper",
+                    "authors": "Ada Example",
+                    "abstract": "A private-to-metadata abstract.",
+                    "markdown": SOURCE,
+                    "explanation": "Initial publication.",
+                },
+            )
+        )
 
     def database_call(self, function):
         # Keep synchronous ORM work outside Playwright's asyncio thread, without
@@ -92,6 +112,7 @@ class BrowserJourneys(StaticLiveServerTestCase):
                 return function()
             finally:
                 connections.close_all()
+
         with ThreadPoolExecutor(max_workers=1) as pool:
             return pool.submit(call).result()
 
@@ -100,7 +121,9 @@ class BrowserJourneys(StaticLiveServerTestCase):
         self.page.get_by_label("Authors:", exact=True).fill("Ada Example")
         self.page.get_by_label("Abstract:", exact=True).fill("A private-to-metadata abstract.")
         self.page.get_by_label("Primary subject:", exact=True).select_option("math.NT")
-        self.page.get_by_label("Markdown document").set_input_files({"name": "paper.md", "mimeType": "text/markdown", "buffer": source.encode()})
+        self.page.get_by_label("Markdown document").set_input_files(
+            {"name": "paper.md", "mimeType": "text/markdown", "buffer": source.encode()}
+        )
         if proposal:
             self.page.get_by_label("What changed?").fill("Correct the proof.")
         self.page.get_by_role("button", name=re.compile("Preview (submission|paper)")).click()
@@ -119,7 +142,9 @@ class BrowserJourneys(StaticLiveServerTestCase):
         # context instead, without bypassing CSP for any application scripts.
         deadline = time.monotonic() + 5
         while time.monotonic() < deadline:
-            if self.page.evaluate("() => document.documentElement.scrollWidth <= window.innerWidth + 1"):
+            if self.page.evaluate(
+                "() => document.documentElement.scrollWidth <= window.innerWidth + 1"
+            ):
                 break
             self.page.wait_for_timeout(50)
         layout = self.page.evaluate("""() => ({
@@ -129,7 +154,7 @@ class BrowserJourneys(StaticLiveServerTestCase):
             ).map(element => ({tag: element.tagName, id: element.id, classes: element.className,
                 right: element.getBoundingClientRect().right})).slice(0, 15)
         })""")
-        self.assertLessEqual(layout['width'], layout['viewport'] + 1, str(layout))
+        self.assertLessEqual(layout["width"], layout["viewport"] + 1, str(layout))
 
     def test_upload_preview_publish_reader_and_download(self):
         self.login()
@@ -164,20 +189,30 @@ class BrowserJourneys(StaticLiveServerTestCase):
         self.page.goto(f"{self.live_server_url}/papers/{paper.pk}/")
         self.page.get_by_role("link", name="Upload a change", exact=True).click()
         self.upload(REVISED, proposal=True)
-        expect(self.page.get_by_role("region", name="Markdown source differences")).to_contain_text("+Corrected proof.")
+        expect(self.page.get_by_role("region", name="Markdown source differences")).to_contain_text(
+            "+Corrected proof."
+        )
         self.assertEqual(self.database_call(Submission.objects.count), 1)
         self.page.get_by_role("button", name="Publish submission", exact=True).click()
         expect(self.page.locator(".submission-heading .status")).to_have_text("Pending")
         submission_url = self.page.url
         frozen_hash = self.page.locator(".hash-info dd code").first.inner_text()
         expect(self.page.get_by_role("button", name="Accept submission")).to_have_count(0)
-        expect(self.page.get_by_role("region", name="Markdown source differences")).not_to_be_visible()
+        expect(
+            self.page.get_by_role("region", name="Markdown source differences")
+        ).not_to_be_visible()
         self.page.get_by_text("View Markdown changes", exact=True).click()
-        expect(self.page.locator(".source-diff .deletion")).to_contain_text(["---", "-Original proof."])
-        expect(self.page.locator(".source-diff .addition")).to_contain_text(["+++", "+Corrected proof."])
+        expect(self.page.locator(".source-diff .deletion")).to_contain_text(
+            ["---", "-Original proof."]
+        )
+        expect(self.page.locator(".source-diff .addition")).to_contain_text(
+            ["+++", "+Corrected proof."]
+        )
         self.page.get_by_label("Add to the conversation").fill("Please check the corrected proof.")
         self.page.get_by_role("button", name="Post comment").click()
-        expect(self.page.locator("#conversation .review")).to_contain_text("Please check the corrected proof.")
+        expect(self.page.locator("#conversation .review")).to_contain_text(
+            "Please check the corrected proof."
+        )
         self.page.get_by_role("button", name="Sign out").click()
         self.login()
         self.page.goto(submission_url)
@@ -199,24 +234,31 @@ class BrowserJourneys(StaticLiveServerTestCase):
         self.login("contributor")
         self.page.goto(f"{self.live_server_url}/papers/{paper.pk}/")
         for score in range(1, 6):
-            self.page.locator('.paper-star').nth(score - 1).hover()
+            self.page.locator(".paper-star").nth(score - 1).hover()
             for index in range(5):
-                expect(self.page.locator('.paper-star svg').nth(index)).to_have_css(
-                    'fill', re.compile(r'^rgb\(') if index < score else 'rgba(0, 0, 0, 0)')
+                expect(self.page.locator(".paper-star svg").nth(index)).to_have_css(
+                    "fill", re.compile(r"^rgb\(") if index < score else "rgba(0, 0, 0, 0)"
+                )
         self.page.locator('label.paper-star[title="5 stars"]').click()
         expect(self.page.get_by_label("5 stars", exact=True)).to_be_checked()
         self.page.get_by_label("Your review:", exact=True).hover()
-        for star in self.page.locator('.paper-star svg').all():
-            expect(star).to_have_css('fill', re.compile(r'^rgb\('))
+        for star in self.page.locator(".paper-star svg").all():
+            expect(star).to_have_css("fill", re.compile(r"^rgb\("))
         self.page.get_by_role("button", name="Publish review").click()
-        self.assertFalse(self.page.get_by_label("Your review:", exact=True).evaluate("element => element.validity.valid"))
+        self.assertFalse(
+            self.page.get_by_label("Your review:", exact=True).evaluate(
+                "element => element.validity.valid"
+            )
+        )
         self.assertEqual(self.database_call(Review.objects.count), 0)
         self.page.get_by_label("Your review:", exact=True).fill("A useful and clear proof.")
         self.page.get_by_role("button", name="Publish review").click()
         expect(self.page.locator(".rating-summary")).to_contain_text("5.0")
         self.page.get_by_label("5 stars", exact=True).press("ArrowLeft")
         expect(self.page.get_by_label("4 stars", exact=True)).to_be_checked()
-        self.page.get_by_label("Your review:", exact=True).fill("Useful, with one remaining question.")
+        self.page.get_by_label("Your review:", exact=True).fill(
+            "Useful, with one remaining question."
+        )
         self.page.get_by_role("button", name="Save review").click()
         expect(self.page.locator("#reviews .review")).to_have_count(1)
         expect(self.page.locator(".rating-summary")).to_contain_text("4.0")
@@ -228,23 +270,161 @@ class BrowserJourneys(StaticLiveServerTestCase):
 
     def test_administration_navigation_and_readonly_history(self):
         paper = self.fixture_paper()
-        self.database_call(lambda: User.objects.filter(pk=self.owner.pk).update(is_staff=True, is_superuser=True))
+        self.database_call(
+            lambda: User.objects.filter(pk=self.owner.pk).update(is_staff=True, is_superuser=True)
+        )
         self.login()
-        self.page.get_by_role('link', name='Admin', exact=True).click()
-        expect(self.page.get_by_role('heading', name='Care for the community.')).to_be_visible()
-        expect(self.page.get_by_role('link', name=re.compile('Reported comments'))).to_be_visible()
-        self.page.get_by_role('link', name=re.compile('Paper snapshots')).click()
-        expect(self.page.get_by_role('link', name='Browser paper', exact=True)).to_be_visible()
-        self.page.get_by_role('link', name='Browser paper', exact=True).click()
+        self.page.get_by_role("link", name="Admin", exact=True).click()
+        expect(self.page.get_by_role("heading", name="Care for the community.")).to_be_visible()
+        expect(self.page.get_by_role("link", name=re.compile("Reported comments"))).to_be_visible()
+        self.page.get_by_role("link", name=re.compile("Paper snapshots")).click()
+        expect(self.page.get_by_role("link", name="Browser paper", exact=True)).to_be_visible()
+        self.page.get_by_role("link", name="Browser paper", exact=True).click()
         expect(self.page.get_by_text(paper.current.hash, exact=True)).to_be_visible()
         expect(self.page.locator('input[name="_save"]')).to_have_count(0)
-        self.page.get_by_role('link', name='Administration', exact=True).click()
-        self.page.set_viewport_size({'width': 390, 'height': 844})
-        expect(self.page.get_by_role('heading', name='Moderation', exact=True)).to_be_visible()
+        self.page.get_by_role("link", name="Administration", exact=True).click()
+        self.page.set_viewport_size({"width": 390, "height": 844})
+        expect(self.page.get_by_role("heading", name="Moderation", exact=True)).to_be_visible()
         self.assert_no_page_overflow()
-        self.assertTrue(self.page.evaluate("document.querySelector('#user-tools').getBoundingClientRect().bottom <= document.querySelector('#header').getBoundingClientRect().bottom"))
-        self.page.get_by_role('link', name='Peerpedia home', exact=True).click()
-        expect(self.page.get_by_role('heading', name='Research, in revision.')).to_be_visible()
+        self.assertTrue(
+            self.page.evaluate(
+                "document.querySelector('#user-tools').getBoundingClientRect().bottom <= document.querySelector('#header').getBoundingClientRect().bottom"
+            )
+        )
+        self.page.get_by_role("link", name="Peerpedia home", exact=True).click()
+        expect(self.page.get_by_role("heading", name="Research, in revision.")).to_be_visible()
+
+    def test_editor_autosave_preview_reload_and_submission(self):
+        paper = self.fixture_paper()
+        original_hash = paper.current.hash
+        self.login()
+        self.page.goto(self.live_server_url + f"/papers/{paper.pk}/edit/")
+        source = self.page.locator(".cm-content")
+        expect(source).to_be_visible()
+        revised = SOURCE.replace("Original proof.", "Autosaved proof with a new explanation.")
+        source.fill(revised)
+        expect(self.page.locator("#save-status")).to_have_text("Saved")
+        expect(self.page.locator("#draft-preview")).to_contain_text("Autosaved proof")
+        draft = self.database_call(lambda: Draft.objects.get(owner=self.owner, paper=paper))
+        self.assertEqual(draft.markdown, revised)
+        self.page.reload()
+        expect(self.page.locator(".cm-content")).to_contain_text("Autosaved proof")
+        self.page.locator("#paper-details summary").click()
+        self.page.get_by_label("What changed?", exact=True).fill(
+            "Clarify the proof from the online editor."
+        )
+        self.page.get_by_role("button", name="Review changes", exact=True).click()
+        expect(self.page.get_by_role("heading", name="Review your changes")).to_be_visible()
+        self.page.get_by_role("button", name="Submit PR", exact=True).click()
+        expect(
+            self.page.get_by_text("Clarify the proof from the online editor.", exact=True)
+        ).to_be_visible()
+        self.assertEqual(
+            self.database_call(lambda: Paper.objects.get(pk=paper.pk).current.hash), original_hash
+        )
+        self.assertEqual(
+            self.database_call(lambda: Draft.objects.get(pk=draft.pk).submitted.markdown), revised
+        )
+
+    def test_editor_two_tab_conflict_and_offline_recovery(self):
+        paper = self.fixture_paper()
+        self.login()
+        self.page.goto(self.live_server_url + f"/papers/{paper.pk}/edit/")
+        expect(self.page.locator(".cm-content")).to_be_visible()
+        draft_url = self.page.url
+        second = self.context.new_page()
+        second.goto(draft_url)
+        expect(second.locator(".cm-content")).to_be_visible()
+        self.page.locator(".cm-content").fill("# Browser paper\n\nFirst tab correction.")
+        expect(self.page.locator("#save-status")).to_have_text("Saved")
+        second.locator(".cm-content").fill("# Browser paper\n\nSecond tab correction.")
+        expect(second.locator("#conflict")).to_be_visible()
+        self.assertIn(
+            "First tab correction",
+            self.database_call(lambda: Draft.objects.get(owner=self.owner, paper=paper).markdown),
+        )
+        second.once("dialog", lambda dialog: dialog.accept())
+        second.get_by_role("button", name="Keep this copy", exact=True).click()
+        expect(second.locator("#save-status")).to_have_text("Saved")
+        self.assertIn(
+            "Second tab correction",
+            self.database_call(lambda: Draft.objects.get(owner=self.owner, paper=paper).markdown),
+        )
+        # Fail only this tab's save requests. The real recovery listener writes
+        # browser storage; the test never injects a fabricated recovery record.
+        second.route("**/save/", lambda route: route.abort())
+        second.locator(".cm-content").fill("# Browser paper\n\nRecover this unsaved explanation.")
+        expect(second.locator("#save-status")).to_have_text("Couldn’t save")
+        self.assertNotIn(
+            "Recover this",
+            self.database_call(lambda: Draft.objects.get(owner=self.owner, paper=paper).markdown),
+        )
+        second.unroute("**/save/")
+        second.once("dialog", lambda dialog: dialog.accept())
+        second.reload()
+        expect(second.locator("#recovery")).to_be_visible()
+        second.get_by_role("button", name="Restore recovery copy", exact=True).click()
+        expect(second.locator("#save-status")).to_have_text("Saved")
+        self.assertIn(
+            "Recover this unsaved explanation",
+            self.database_call(lambda: Draft.objects.get(owner=self.owner, paper=paper).markdown),
+        )
+        second.close()
+
+    def test_selected_sentence_discussion_reply_vote_and_history(self):
+        paper = self.fixture_paper()
+        self.login()
+        self.page.goto(self.live_server_url + f"/papers/{paper.pk}/read/")
+        block = self.page.locator('[data-passage-kind="text"]').filter(has_text="Original proof.")
+        expect(block).to_be_visible()
+        # Browser Selection is the actual input to the annotation UI. Select
+        # just a sentence, leaving adjacent text and equation outside it.
+        block.evaluate("""element => {
+            const text = [...element.childNodes].find(n => n.nodeType === Node.TEXT_NODE && n.textContent.includes('Original proof.'));
+            const start = text.textContent.indexOf('Original proof.');
+            const range = document.createRange(); range.setStart(text,start); range.setEnd(text,start+15);
+            const selection = window.getSelection(); selection.removeAllRanges(); selection.addRange(range);
+            document.dispatchEvent(new Event('selectionchange'));
+        }""")
+        self.page.locator("#passage-selection").click()
+        panel = self.page.locator("#discussion-panel")
+        expect(panel.locator("blockquote")).to_have_text("Original proof.")
+        panel.get_by_role("button", name="4 stars", exact=True).click()
+        panel.get_by_label("Rate this passage and explain why").fill(
+            "Please explain this implication."
+        )
+        panel.get_by_role("button", name="Post comment", exact=True).click()
+        root = panel.locator(".discussion-comment").filter(
+            has_text="Please explain this implication."
+        )
+        expect(root).to_be_visible()
+        root.get_by_role("button", name="Helpful: 0", exact=True).click()
+        expect(root.get_by_role("button", name="Helpful: 1", exact=True)).to_be_visible()
+        root.get_by_role("button", name="Reply", exact=True).click()
+        root.get_by_label("Reply to owner").fill("Here is a more detailed question.")
+        root.get_by_role("button", name="Post reply", exact=True).click()
+        expect(panel.get_by_text("Here is a more detailed question.", exact=True)).to_be_visible()
+        root.locator("summary").click()
+        root.get_by_role("button", name="Edit", exact=True).click()
+        root.get_by_label("Edit your comment").fill("Clarify the implication and its assumptions.")
+        root.get_by_role("button", name="Save changes", exact=True).click()
+        edited = panel.locator(".discussion-comment").filter(
+            has_text="Clarify the implication and its assumptions."
+        )
+        expect(edited).to_be_visible()
+        edited.locator("summary").click()
+        edited.get_by_role("button", name="History", exact=True).click()
+        expect(edited.locator(".discussion-history")).to_contain_text(
+            "Please explain this implication."
+        )
+        self.assertEqual(
+            self.database_call(
+                lambda: PassageComment.objects.filter(parent__isnull=True).get().passage.quote
+            ),
+            "Original proof.",
+        )
+        self.page.set_viewport_size({"width": 390, "height": 844})
+        self.assert_no_page_overflow()
 
     def test_signup_verification_logout_and_password_recovery(self):
         self.page.goto(self.live_server_url + "/")
@@ -260,7 +440,9 @@ class BrowserJourneys(StaticLiveServerTestCase):
         self.assertEqual(len(mail.outbox), 1)
         verification = re.search(r"http://\S+", mail.outbox[-1].body).group()
         self.page.goto(verification)
-        self.assertFalse(self.database_call(lambda: User.objects.get(username="newreader").email_verified))
+        self.assertFalse(
+            self.database_call(lambda: User.objects.get(username="newreader").email_verified)
+        )
         self.page.get_by_role("button", name="Verify email", exact=True).click()
         expect(self.page.get_by_role("status")).to_contain_text("Email verified")
         self.page.get_by_role("button", name="Sign out", exact=True).click()
@@ -283,19 +465,38 @@ class BrowserJourneys(StaticLiveServerTestCase):
 
     def test_mobile_search_reader_math_and_expandable_diff(self):
         paper = self.fixture_paper()
-        change = self.database_call(lambda: propose(self.contributor, paper.pk, paper.current_id, {"primary_category": "math.NT", "secondary_categories": [], "title": "Browser paper", "authors": "Ada Example", "abstract": "A private-to-metadata abstract.", "markdown": REVISED, "explanation": "Correct the proof."}))
+        change = self.database_call(
+            lambda: propose(
+                self.contributor,
+                paper.pk,
+                paper.current_id,
+                {
+                    "primary_category": "math.NT",
+                    "secondary_categories": [],
+                    "title": "Browser paper",
+                    "authors": "Ada Example",
+                    "abstract": "A private-to-metadata abstract.",
+                    "markdown": REVISED,
+                    "explanation": "Correct the proof.",
+                },
+            )
+        )
         self.page.set_viewport_size({"width": 390, "height": 844})
         self.page.goto(self.live_server_url + "/")
         self.page.get_by_role("searchbox", name="Search papers", exact=True).fill("Ada")
         self.page.get_by_role("button", name="Search", exact=True).click()
         expect(self.page.locator(".paper-row")).to_have_count(1)
-        expect(self.page.get_by_text("A private-to-metadata abstract.", exact=True)).to_have_count(0)
+        expect(self.page.get_by_text("A private-to-metadata abstract.", exact=True)).to_have_count(
+            0
+        )
         self.assert_no_page_overflow()
         self.page.get_by_role("link", name="Read paper", exact=True).click()
         self.assert_math()
         self.assert_no_page_overflow()
         self.page.go_back()
-        expect(self.page.get_by_role("searchbox", name="Search papers", exact=True)).to_have_value("Ada")
+        expect(self.page.get_by_role("searchbox", name="Search papers", exact=True)).to_have_value(
+            "Ada"
+        )
         self.page.get_by_role("link", name="Browser paper", exact=True).click()
         expect(self.page.get_by_role("heading", name="Abstract", exact=True)).to_be_visible()
         self.assert_no_page_overflow()
@@ -304,59 +505,87 @@ class BrowserJourneys(StaticLiveServerTestCase):
         expect(self.page.get_by_role("region", name="Markdown source differences")).to_be_visible()
         self.assert_no_page_overflow()
         self.page.goto(self.live_server_url + "/")
-        self.page.get_by_role("searchbox", name="Search papers", exact=True).fill("no-matching-paper")
+        self.page.get_by_role("searchbox", name="Search papers", exact=True).fill(
+            "no-matching-paper"
+        )
         self.page.get_by_role("button", name="Search", exact=True).click()
         expect(self.page.get_by_role("heading", name="No papers found")).to_be_visible()
 
     def test_reader_contents_scroll_mobile_keyboard_and_icons(self):
-        paragraph = 'A paragraph long enough to give each section a real reading position.\n\n'
-        source = '# Reading test\n\nIntroduction.\n\n## First section\n\n' + paragraph * 18
-        source += '### A proof\n\n' + paragraph * 18 + '## Last section\n\n'
-        source += '| Group | Field |\n| --- | --- |\n| C2 | Q |\n\n' + paragraph * 18
-        paper = self.database_call(lambda: publish(self.owner, {"primary_category": "math.NT", "secondary_categories": [], "title": "Reading test", "authors": "Ada", "abstract": "Reader navigation test.", "markdown": source, "explanation": "Initial publication."}))
-        reader_url = f'{self.live_server_url}/papers/{paper.pk}/read/'
+        paragraph = "A paragraph long enough to give each section a real reading position.\n\n"
+        source = "# Reading test\n\nIntroduction.\n\n## First section\n\n" + paragraph * 18
+        source += "### A proof\n\n" + paragraph * 18 + "## Last section\n\n"
+        source += "| Group | Field |\n| --- | --- |\n| C2 | Q |\n\n" + paragraph * 18
+        paper = self.database_call(
+            lambda: publish(
+                self.owner,
+                {
+                    "primary_category": "math.NT",
+                    "secondary_categories": [],
+                    "title": "Reading test",
+                    "authors": "Ada",
+                    "abstract": "Reader navigation test.",
+                    "markdown": source,
+                    "explanation": "Initial publication.",
+                },
+            )
+        )
+        reader_url = f"{self.live_server_url}/papers/{paper.pk}/read/"
         self.page.goto(reader_url)
-        navigation = self.page.get_by_role('navigation', name='Table of contents')
+        navigation = self.page.get_by_role("navigation", name="Table of contents")
         expect(navigation).to_be_visible()
-        expect(navigation.get_by_role('link')).to_have_count(3)
-        first = navigation.get_by_role('link', name='First section', exact=True)
+        expect(navigation.get_by_role("link")).to_have_count(3)
+        first = navigation.get_by_role("link", name="First section", exact=True)
         first.click()
-        expect(first).to_have_attribute('aria-current', 'location')
-        self.page.locator('#section-a-proof').evaluate('element => element.scrollIntoView()')
-        expect(navigation.get_by_role('link', name='A proof', exact=True)).to_have_attribute('aria-current', 'location')
+        expect(first).to_have_attribute("aria-current", "location")
+        self.page.locator("#section-a-proof").evaluate("element => element.scrollIntoView()")
+        expect(navigation.get_by_role("link", name="A proof", exact=True)).to_have_attribute(
+            "aria-current", "location"
+        )
         self.page.reload()
         # Reload restores the scroll position, which may differ from the URL fragment.
-        expect(navigation.get_by_role('link', name='A proof', exact=True)).to_have_attribute('aria-current', 'location')
-        self.assertTrue(self.page.locator('table').evaluate('element => { const table = element.getBoundingClientRect(); const main = element.closest("main").getBoundingClientRect(); return Math.abs((table.left + table.right) - (main.left + main.right)) < 2; }'))
-        icon = self.page.locator('link[rel="icon"][type="image/svg+xml"]').get_attribute('href')
+        expect(navigation.get_by_role("link", name="A proof", exact=True)).to_have_attribute(
+            "aria-current", "location"
+        )
+        self.assertTrue(
+            self.page.locator("table").evaluate(
+                'element => { const table = element.getBoundingClientRect(); const main = element.closest("main").getBoundingClientRect(); return Math.abs((table.left + table.right) - (main.left + main.right)) < 2; }'
+            )
+        )
+        icon = self.page.locator('link[rel="icon"][type="image/svg+xml"]').get_attribute("href")
         self.assertEqual(self.context.request.get(self.live_server_url + icon).status, 200)
-        self.assertIn("img-src 'self'", self.context.request.get(reader_url).headers['content-security-policy'])
-        self.page.set_viewport_size({'width': 390, 'height': 844})
+        self.assertIn(
+            "img-src 'self'",
+            self.context.request.get(reader_url).headers["content-security-policy"],
+        )
+        self.page.set_viewport_size({"width": 390, "height": 844})
         expect(navigation).not_to_be_visible()
-        self.page.locator('.reader-contents summary').click()
+        self.page.locator(".reader-contents summary").click()
         expect(navigation).to_be_visible()
-        self.page.keyboard.press('Escape')
+        self.page.keyboard.press("Escape")
         expect(navigation).not_to_be_visible()
-        self.page.keyboard.press('Enter')
-        last = navigation.get_by_role('link', name='Last section', exact=True)
+        self.page.keyboard.press("Enter")
+        last = navigation.get_by_role("link", name="Last section", exact=True)
         last.click()
         expect(navigation).not_to_be_visible()
-        expect(self.page.locator('[data-section="section-last-section"]')).to_have_attribute('aria-current', 'location')
-        expect(self.page.locator('#section-last-section')).to_be_focused()
-        self.assertGreaterEqual(self.page.locator('#section-last-section').bounding_box()['y'], 60)
+        expect(self.page.locator('[data-section="section-last-section"]')).to_have_attribute(
+            "aria-current", "location"
+        )
+        expect(self.page.locator("#section-last-section")).to_be_focused()
+        self.assertGreaterEqual(self.page.locator("#section-last-section").bounding_box()["y"], 60)
         self.assert_no_page_overflow()
-        self.page.set_viewport_size({'width': 320, 'height': 740})
+        self.page.set_viewport_size({"width": 320, "height": 740})
         self.assert_no_page_overflow()
-        self.page.emulate_media(media='print')
-        expect(self.page.locator('.reader-sidebar')).not_to_be_visible()
-        self.page.emulate_media(media='screen')
+        self.page.emulate_media(media="print")
+        expect(self.page.locator(".reader-sidebar")).not_to_be_visible()
+        self.page.emulate_media(media="screen")
         no_script = self.browser.new_context(java_script_enabled=False)
         try:
             page = no_script.new_page()
             page.goto(reader_url)
-            page.get_by_role('link', name='Last section', exact=True).click()
-            expect(page).to_have_url(reader_url + '#section-last-section')
-            expect(page.locator('#section-last-section')).to_be_in_viewport()
+            page.get_by_role("link", name="Last section", exact=True).click()
+            expect(page).to_have_url(reader_url + "#section-last-section")
+            expect(page.locator("#section-last-section")).to_be_in_viewport()
         finally:
             no_script.close()
 
@@ -368,39 +597,56 @@ class BrowserJourneys(StaticLiveServerTestCase):
         self.page.get_by_role("button", name="Create token", exact=True).click()
         expect(self.page.get_by_role("heading", name="Copy your token now")).to_be_visible()
         raw = self.page.locator("#new-token").inner_text()
-        identity = self.context.request.get(self.live_server_url + "/api/v1/me/", headers={"Authorization": "Bearer " + raw})
+        identity = self.context.request.get(
+            self.live_server_url + "/api/v1/me/", headers={"Authorization": "Bearer " + raw}
+        )
         self.assertEqual(identity.status, 200)
         self.assertEqual(identity.json()["scopes"], ["propose"])
         self.page.goto(self.live_server_url + "/accounts/tokens/")
         expect(self.page.locator("#new-token")).to_have_count(0)
         self.page.get_by_role("button", name="Revoke Local assistant", exact=True).click()
         expect(self.page.get_by_role("status")).to_contain_text("Access token revoked")
-        self.assertEqual(self.context.request.get(self.live_server_url + "/api/v1/me/", headers={"Authorization": "Bearer " + raw}).status, 401)
+        self.assertEqual(
+            self.context.request.get(
+                self.live_server_url + "/api/v1/me/", headers={"Authorization": "Bearer " + raw}
+            ).status,
+            401,
+        )
 
     def test_subject_upload_cross_list_filter_and_mobile(self):
         self.login()
-        self.page.goto(self.live_server_url + '/publish/')
-        self.page.get_by_text('Cross-list subjects (optional)', exact=True).click()
-        self.page.get_by_label('Find a cross-list subject').fill('hep-th')
-        expect(self.page.get_by_label('math.GR — Group Theory', exact=True)).not_to_be_visible()
-        self.page.get_by_label('hep-th — High Energy Physics - Theory', exact=True).check()
-        self.page.get_by_label('Find a cross-list subject').fill('unmatched-filter')
-        expect(self.page.get_by_label('hep-th — High Energy Physics - Theory', exact=True)).to_be_visible()
+        self.page.goto(self.live_server_url + "/publish/")
+        self.page.get_by_text("Cross-list subjects (optional)", exact=True).click()
+        self.page.get_by_label("Find a cross-list subject").fill("hep-th")
+        expect(self.page.get_by_label("math.GR — Group Theory", exact=True)).not_to_be_visible()
+        self.page.get_by_label("hep-th — High Energy Physics - Theory", exact=True).check()
+        self.page.get_by_label("Find a cross-list subject").fill("unmatched-filter")
+        expect(
+            self.page.get_by_label("hep-th — High Energy Physics - Theory", exact=True)
+        ).to_be_visible()
         self.upload()
-        expect(self.page.get_by_role('link', name='math.NT — Number Theory · Primary')).to_be_visible()
-        expect(self.page.get_by_role('link', name='hep-th — High Energy Physics - Theory', exact=True)).to_be_visible()
-        self.page.get_by_role('button', name='Publish paper', exact=True).click()
-        expect(self.page.get_by_role('link', name='hep-th — High Energy Physics - Theory', exact=True)).to_be_visible()
-        self.page.get_by_role('link', name='hep-th — High Energy Physics - Theory', exact=True).click()
-        expect(self.page.get_by_label('Subject', exact=True)).to_have_value('hep-th')
-        expect(self.page.get_by_role('link', name='Browser paper', exact=True)).to_be_visible()
-        self.page.set_viewport_size({'width': 390, 'height': 844})
-        self.page.get_by_role('searchbox', name='Search papers', exact=True).fill('Ada')
-        self.page.get_by_label('Sort by').select_option('rating')
-        self.page.get_by_role('button', name='Search', exact=True).click()
-        expect(self.page.get_by_label('Subject', exact=True)).to_have_value('hep-th')
-        expect(self.page.get_by_role('link', name='Browser paper', exact=True)).to_be_visible()
+        expect(
+            self.page.get_by_role("link", name="math.NT — Number Theory · Primary")
+        ).to_be_visible()
+        expect(
+            self.page.get_by_role("link", name="hep-th — High Energy Physics - Theory", exact=True)
+        ).to_be_visible()
+        self.page.get_by_role("button", name="Publish paper", exact=True).click()
+        expect(
+            self.page.get_by_role("link", name="hep-th — High Energy Physics - Theory", exact=True)
+        ).to_be_visible()
+        self.page.get_by_role(
+            "link", name="hep-th — High Energy Physics - Theory", exact=True
+        ).click()
+        expect(self.page.get_by_label("Subject", exact=True)).to_have_value("hep-th")
+        expect(self.page.get_by_role("link", name="Browser paper", exact=True)).to_be_visible()
+        self.page.set_viewport_size({"width": 390, "height": 844})
+        self.page.get_by_role("searchbox", name="Search papers", exact=True).fill("Ada")
+        self.page.get_by_label("Sort by").select_option("rating")
+        self.page.get_by_role("button", name="Search", exact=True).click()
+        expect(self.page.get_by_label("Subject", exact=True)).to_have_value("hep-th")
+        expect(self.page.get_by_role("link", name="Browser paper", exact=True)).to_be_visible()
         self.assert_no_page_overflow()
-        self.page.get_by_label('Subject', exact=True).select_option('math.PR')
-        self.page.get_by_role('button', name='Apply', exact=True).click()
-        expect(self.page.get_by_role('heading', name='No papers found')).to_be_visible()
+        self.page.get_by_label("Subject", exact=True).select_option("math.PR")
+        self.page.get_by_role("button", name="Apply", exact=True).click()
+        expect(self.page.get_by_role("heading", name="No papers found")).to_be_visible()

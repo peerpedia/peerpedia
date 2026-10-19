@@ -1,7 +1,5 @@
 import hashlib
-
 from django.test import Client, TestCase, override_settings
-
 from .models import AccessToken, User
 from .tokens import authenticate_token, issue_token
 
@@ -9,7 +7,9 @@ from .tokens import authenticate_token, issue_token
 @override_settings(PASSWORD_HASHERS=["django.contrib.auth.hashers.MD5PasswordHasher"])
 class TokenTests(TestCase):
     def setUp(self):
-        self.user = User.objects.create_user("reader", "reader@example.org", "password", email_verified=True)
+        self.user = User.objects.create_user(
+            "reader", "reader@example.org", "password", email_verified=True
+        )
         self.client.force_login(self.user)
 
     def test_creation_requires_password_and_displays_secret_only_once(self):
@@ -28,7 +28,9 @@ class TokenTests(TestCase):
 
     def test_only_owner_can_revoke_and_csrf_is_required(self):
         token, raw = issue_token(self.user, "Laptop")
-        other = User.objects.create_user("other", "other@example.org", "password", email_verified=True)
+        other = User.objects.create_user(
+            "other", "other@example.org", "password", email_verified=True
+        )
         self.client.force_login(other)
         url = f"/accounts/tokens/{token.pk}/revoke/"
         self.assertEqual(self.client.post(url).status_code, 404)

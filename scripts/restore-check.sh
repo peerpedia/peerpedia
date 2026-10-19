@@ -4,10 +4,10 @@ set -eu
 cd "$(dirname "$0")/.."
 if [ "$#" -ne 1 ]; then echo "Usage: sh scripts/restore-check.sh backups/FILE.dump"; exit 1; fi
 dump_path="$1"
-restore_database="peerpedia_restore_check_$(date -u +%Y%m%d%H%M%S)"
+restore_database="peerpedia_restore_check_$(python3 -c 'import uuid; print(uuid.uuid4().hex)')"
 cleanup() { docker compose exec -T db sh -c 'dropdb -U "$POSTGRES_USER" --if-exists "$1"' sh "$restore_database"; }
-trap cleanup EXIT
 docker compose exec -T db sh -c 'createdb -U "$POSTGRES_USER" "$1"' sh "$restore_database"
+trap cleanup EXIT
 docker compose exec -T db sh -c 'pg_restore --exit-on-error --no-owner -U "$POSTGRES_USER" -d "$1"' sh "$restore_database" < "$dump_path"
 docker compose exec -T -e RESTORE_DATABASE="$restore_database" web python -c '
 import os

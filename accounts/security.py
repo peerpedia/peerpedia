@@ -19,22 +19,36 @@ def limited(scope, limit=10, seconds=900):
                 address = request.META.get("REMOTE_ADDR", "")
                 if not settings.DEBUG:
                     address = request.META.get("HTTP_X_REAL_IP", address)
-                identity = f"user:{request.user.pk}" if request.user.is_authenticated else f"ip:{address}"
+                identity = (
+                    f"user:{request.user.pk}" if request.user.is_authenticated else f"ip:{address}"
+                )
                 key = hashlib.sha256(f"{scope}:{identity}".encode()).hexdigest()
                 now = timezone.now()
                 with transaction.atomic():
-                    record, _ = RateLimit.objects.get_or_create(key=key, defaults={"started_at": now})
+                    record, _ = RateLimit.objects.get_or_create(
+                        key=key, defaults={"started_at": now}
+                    )
                     record = RateLimit.objects.select_for_update().get(pk=record.pk)
                     if record.started_at < now - timedelta(seconds=seconds):
                         record.started_at, record.count = now, 0
                     if record.count >= limit:
-                        response = render(request, "error.html", {"heading": "Please try again later", "detail": "Too many attempts. Wait a few minutes before trying again."}, status=429)
+                        response = render(
+                            request,
+                            "error.html",
+                            {
+                                "heading": "Please try again later",
+                                "detail": "Too many attempts. Wait a few minutes before trying again.",
+                            },
+                            status=429,
+                        )
                         response["Retry-After"] = str(seconds)
                         return response
                     record.count += 1
                     record.save()
             return view(request, *args, **kwargs)
+
         return wrapped
+
     return decorate
 
 
@@ -46,4 +60,5 @@ def verified_required(view):
             messages.info(request, "Verify your email before publishing or participating.")
             return redirect("verification_needed")
         return view(request, *args, **kwargs)
+
     return wrapped

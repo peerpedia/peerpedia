@@ -6,15 +6,20 @@ from mdit_py_plugins.texmath import texmath_plugin
 
 
 def parser():
-    md = MarkdownIt("commonmark", {"html": False, "breaks": False}).enable("table").enable("strikethrough")
+    md = (
+        MarkdownIt("commonmark", {"html": False, "breaks": False})
+        .enable("table")
+        .enable("strikethrough")
+    )
     md.use(dollarmath_plugin)
     md.use(texmath_plugin, delimiters="brackets")
+
     # texmath's default renderer returns raw TeX; escape it before inserting into HTML.
     def inline_math(self, tokens, idx, options, env):
-        return '<span class="math inline">' + escape(tokens[idx].content) + '</span>'
+        return '<span class="math inline">' + escape(tokens[idx].content) + "</span>"
 
     def block_math(self, tokens, idx, options, env):
-        return '<div class="math block">' + escape(tokens[idx].content) + '</div>\n'
+        return '<div class="math block">' + escape(tokens[idx].content) + "</div>\n"
 
     md.add_render_rule("math_inline", inline_math)
     md.add_render_rule("math_block", block_math)
@@ -50,9 +55,17 @@ def heading_tokens(tokens):
         used_ids.add(anchor)
         token.attrSet("id", anchor)
         level = int(token.tag[1])
-        headings.append({'id': anchor, 'label': label, 'level': level,
-                         'line': token.map[0] + 1, 'token': token, 'index': index,
-                         'title': first_heading and level == 1})
+        headings.append(
+            {
+                "id": anchor,
+                "label": label,
+                "level": level,
+                "line": token.map[0] + 1,
+                "token": token,
+                "index": index,
+                "title": first_heading and level == 1,
+            }
+        )
         first_heading = False
     return headings
 
@@ -63,20 +76,28 @@ def render_reader(source, source_lines=False, edit_url=None, passage_annotations
     tokens = md.parse(source)
     if passage_annotations:
         from .passages import annotate
+
         annotate(md, tokens, decorate=True)
     headings = heading_tokens(tokens)
     contents = []
     for item in headings:
         if source_lines:
-            item['token'].attrSet('data-source-line', str(item['line']))
-        if item['label'] and not item['title']:
-            contents.append({k: item[k] for k in ('id', 'label', 'level', 'line')})
-        if edit_url and not item['title'] and item['token'].level == 0:
+            item["token"].attrSet("data-source-line", str(item["line"]))
+        if item["label"] and not item["title"]:
+            contents.append({k: item[k] for k in ("id", "label", "level", "line")})
+        if edit_url and not item["title"] and item["token"].level == 0:
             from urllib.parse import urlencode
             from markdown_it.token import Token
-            link = Token('html_inline', '', 0)
-            link.content = '<a class="section-edit" aria-label="Edit section ' + escape(item['label'], quote=True) + '" href="' + escape(edit_url + '&' + urlencode({'scope': item['id']}), quote=True) + '">Edit</a>'
-            tokens[item['index'] + 1].children.append(link)
+
+            link = Token("html_inline", "", 0)
+            link.content = (
+                '<a class="section-edit" aria-label="Edit section '
+                + escape(item["label"], quote=True)
+                + '" href="'
+                + escape(edit_url + "&" + urlencode({"scope": item["id"]}), quote=True)
+                + '">Edit</a>'
+            )
+            tokens[item["index"] + 1].children.append(link)
     if contents:
         base_level = min(item["level"] for item in contents)
         for item in contents:
@@ -86,5 +107,8 @@ def render_reader(source, source_lines=False, edit_url=None, passage_annotations
 
 def has_images(source):
     def walk(tokens):
-        return any(token.type == "image" or (token.children and walk(token.children)) for token in tokens)
+        return any(
+            token.type == "image" or (token.children and walk(token.children)) for token in tokens
+        )
+
     return walk(parser().parse(source))
