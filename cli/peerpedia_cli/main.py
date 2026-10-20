@@ -15,6 +15,8 @@ from urllib.parse import urlencode, urlsplit
 from urllib.request import HTTPRedirectHandler, Request, build_opener
 import uuid
 
+from . import __version__
+
 
 class ClientError(Exception):
     def __init__(self, code, message, details=None):
@@ -858,7 +860,7 @@ def run(args):
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--json", action="store_true", help="Machine-readable output")
-    parser.add_argument("--version", action="version", version="peerpedia 0.6.0")
+    parser.add_argument("--version", action="version", version=f"peerpedia {__version__}")
     commands = parser.add_subparsers(dest="command", required=True)
     for command in (
         "login",

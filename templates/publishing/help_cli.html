@@ -18,16 +18,23 @@
 {% block guide_body %}
 <section id="install">
   <h2>Install the client</h2>
-  <p>The <strong>CLI</strong> is Peerpedia’s command-line client. You run its commands in a terminal. You need Python 3.12 or newer and Git installed on your computer.</p>
-  <p>Create a Python environment for the client, then activate it. On macOS or Linux, run these commands.</p>
+  <p>The <strong>CLI</strong> is Peerpedia’s command-line client. You need Python 3.12 or newer. You do not need Git or the website’s server software.</p>
+  <p>If you have <a href="https://pipx.pypa.io/stable/installation/">pipx</a>, install the released client with one command.</p>
+  <pre><code>pipx install {{ repository_url }}/releases/download/v{{ project_version }}/peerpedia_cli-{{ project_version }}-py3-none-any.whl
+peerpedia --version</code></pre>
+  <p>The version should read <code>peerpedia {{ project_version }}</code>. You can also download the wheel from the <a href="{{ repository_url }}/releases/tag/v{{ project_version }}">GitHub release</a> and give its file path to <code>pipx install</code>.</p>
+  <details class="help-disclosure"><summary>Install without pipx</summary><div>
+  <p>Create a Python environment. On macOS or Linux, run</p>
   <pre><code>python3 -m venv ~/.venvs/peerpedia
 source ~/.venvs/peerpedia/bin/activate</code></pre>
-  <details class="help-disclosure"><summary>Windows PowerShell</summary><div><pre><code>py -m venv "$env:USERPROFILE\.venvs\peerpedia"
-&amp; "$env:USERPROFILE\.venvs\peerpedia\Scripts\Activate.ps1"</code></pre></div></details>
-  <p>With the environment active, install the client and check that it opens.</p>
-  <pre><code>python -m pip install "git+{{ repository_url }}.git#subdirectory=cli"
+  <p>On Windows PowerShell, run</p>
+  <pre><code>py -m venv "$env:USERPROFILE\.venvs\peerpedia"
+&amp; "$env:USERPROFILE\.venvs\peerpedia\Scripts\Activate.ps1"</code></pre>
+  <p>Then install the client in that environment.</p>
+  <pre><code>python -m pip install {{ repository_url }}/releases/download/v{{ project_version }}/peerpedia_cli-{{ project_version }}-py3-none-any.whl
 peerpedia --help</code></pre>
-  <p>Activate the same environment whenever you open a new terminal. You only need to install the client once.</p>
+  <p>Activate the same environment when you open a new terminal.</p>
+  </div></details>
 </section>
 <section id="read">
   <h2>Find and download a paper</h2>

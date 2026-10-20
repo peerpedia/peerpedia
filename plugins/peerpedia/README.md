@@ -5,17 +5,15 @@ response to selected feedback. Submit a PR when you ask, or publish a new note.
 
 ## Install from GitHub
 
-Requires Codex desktop with plugin support, Python 3.12+ and Git. Install the CLI
+Requires Codex desktop with plugin support, Python 3.12+. Install the CLI
 once in a separate environment (no Peerpedia account needed for reading):
 
 ```sh
-git clone https://github.com/peerpedia/peerpedia.git "$HOME/Documents/peerpedia-source"
 python3 -m venv "$HOME/.local/share/peerpedia/venv"
-"$HOME/.local/share/peerpedia/venv/bin/python" -m pip install "$HOME/Documents/peerpedia-source/cli"
+"$HOME/.local/share/peerpedia/venv/bin/python" -m pip install "https://github.com/peerpedia/peerpedia/releases/download/v0.1.0/peerpedia_cli-0.1.0-py3-none-any.whl"
 ```
 
-Use an existing official checkout instead of cloning over an existing directory.
-The CLI must report version 0.5.0 or newer.
+The CLI must report version 0.1.0 or newer.
 
 Register the repository marketplace with the Codex CLI:
 

@@ -9,6 +9,7 @@ if not DEBUG and SECRET_KEY == "local-development-only-do-not-deploy":
     raise RuntimeError("Set a unique SECRET_KEY before deployment.")
 ALLOWED_HOSTS = os.environ.get("ALLOWED_HOSTS", "localhost,127.0.0.1,[::1]").split(",")
 SITE_URL = os.environ.get("SITE_URL", "http://127.0.0.1:8000").rstrip("/")
+PROJECT_VERSION = (BASE_DIR / "VERSION").read_text().strip()
 PROJECT_REPOSITORY_URL = "https://github.com/peerpedia/peerpedia"
 DEVELOPER_NAME = "Chenqi Meng"
 DEVELOPER_URL = "https://github.com/Chenqitrg"
