@@ -1,12 +1,14 @@
-# Peerpedia
+# Peerpedia 0.1.0
 
 To a better academia
 
-A small, public research-publishing application built with Django and PostgreSQL. Researchers upload a complete Markdown document, propose frozen changes, review papers, and preserve their publication history.
+A small, public research-publishing application built with Django and PostgreSQL. Researchers write or upload Markdown, organize chapters, propose frozen changes, discuss passages, and preserve their publication history.
 
 [Website](https://peerpedia.dev) · [Usage guide](https://peerpedia.dev/help/) · [Source](https://github.com/peerpedia/peerpedia)
 
-Developer information is on the [About page](https://peerpedia.dev/about/).
+[Download 0.1.0](https://github.com/peerpedia/peerpedia/releases/tag/v0.1.0) · [Install the CLI](cli/README.md) · [Release notes](CHANGELOG.md)
+
+The software uses the [MIT license](LICENSE). Papers have their own author-selected licenses. Developer information is on the [About page](https://peerpedia.dev/about/).
 
 ## What is implemented
 
@@ -14,7 +16,7 @@ Developer information is on the [About page](https://peerpedia.dev/about/).
 - One primary arXiv subject and optional cross-lists per new submission. Search recognizes category codes, names, and arXiv aliases.
 - Separate metadata pages, Palatino-style HTML readers with a section outline that follows your reading position, and downloadable Markdown. Contents collapse on small screens; tables are centered and wide equations scroll within the page.
 - Username or email sign-in, email verification, password changes, and emailed password-reset links.
-- Upload → preview → publish. One UTF-8 Markdown document per submission, with file upload or an online editor; no images.
+- An online Markdown editor with autosave, chapter and section editing, equations, references, bibliography, and compiled TikZ diagrams. Uploads and local CLI editing are also supported.
 - SHA-256 submission hashes, independent verification manifests, permanent source snapshots, and database triggers preventing updates/deletions of historical records.
 - Whole-submission acceptance by the corresponding author only. Stale proposals require a new submission.
 - Public accepted/rejected/withdrawn history, Markdown and metadata diffs, arbitrary accepted-version comparisons, and separate contribution credit.
@@ -104,15 +106,18 @@ when requested. Public reading needs no account; AI cannot comment, rate or vote
 
 ## Local editing and command-line pushes
 
-Install the standalone client (Python 3.12 or newer; no runtime dependencies):
+Install the standalone client with Python 3.12 or newer and [pipx](https://pipx.pypa.io/stable/installation/). No Git checkout or server setup is needed.
 
 ```sh
-python3 -m pip install ./cli
+pipx install https://github.com/peerpedia/peerpedia/releases/download/v0.1.0/peerpedia_cli-0.1.0-py3-none-any.whl
+peerpedia --version
 ```
+
+See the [CLI guide](cli/README.md) for installation without pipx.
 
 For repository development, `.venv/bin/python -m pip install -e ./cli` installs the editable client; activate that environment or use `.venv/bin/peerpedia`.
 
-Search without login (CLI 0.5+):
+Search without login:
 
 ```sh
 peerpedia search "Galois" --server https://peerpedia.dev --json
@@ -773,7 +778,7 @@ Existing single-file papers continue to work. In the editor, **Add chapter**
 converts the draft; a single PR publishes all chapter changes together. Readers
 see one chapter at a time. Chapter IDs survive file renaming and reordering.
 
-For the CLI (0.6.0 or later), `paper.json` adds:
+In version 0.1.0, `paper.json` adds:
 
 ```json
 {

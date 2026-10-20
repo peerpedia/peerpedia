@@ -14,6 +14,7 @@ def project_info(request):
         "needs_agreement": request.user.is_authenticated
         and request.user.email_verified
         and not acceptance(request.user),
+        "project_version": settings.PROJECT_VERSION,
         "repository_url": settings.PROJECT_REPOSITORY_URL,
         "developer_name": settings.DEVELOPER_NAME,
         "developer_url": settings.DEVELOPER_URL,

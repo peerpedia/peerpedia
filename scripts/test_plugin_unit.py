@@ -45,8 +45,8 @@ class PluginSetupTests(unittest.TestCase):
                     setup.subprocess,
                     "run",
                     side_effect=[
-                        subprocess.CompletedProcess([], 0, "peerpedia 0.4.0\n", ""),
-                        subprocess.CompletedProcess([], 0, "peerpedia 0.5.0\n", ""),
+                        subprocess.CompletedProcess([], 0, "peerpedia 0.0.0\n", ""),
+                        subprocess.CompletedProcess([], 0, "peerpedia 0.1.0\n", ""),
                     ],
                 ) as run,
             ):

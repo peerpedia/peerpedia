@@ -1,17 +1,14 @@
 # Setup
 
-Requires Python 3.12+ and Git. CLI installation is separate from plugin installation.
+Requires Python 3.12+. CLI installation is separate from plugin installation.
 The plugin makes no paid-service purchases and runs no installation hooks.
 
-If the CLI is unavailable, install it in a dedicated environment. Use an official
-Peerpedia checkout supplied by the user, or clone the official repository into an
-unused source directory. Never overwrite an existing checkout or library folder.
+If the CLI is unavailable, install the released wheel in a dedicated environment.
 For a first installation on macOS:
 
 ```sh
-git clone https://github.com/peerpedia/peerpedia.git "$HOME/Documents/peerpedia-source"
 python3 -m venv "$HOME/.local/share/peerpedia/venv"
-"$HOME/.local/share/peerpedia/venv/bin/python" -m pip install "$HOME/Documents/peerpedia-source/cli"
+"$HOME/.local/share/peerpedia/venv/bin/python" -m pip install "https://github.com/peerpedia/peerpedia/releases/download/v0.1.0/peerpedia_cli-0.1.0-py3-none-any.whl"
 "$HOME/.local/share/peerpedia/venv/bin/peerpedia" --version
 ```
 
