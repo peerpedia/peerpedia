@@ -1,7 +1,13 @@
-{% extends 'publishing/help_base.html' %}
+{% extends 'publishing/help_base.html' %}{% load static help_examples %}
 {% block title %}Writing and formatting · Peerpedia{% endblock %}
+{% block head %}
+<link rel="stylesheet" href="{% static 'reader.css' %}">
+{{ block.super }}
+{% include 'includes/math.html' %}
+<script defer src="{% static 'reading.js' %}"></script>
+{% endblock %}
 {% block guide_heading %}Writing and formatting{% endblock %}
-{% block guide_intro %}Start with ordinary text. Add headings, mathematics, and references as you need them. Every example below can be copied into the online editor.{% endblock %}
+{% block guide_intro %}Start with ordinary text. Add headings, mathematics, and references as you need them. Each example shows its source and the result produced by the same renderer used for papers.{% endblock %}
 {% block guide_tabs %}{% include 'publishing/includes/help_tabs.html' with current='writing' %}{% endblock %}
 {% block guide_contents %}
 <a href="#start">A first example</a>
@@ -18,39 +24,20 @@
 <section id="start">
   <h2>A first example</h2>
   <p>Markdown is text with simple formatting marks. A line starting with <code>##</code> becomes a section heading. Blank lines separate paragraphs. A pair of asterisks on either side makes words bold.</p>
-  <figure class="help-sample">
-    <div><h3>What you write</h3><pre><code>## A first example
-
-A group describes **symmetry**.
-We will study two examples.
-
-- Rotations of a triangle
-- Rotations of a square</code></pre></div>
-    <div class="help-sample-result"><h3>What the reader sees</h3><div class="help-rendered"><h4>A first example</h4><p>A group describes <strong>symmetry</strong>. We will study two examples.</p><ul><li>Rotations of a triangle</li><li>Rotations of a square</li></ul></div></div>
-    <figcaption>A heading, a paragraph, and a list. The editor’s preview shows the result as you write.</figcaption>
-  </figure>
+  {% help_example "basics" %}
   <p>Use <code>###</code> for a subsection. Put the paper’s title in <strong>Paper details</strong>, so you do not need to repeat it at the top of the text.</p>
   <p>To link to a web page, write <code>[link text](https://example.org)</code>. To display code, put it between lines containing three backticks. Adding a language name after the opening backticks tells the reader what kind of code it is.</p>
-  <pre><code>```python
-print(2 + 2)
-```</code></pre>
+  {% help_example "link" %}
+  {% help_example "code" %}
   <p>For instructions on saving and publishing, return to <a href="{% url 'help' %}#publish">Publish your first note</a>.</p>
 </section>
 <section id="math">
   <h2>Write mathematics</h2>
   <p>Put mathematics inside single dollar signs to keep it in a sentence. Use double dollar signs on separate lines for an equation on its own.</p>
-  <pre><code>The radius is $r$, so the area is
-
-$$
-A = \pi r^2.
-$$</code></pre>
+  {% help_example "math" %}
   <p>Inside the dollar signs, use familiar LaTeX commands such as <code>\frac{a}{b}</code>, <code>\sum</code>, and <code>\mathbb{R}</code>. Do not add a document preamble or <code>\begin{document}</code>.</p>
   <p>Display equations receive numbers automatically. In a work with chapters, the numbers include the chapter number. To leave one equation unnumbered, wrap it in an <strong>unnumbered block</strong>. A block begins with three colons and its type, and ends with three colons on a line of their own.</p>
-  <pre><code>::: unnumbered
-$$
-a + b = b + a
-$$
-:::</code></pre>
+  {% help_example "unnumbered" %}
   <p>The editor’s <strong>Insert block</strong> menu inserts these wrappers for you. The next sections show how blocks also create references, statements, and captions.</p>
 </section>
 <section id="chapters">
@@ -67,15 +54,7 @@ $$
   <p>Place the cursor where you want the reference. Choose <strong>Insert reference</strong>, then <strong>In this paper</strong>. Select the section, equation, or statement you need. The editor adds the reference and can give the target a label.</p>
   <h3>Write a label yourself</h3>
   <p>A label is a name you choose, such as <code>eq:area</code>. Put it inside <code>{#…}</code> on the item you want to link to. Write <code>@</code> followed by the same name wherever you want to refer to it.</p>
-  <pre><code>## Area of a circle {#sec:area}
-
-::: equation {#eq:area}
-$$
-A = \pi r^2.
-$$
-:::
-
-See @sec:area for the explanation of @eq:area.</code></pre>
+  {% help_example "references" %}
   <p>The last sentence becomes links to the section and the numbered equation. The same syntax works across chapters. Use each label only once in the paper and keep it when moving or revising the text, so existing references continue to work.</p>
   <h3>Link to another Peerpedia paper</h3>
   <p>Choose <strong>Insert reference → Search Peerpedia</strong>. Find the work, then choose the whole work or a target within it. The inserted reference points to a fixed version, so a later edit does not silently change what you cited.</p>
@@ -84,16 +63,7 @@ See @sec:area for the explanation of @eq:area.</code></pre>
 <section id="blocks">
   <h2>State a theorem or proof</h2>
   <p>Use a named block to set a statement apart from the surrounding explanation. For example, choose <strong>theorem</strong> from <strong>Insert block</strong>, then replace the sample text. A theorem can have a label just like an equation.</p>
-  <pre><code>::: theorem {#thm:identity}
-A group has exactly one identity element.
-:::
-
-::: proof
-Suppose $e$ and $f$ are both identity elements.
-Then $e = ef = f$.
-:::
-
-We use @thm:identity in the next example.</code></pre>
+  {% help_example "theorem" %}
   <p>The statement receives a number and can be linked. The proof is not numbered. The menu also offers lemma, proposition, corollary, definition, example, and remark blocks.</p>
 </section>
 <section id="citations">
@@ -101,31 +71,18 @@ We use @thm:identity in the next example.</code></pre>
   <p>A bibliography collects the books, papers, and other sources you cite. Open <strong>References.bib</strong> in the editor sidebar to edit the bibliography shared by all chapters.</p>
   <p>Expand <strong>Add a reference</strong> to enter a title, authors, year, and link. Choose a short <strong>citation key</strong>, a name you will use to refer to that source. You can also import a <code>.bib</code> file or paste standard BibTeX entries.</p>
   <h3>A complete example</h3>
-  <p>Paste this entry into References.bib. Its citation key is <code>euclidElements</code>.</p>
-  <pre><code>@book{euclidElements,
-  author = {Euclid},
-  title = {The Elements},
-  url = {https://mathcs.clarku.edu/~djoyce/elements/}
-}</code></pre>
+  <p>The example below has two parts. Put the BibTeX entry in <strong>References.bib</strong> and the Markdown sentence in your chapter. Its citation key is <code>euclidElements</code>.</p>
   <p>Then write a citation in the chapter by putting the key after <code>@</code> inside square brackets.</p>
-  <pre><code>For a classical treatment, see [@euclidElements].</code></pre>
+  {% help_example "citation" %}
   <p>The reader sees a short citation linking to the full entry at the end of that chapter. A chapter lists the works cited in it.</p>
-  <p>To point to a particular page or part, add it after a comma. To cite several sources together, separate their keys with a semicolon inside the brackets. Each key must have an entry in your bibliography.</p>
-  <pre><code>[@euclidElements, Book I]
-[@firstSource; @secondSource]</code></pre>
+  <p>To point to a particular page or part, add it after a comma. To cite several sources together, separate their keys with a semicolon inside the brackets. Each key must have an entry in your bibliography. This example includes the entries it needs.</p>
+  {% help_example "citation_details" %}
   <p>Check that the source supports the statement you are making. A formatted citation is not a check of its contents.</p>
 </section>
 <section id="tables">
   <h2>Make a table</h2>
   <p>Separate columns with vertical bars. The row of dashes separates the headings from the body.</p>
-  <figure class="help-sample">
-    <div><h3>What you write</h3><pre><code>| Shape | Rotations |
-| --- | --- |
-| Triangle | 3 |
-| Square | 4 |</code></pre></div>
-    <div class="help-sample-result"><h3>What the reader sees</h3><table><caption class="sr-only">Rotational symmetries</caption><thead><tr><th>Shape</th><th>Rotations</th></tr></thead><tbody><tr><td>Triangle</td><td>3</td></tr><tr><td>Square</td><td>4</td></tr></tbody></table></div>
-    <figcaption>A small table is often easier to compare than a paragraph of numbers.</figcaption>
-  </figure>
+  {% help_example "table" %}
   <p>Use a <strong>table</strong> block from <strong>Insert block</strong> when you want a numbered table you can refer to. Add a label using the same pattern as the equation example.</p>
 </section>
 <section id="diagrams">
@@ -133,33 +90,13 @@ We use @thm:identity in the next example.</code></pre>
   <p>Diagrams are written in the Markdown and appear as drawings in the reader. Start with a small example and check the preview before adding detail.</p>
   <h3>A commutative square</h3>
   <p>For a simple commutative diagram, use uppercase <code>CD</code> inside display mathematics.</p>
-  <pre><code>$$
-\begin{CD}
-A @&gt;f&gt;&gt; B \\
-@VgVV @VVhV \\
-C @&gt;k&gt;&gt; D
-\end{CD}
-$$</code></pre>
-  <figure class="help-diagram">
-    <svg viewBox="0 0 260 180" role="img" aria-labelledby="square-title square-description"><title id="square-title">A commutative square</title><desc id="square-description">A maps right to B by f and down to C by g. B maps down to D by h. C maps right to D by k.</desc><defs><marker id="help-arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10" fill="none" stroke="currentColor"/></marker></defs><g fill="none" stroke="currentColor" stroke-width="1.5" marker-end="url(#help-arrow)"><path d="M65 35H192"/><path d="M55 48V135"/><path d="M205 48V135"/><path d="M65 150H192"/></g><g fill="currentColor" text-anchor="middle" font-family="Georgia, serif" font-size="22"><text x="50" y="42">A</text><text x="210" y="42">B</text><text x="50" y="158">C</text><text x="210" y="158">D</text></g><g fill="currentColor" text-anchor="middle" font-family="Georgia, serif" font-size="18" font-style="italic"><text x="130" y="25">f</text><text x="37" y="97">g</text><text x="223" y="97">h</text><text x="130" y="140">k</text></g></svg>
-    <figcaption>The square described by the example.</figcaption>
-  </figure>
+  {% help_example "cd" %}
   <h3>More control over arrows</h3>
   <p>Use a <code>tikzcd</code> code block for diagonal arrows or more elaborate labels. Include the environment inside the backticks.</p>
-  <pre><code>```tikzcd
-\begin{tikzcd}
-A \arrow[r, "f"] \arrow[d, "g"'] &amp; B \arrow[d, "h"] \\
-C \arrow[r, "k"'] &amp; D
-\end{tikzcd}
-```</code></pre>
+  {% help_example "tikzcd" %}
   <h3>A general drawing</h3>
   <p>Use <code>tikzpicture</code> for shapes and paths. This example draws a circle and marks its radius.</p>
-  <pre><code>```tikzpicture
-\begin{tikzpicture}
-\draw (0,0) circle (1);
-\draw[-&gt;] (0,0) -- (1,0) node[midway, above] {$r$};
-\end{tikzpicture}
-```</code></pre>
+  {% help_example "tikzpicture" %}
   <h3>If a drawing does not appear</h3>
   <p>The editor needs an initial download to prepare TikZ previews, so the first drawing can take longer. Submitted drawings are prepared in the background and saved as images. A new submission may briefly show <strong>Preparing diagram</strong>.</p>
   <p>Read the error beside the source if compilation fails. Start with the example above, then add your changes gradually. Basic TikZ commands and bundled libraries are supported. External files, image uploads, and arbitrary LaTeX packages are not supported.</p>
@@ -170,4 +107,5 @@ C \arrow[r, "k"'] &amp; D
   <ul><li>Read the preview as a reader would. Check each chapter, equation, and diagram.</li><li>Open cross-references and check their destinations. Correct missing or repeated labels.</li><li>Check bibliography entries and make sure each citation supports its claim.</li><li>Use Review &amp; publish for a new paper, or Review &amp; submit PR for a revision. Check the title, authors, abstract, subject, and license as well as the text.</li></ul>
   <p>A paper can have up to 64 chapters. The combined Markdown and bibliography must fit within 1 MB. Reference warnings do not prevent submission, but fixing them makes the paper easier to read.</p>
 </section>
+{% include 'includes/reference_tools.html' %}
 {% endblock %}

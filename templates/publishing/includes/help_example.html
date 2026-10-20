@@ -1,0 +1,12 @@
+<figure class="help-sample" id="example-{{ name }}">
+  <div class="help-sample-source">
+    <h3>What you write</h3>
+    {% if bibliography %}<h4>References.bib</h4><pre><code>{{ bibliography }}</code></pre><h4>Markdown</h4>{% endif %}
+    <pre><code>{{ source }}</code></pre>
+  </div>
+  <div class="help-sample-result">
+    <h3>What the reader sees</h3>
+    <div class="markdown-body">{{ rendered|safe }}</div>
+  </div>
+  <figcaption>Rendered from the source shown here. {% if name == 'code' %}Code is displayed, not executed.{% elif name == 'tikzcd' or name == 'tikzpicture' %}The diagram uses the same compiler as the editor preview.{% endif %}</figcaption>
+</figure>
