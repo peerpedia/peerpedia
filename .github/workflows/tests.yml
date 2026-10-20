@@ -12,27 +12,27 @@ jobs:
   security:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.13"
       - run: pip install pip-audit==2.10.1
       - run: pip-audit -r requirements.lock --disable-pip --no-deps
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: "22"
       - run: npm audit --prefix editor --audit-level=high
   quality:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.13"
       - run: pip install -r requirements-dev.txt
       - run: python -m ruff check accounts publishing config cli/peerpedia_cli cli_tests browser_tests scripts plugins/peerpedia/scripts
       - run: python -m ruff format --check accounts publishing config cli/peerpedia_cli cli_tests browser_tests scripts plugins/peerpedia/scripts
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: "22"
           cache: npm
@@ -72,8 +72,8 @@ jobs:
       DATABASE_URL: postgresql://peerpedia:test-only-password@localhost:5432/peerpedia
       DEBUG: "1"
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.13"
           cache: pip
@@ -81,7 +81,7 @@ jobs:
       - run: pip install -r requirements.lock
       - run: pip install ./cli
       - run: peerpedia --help
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: "22"
           cache: npm
@@ -110,8 +110,8 @@ jobs:
     env:
       BROWSER_TEST_DATABASE_URL: postgresql://peerpedia_browser:browser-test-only-password@localhost:5432/peerpedia_browser
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.13"
           cache: pip
@@ -120,7 +120,7 @@ jobs:
             requirements-browser.txt
       - run: pip install -r requirements.lock -r requirements-browser.txt
       - run: python -m playwright install --with-deps chromium
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: "22"
           cache: npm
@@ -130,7 +130,7 @@ jobs:
       - run: python scripts/fetch_mathjax.py
       - run: python scripts/fetch_diagrams.py
       - run: python scripts/test_browser.py
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: failure()
         with:
           name: browser-failure-evidence
