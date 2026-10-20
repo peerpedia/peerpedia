@@ -79,7 +79,7 @@ C \arrow[r, "k"'] &amp; D
       <p>Submitted diagrams are compiled once in the background and saved as images. Readers load those saved images without downloading a compiler. New submissions may briefly show “Preparing diagram”. The editor and upload preview still compile locally in your browser, requiring WebAssembly and an initial download of about 10 MB. No diagram source is sent to an external service.</p>
       <p>Keep each diagram below 32 KB and each paper below 32 distinct diagrams. Editor compilation stops after eight seconds; background rendering has a thirty-second time limit. Other diagrams continue if one fails. Errors appear beside the source. After fixing a diagram in the editor, its preview updates automatically. Reload the reader to retry a failed download.</p>
       <p>Start with basic TikZ drawing commands and <code>tikzcd</code>. This is not a complete LaTeX installation: only bundled libraries are available. External files, images, and arbitrary packages are not supported. Unsupported commands produce a compiler message. Use a <code>latex</code> code block when you want to show code without compiling it.</p>
-      <p>The Markdown source stays in the immutable submission and in its diff. Rendering a diagram does not change the submission or its hash. Expand <strong>Diagram source</strong> to inspect the original code.</p>
+      <p>The reader shows diagrams without source-code controls. The Markdown source stays in the immutable submission and in its diff, and is available when editing. Rendering a diagram does not change the submission or its hash.</p>
     </section>
     <section id="contribute">
       <h2>Propose a change</h2>
