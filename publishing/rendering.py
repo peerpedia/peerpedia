@@ -56,13 +56,23 @@ def parser(saved_diagrams=None):
                 attrs += ' data-diagram-state="error"'
                 message = item.error
         hidden = " hidden" if output else ""
+        source_details = (
+            '<details class="diagram-source"><summary>Diagram source</summary><pre><code>'
+            + escape(token.content)
+            + "</code></pre></details>"
+            if saved_diagrams is None
+            else ""
+        )
         return (
             '<figure class="tex-diagram" data-diagram' + attrs + ">"
             '<div class="diagram-output" role="img" aria-label="TeX diagram">' + output + "</div>"
-            '<p class="diagram-status" role="status"' + hidden + ">" + escape(message) + "</p>"
-            '<details class="diagram-source"><summary>Diagram source</summary><pre><code>'
-            + escape(token.content)
-            + "</code></pre></details></figure>\n"
+            '<p class="diagram-status" role="status"'
+            + hidden
+            + ">"
+            + escape(message)
+            + "</p>"
+            + source_details
+            + "</figure>\n"
         )
 
     md.renderer.rules["fence"] = diagram_fence

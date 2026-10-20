@@ -104,7 +104,8 @@ function display(node, svg) {
 function failure(node, message, log = "") {
   node.dataset.diagramState = "error";
   node.querySelector(".diagram-status").textContent = message;
-  node.querySelector(".diagram-source").open = true;
+  const source = node.querySelector(".diagram-source");
+  if (source) source.open = true;
   if (log) {
     const details = document.createElement("details");
     details.className = "diagram-diagnostics";
@@ -156,7 +157,7 @@ async function savedDiagram(node) {
   if (node.isConnected)
     failure(
       node,
-      "This diagram is still being prepared. Reload later; its source is available below.",
+      "This diagram is still being prepared. Reload later to try again.",
     );
 }
 
