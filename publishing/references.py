@@ -113,13 +113,16 @@ def plain(value):
 
 
 class ReferenceDocument:
-    def __init__(self, chapters, bibliography="", reader_url="", number_sections=True):
+    def __init__(
+        self, chapters, bibliography="", reader_url="", number_sections=True, anchor_prefix=""
+    ):
         from .rendering import parser, heading_tokens
 
         self.sources = {p["id"]: p["markdown"] for p in chapters}
         self.pages = chapters
         self.reader_url = reader_url
         self.number_sections = number_sections
+        self.anchor_prefix = anchor_prefix
         self.entries, self.warnings = bibliography_entries(bibliography)
         self.targets, self.by_label, self.tokens = [], {}, {}
         for chapter_number, chapter in enumerate(chapters, 1):
@@ -188,6 +191,8 @@ class ReferenceDocument:
                 )
                 used[stem] += 1
                 anchor = stem if used[stem] == 1 else f"{stem}-{used[stem]}"
+                reference_label = label or anchor
+                anchor = self.anchor_prefix + anchor
                 if label and (label in self.by_label or used[stem] > 1):
                     self.warnings.append(
                         f"Duplicate label {label}; give every target a unique label."
@@ -195,7 +200,7 @@ class ReferenceDocument:
                 text = f"Equation ({number})" if kind == "equation" else f"{kind.title()} {number}"
                 target = {
                     "id": anchor,
-                    "label": label or anchor,
+                    "label": reference_label,
                     "chapter": chapter["id"],
                     "kind": kind,
                     "number": number,
@@ -211,7 +216,7 @@ class ReferenceDocument:
                     + quote(anchor),
                 }
                 self.targets.append(target)
-                key = label or anchor
+                key = reference_label
                 if key in self.by_label:
                     self.by_label[key] = None
                     self.warnings.append(
@@ -264,7 +269,7 @@ class ReferenceDocument:
                 if item.get(k)
             )
             result.append(
-                f'<a class="citation" href="#bib-{digest(key)[:16]}" title="{escape(details, quote=True)}">{escape(title)}'
+                f'<a class="citation" href="#{escape(self.anchor_prefix, quote=True)}bib-{digest(key)[:16]}" title="{escape(details, quote=True)}">{escape(title)}'
                 + (f" ({escape(suffix)})" if suffix else "")
                 + "</a>"
             )
@@ -300,7 +305,7 @@ class ReferenceDocument:
                 if item.get(k)
             )
             result.append(
-                f'<li id="bib-{digest(key)[:16]}">{heading}. {escape(details)}'
+                f'<li id="{escape(self.anchor_prefix, quote=True)}bib-{digest(key)[:16]}">{heading}. {escape(details)}'
                 + (f' <a href="{escape(url, quote=True)}">Open work ↗</a>' if url else "")
                 + "</li>"
             )

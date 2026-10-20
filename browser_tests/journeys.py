@@ -827,6 +827,40 @@ class BrowserJourneys(StaticLiveServerTestCase):
             server.terminate()
             server.wait(timeout=5)
 
+    def test_help_examples_render_and_link_without_publishing(self):
+        self.page.goto(self.live_server_url + "/help/writing/")
+        expect(self.page.locator("#example-math mjx-container svg")).to_have_count(2)
+        expect(self.page.locator("#example-cd mjx-container > svg")).to_have_count(1)
+        expect(self.page.locator("#example-unnumbered .equation-number")).to_have_count(0)
+        expect(self.page.locator(".help-sample-source mjx-container")).to_have_count(0)
+        expect(self.page.locator("#example-code .markdown-body pre code")).to_have_text(
+            "print(2 + 2)\n"
+        )
+        reference = self.page.locator("#example-references .markdown-body a.cross-reference").last
+        reference.click()
+        self.assertIn("#help-references-eq:area", self.page.url)
+        expect(self.page.locator('[id="help-references-eq:area"]')).to_be_in_viewport()
+        citation = self.page.locator(
+            '#example-citation .markdown-body a[href^="#help-citation-bib-"]'
+        )
+        citation.click()
+        expect(
+            self.page.locator('#example-citation li[id^="help-citation-bib-"]')
+        ).to_be_in_viewport()
+        for name in ("tikzcd", "tikzpicture"):
+            diagram = self.page.locator(f"#example-{name} [data-diagram]")
+            diagram.scroll_into_view_if_needed()
+            expect(diagram).to_have_attribute("data-diagram-state", "ready", timeout=60000)
+            expect(diagram.locator(".diagram-output svg")).to_have_count(1)
+            self.assertGreater(diagram.locator(".diagram-output").bounding_box()["height"], 20)
+        expect(self.page.locator("mjx-merror, [data-mml-node='merror']")).to_have_count(0)
+        self.assert_no_page_overflow()
+        self.page.set_viewport_size({"width": 390, "height": 844})
+        self.assert_no_page_overflow()
+        source = self.page.locator("#example-table .help-sample-source").bounding_box()
+        result = self.page.locator("#example-table .help-sample-result").bounding_box()
+        self.assertGreaterEqual(result["y"], source["y"] + source["height"])
+
     def test_diagrams_reader_preview_and_error_recovery(self):
         source = r"""# Diagrams
 
