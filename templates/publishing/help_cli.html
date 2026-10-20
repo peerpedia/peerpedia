@@ -19,8 +19,8 @@
 <section id="install">
   <h2>Install the client</h2>
   <p>The <strong>CLI</strong> is Peerpedia’s command-line client. You need Python 3.12 or newer. You do not need Git or the website’s server software.</p>
-  <p>If you have <a href="https://pipx.pypa.io/stable/installation/">pipx</a>, install the released client with one command.</p>
-  <pre><code>pipx install {{ repository_url }}/releases/download/v{{ project_version }}/peerpedia_cli-{{ project_version }}-py3-none-any.whl
+  <p>If you have <a href="https://pipx.pypa.io/stable/installation/">pipx</a>, install the released client from <a href="https://pypi.org/project/peerpedia-cli/">PyPI</a> with one command.</p>
+  <pre><code>pipx install peerpedia-cli
 peerpedia --version</code></pre>
   <p>The version should read <code>peerpedia {{ project_version }}</code>. You can also download the wheel from the <a href="{{ repository_url }}/releases/tag/v{{ project_version }}">GitHub release</a> and give its file path to <code>pipx install</code>.</p>
   <details class="help-disclosure"><summary>Install without pipx</summary><div>
@@ -31,7 +31,7 @@ source ~/.venvs/peerpedia/bin/activate</code></pre>
   <pre><code>py -m venv "$env:USERPROFILE\.venvs\peerpedia"
 &amp; "$env:USERPROFILE\.venvs\peerpedia\Scripts\Activate.ps1"</code></pre>
   <p>Then install the client in that environment.</p>
-  <pre><code>python -m pip install {{ repository_url }}/releases/download/v{{ project_version }}/peerpedia_cli-{{ project_version }}-py3-none-any.whl
+  <pre><code>python -m pip install peerpedia-cli
 peerpedia --help</code></pre>
   <p>Activate the same environment when you open a new terminal.</p>
   </div></details>
