@@ -10,7 +10,7 @@ once in a separate environment (no Peerpedia account needed for reading):
 
 ```sh
 python3 -m venv "$HOME/.local/share/peerpedia/venv"
-"$HOME/.local/share/peerpedia/venv/bin/python" -m pip install "https://github.com/peerpedia/peerpedia/releases/download/v0.1.0/peerpedia_cli-0.1.0-py3-none-any.whl"
+"$HOME/.local/share/peerpedia/venv/bin/python" -m pip install "peerpedia-cli"
 ```
 
 The CLI must report version 0.1.0 or newer.

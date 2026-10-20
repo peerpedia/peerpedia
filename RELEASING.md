@@ -69,5 +69,5 @@ pipx install peerpedia-cli
 peerpedia --version
 ```
 
-Only then replace the GitHub wheel installation command in the user guides
-with the shorter PyPI command. The GitHub wheel remains a useful fallback.
+Keep the user guides aligned with the published package version.
+The GitHub wheel remains a useful fallback.

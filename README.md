@@ -109,7 +109,7 @@ when requested. Public reading needs no account; AI cannot comment, rate or vote
 Install the standalone client with Python 3.12 or newer and [pipx](https://pipx.pypa.io/stable/installation/). No Git checkout or server setup is needed.
 
 ```sh
-pipx install https://github.com/peerpedia/peerpedia/releases/download/v0.1.0/peerpedia_cli-0.1.0-py3-none-any.whl
+pipx install peerpedia-cli
 peerpedia --version
 ```
 

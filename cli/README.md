@@ -11,11 +11,12 @@ and has no runtime dependencies. You do not need Django, a database, or Git.
 With [pipx](https://pipx.pypa.io/stable/installation/) installed, run
 
 ```sh
-pipx install https://github.com/peerpedia/peerpedia/releases/download/v0.1.0/peerpedia_cli-0.1.0-py3-none-any.whl
+pipx install peerpedia-cli
 peerpedia --version
 ```
 
-The output should be `peerpedia 0.1.0`.
+The output should be `peerpedia 0.1.0`. The package is published on
+[PyPI](https://pypi.org/project/peerpedia-cli/).
 
 You can also download the `.whl` file from the
 [GitHub release](https://github.com/peerpedia/peerpedia/releases/tag/v0.1.0)
@@ -26,7 +27,7 @@ Without pipx, use a Python environment
 ```sh
 python3 -m venv ~/.venvs/peerpedia
 source ~/.venvs/peerpedia/bin/activate
-python -m pip install https://github.com/peerpedia/peerpedia/releases/download/v0.1.0/peerpedia_cli-0.1.0-py3-none-any.whl
+python -m pip install peerpedia-cli
 peerpedia --help
 ```
 
