@@ -91,7 +91,7 @@ class BrowserJourneys(StaticLiveServerTestCase):
         self.page.get_by_role("button", name="Sign in", exact=True).click()
         expect(self.page.get_by_role("button", name="Sign out")).to_be_visible()
 
-    def fixture_paper(self, source=SOURCE):
+    def fixture_paper(self, source=SOURCE, **extra):
         return self.database_call(
             lambda: publish(
                 self.owner,
@@ -104,6 +104,7 @@ class BrowserJourneys(StaticLiveServerTestCase):
                     "abstract": "A private-to-metadata abstract.",
                     "markdown": source,
                     "explanation": "Initial publication.",
+                    **extra,
                 },
             )
         )
@@ -195,7 +196,7 @@ class BrowserJourneys(StaticLiveServerTestCase):
         expect(self.page.locator("#save-status")).to_have_text("Saved")
         self.page.locator("#paper-details > summary").click()
         self.page.get_by_label("What changed?", exact=True).fill("Correct the proof.")
-        self.page.get_by_role("button", name="Review changes", exact=True).click()
+        self.page.get_by_role("button", name="Review & submit PR", exact=True).click()
         expect(self.page.get_by_role("link", name="CC BY-NC-ND 4.0", exact=True)).to_be_visible()
         expect(self.page.get_by_label("Content license:", exact=True)).to_have_count(0)
         self.page.get_by_label("I have authority to submit", exact=False).check()
@@ -436,7 +437,7 @@ class BrowserJourneys(StaticLiveServerTestCase):
         self.page.get_by_label("What changed?", exact=True).fill(
             "Clarify the proof from the online editor."
         )
-        self.page.get_by_role("button", name="Review changes", exact=True).click()
+        self.page.get_by_role("button", name="Review & submit PR", exact=True).click()
         expect(self.page.get_by_role("heading", name="Review your changes")).to_be_visible()
         self.page.get_by_label("I have authority to submit", exact=False).check()
         self.page.get_by_role("button", name="Submit PR", exact=True).click()
@@ -449,6 +450,80 @@ class BrowserJourneys(StaticLiveServerTestCase):
         self.assertEqual(
             self.database_call(lambda: Draft.objects.get(pk=draft.pk).submitted.markdown), revised
         )
+
+    def test_section_edit_creates_pending_entry_in_submissions(self):
+        self.assert_section_submission(chaptered=False)
+
+    def test_chapter_section_edit_creates_pending_entry_in_submissions(self):
+        self.assert_section_submission(chaptered=True)
+
+    def assert_section_submission(self, chaptered):
+        source = (
+            "# Browser paper\n\nIntroduction stays unchanged.\n\n"
+            "## Argument\n\nOriginal argument.\n\n"
+            "### Detail\n\nSupporting detail.\n\n"
+            "## Conclusion\n\nConclusion stays unchanged.\n"
+        )
+        chapters = [
+            {"id": "argument", "title": "Argument", "markdown": source},
+            {
+                "id": "exercises",
+                "title": "Exercises",
+                "markdown": "# Exercises\n\nTry it yourself.\n",
+            },
+        ]
+        if chaptered:
+            from publishing.documents import combined
+
+            original = combined(chapters)
+            paper = self.fixture_paper(original, chapters=chapters, bibliography="")
+        else:
+            original = source
+            paper = self.fixture_paper(source)
+        original_hash = paper.current.hash
+        explanation = "Clarify the argument through a section edit."
+        self.login("contributor")
+        self.page.goto(self.live_server_url + f"/papers/{paper.pk}/read/")
+        self.page.get_by_role("link", name=re.compile(r"^Edit section (1\.1 )?Argument$")).click()
+        section = self.page.locator(".cm-content")
+        expect(section).to_contain_text("Original argument.")
+        expect(section).not_to_contain_text("Conclusion stays unchanged.")
+        section.fill("## Argument\n\nRevised argument.\n\n### Detail\n\nSupporting detail.\n\n")
+        self.page.locator("#paper-details > summary").click()
+        self.page.get_by_label("What changed?", exact=True).fill(explanation)
+        self.page.get_by_role("button", name="Review & submit PR", exact=True).click()
+        expect(self.page.get_by_role("heading", name="Review your changes")).to_be_visible()
+        self.page.get_by_label("I have authority to submit", exact=False).check()
+        self.page.get_by_role("button", name="Submit PR", exact=True).click()
+        expect(self.page.get_by_text(explanation, exact=True)).to_be_visible()
+
+        draft = self.database_call(
+            lambda: Draft.objects.select_related("submitted__decision").get(
+                owner=self.contributor, paper=paper
+            )
+        )
+        self.assertIsNotNone(draft.submitted_id)
+        self.assertEqual(self.database_call(lambda: draft.submitted.status), "pending")
+        self.assertEqual(
+            draft.submitted.markdown, original.replace("Original argument.", "Revised argument.")
+        )
+        if chaptered:
+            self.assertEqual(draft.submitted.chapters[1], chapters[1])
+        self.assertEqual(
+            self.database_call(lambda: Paper.objects.get(pk=paper.pk).current.hash),
+            original_hash,
+        )
+
+        self.page.goto(self.live_server_url + f"/papers/{paper.pk}/")
+        self.page.get_by_role("link", name="Submissions", exact=True).click()
+        entry = self.page.locator(".history-row").filter(has_text=explanation)
+        expect(entry).to_contain_text("Pending")
+        expect(entry).to_contain_text("contributor")
+        expect(entry.get_by_role("link", name=explanation, exact=True)).to_have_attribute(
+            "href", f"/submissions/{draft.submitted_id}/"
+        )
+        entry.get_by_role("link", name=explanation, exact=True).click()
+        expect(self.page.get_by_text(explanation, exact=True)).to_be_visible()
 
     def test_editor_two_tab_conflict_and_offline_recovery(self):
         paper = self.fixture_paper()
@@ -1051,7 +1126,7 @@ C \arrow[r, "k"'] & D
         self.page.get_by_label("What changed?", exact=True).fill(
             "Add exercises and improve the introduction."
         )
-        self.page.get_by_role("button", name="Review changes", exact=True).click()
+        self.page.get_by_role("button", name="Review & submit PR", exact=True).click()
         expect(
             self.page.get_by_role("heading", name="Review your changes", exact=True)
         ).to_be_visible()
