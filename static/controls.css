@@ -53,7 +53,7 @@
 .editor-page .ui-icon-button:hover,.reference-dialog .ui-icon-button:hover {
   color:var(--control-ink); border-color:var(--control-border); background:var(--control-hover);
 }
-.numbered-equation .copy-reference { display:flex; margin:4px 0 0 auto; }
+.numbered-equation .copy-reference { margin:0; }
 .reader .reader-edit { top:39px; right:20px; margin:0; }
 .reader .reader-discussions { margin:0 24px 12px; }
 .reader #reading-return { min-height:36px; padding:7px 12px; border-radius:var(--control-radius); margin:4px 24px 12px; white-space:normal; text-align:left; }
