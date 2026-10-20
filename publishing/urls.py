@@ -66,6 +66,16 @@ urlpatterns = [
     path("", views.browse, name="browse"),
     path("health/", views.health, name="health"),
     path("help/", TemplateView.as_view(template_name="publishing/help.html"), name="help"),
+    path(
+        "help/writing/",
+        TemplateView.as_view(template_name="publishing/help_writing.html"),
+        name="help_writing",
+    ),
+    path(
+        "help/cli/",
+        TemplateView.as_view(template_name="publishing/help_cli.html"),
+        name="help_cli",
+    ),
     path("publish/", views.upload, name="publish"),
     path("papers/<uuid:paper_id>/", views.paper_detail, name="paper"),
     path("papers/<uuid:paper_id>/read/", views.read_paper, name="read_paper"),

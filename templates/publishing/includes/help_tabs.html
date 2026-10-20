@@ -1,0 +1,5 @@
+<nav class="help-guides" aria-label="Help guides">
+  <a href="{% url 'help' %}"{% if current == 'website' %} aria-current="page"{% endif %}>Using the website</a>
+  <a href="{% url 'help_writing' %}"{% if current == 'writing' %} aria-current="page"{% endif %}>Writing and formatting</a>
+  <a href="{% url 'help_cli' %}"{% if current == 'cli' %} aria-current="page"{% endif %}>Command-line guide</a>
+</nav>

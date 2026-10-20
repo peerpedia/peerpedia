@@ -1,197 +1,118 @@
-{% extends 'base.html' %}
-{% block title %}Help · Peerpedia{% endblock %}
-{% block content %}
-<header class="page-heading">
-  <div class="eyebrow">USING PEERPEDIA</div>
-  <h1>{% include 'includes/motto.html' %}</h1>
-  <p class="lede">Publish a paper or note, propose a correction, and follow how the work develops. Each submission preserves a complete version of the document.</p>
-</header>
-<div class="help-layout">
-  <nav class="help-contents" aria-label="On this page">
-    <strong>On this page</strong>
-    <a href="#subjects">Find papers by subject</a>
-    <a href="#read">Read and discover</a>
-    <a href="#publish">Publish a paper or note</a>
-    <a href="#diagrams">Draw diagrams</a>
-    <a href="#contribute">Propose a change</a>
-    <a href="#review">Review and discuss</a>
-    <a href="#passage-discussions">Discuss a passage</a>
-    <a href="#history">Understand the history</a>
-    <a href="#local-tools">Use local files and AI tools</a>
-    <a href="#inbox">Your notification inbox</a>
-    <a href="#account">Manage your account</a>
-    <a href="#about">About Peerpedia</a>
-  </nav>
-  <div class="help-content">
-    <section id="subjects">
-      <h2>Find papers by subject</h2>
-<p>Use the <strong>Subject</strong> filter on the browse page to choose an arXiv category, a broad subject, or a physics archive. Combine it with a search and either sort order. Cross-listed papers appear in each of their subjects. Searching a category code or name also finds classified papers.</p>
-<p>Uploads require one primary subject from the <a href="https://arxiv.org/category_taxonomy">arXiv taxonomy</a>. Expand <strong>Cross-list subjects</strong> to select other relevant subjects. Classification changes follow the usual submission and acceptance process; old snapshots keep their original hashes. Older papers appear under <strong>Unclassified</strong> until an author accepts a classified revision.</p>
-<p>For CLI 0.2 or newer, set <code>"primary_category": "cond-mat.str-el"</code> and optionally <code>"secondary_categories": ["hep-th"]</code> in <code>paper.json</code>. List supported subjects with <code>peerpedia categories --server https://peerpedia.dev --json</code>. Both v1 and v2 verification manifests are supported.</p>
-</section>
-    <section id="read">
-      <h2>Read and discover</h2>
-      <p>Anyone can read without an account. On <a href="{% url 'browse' %}">Browse</a>, search by title, author name, or words in a paper, then sort by latest acceptance or average rating.</p>
-      <p>Click a <strong>title</strong> for its abstract, reviews, submissions, and history. Click <strong>Read paper</strong> to open the latest accepted version in a full-width reader. Use your browser’s Back button to return.</p>
-    </section>
-    <section id="publish">
-      <h2>Publish a paper or note</h2>
-      <ol>
-        <li><a href="{% url 'signup' %}">Create an account</a> and verify your email.</li>
-        <li>Choose <a href="{% url 'write' %}">New note</a> to start writing Markdown with a live preview. Your private draft saves automatically; return to it from <strong>My drafts</strong>.</li>
-        <li>Open <strong>Paper details</strong> to add the title, abstract, author names (one per line in publication order), and primary subject. Papers and AI-assisted notes use the same workflow.</li>
-        <li>Choose <strong>Review &amp; publish</strong> when ready. Review the document and details, choose a content license, confirm your submission rights, then publish. You become the corresponding author who decides on future changes.</li>
-      </ol>
-      <p>Markdown headings, lists, tables, links, code blocks, and mathematical equations are supported. Use <code>$x^2$</code> for inline mathematics or <code>$$x^2$$</code> for a display equation. Include your references in the document.</p>
-      <p>Already have a file? Use <strong>Import Markdown</strong> inside the editor to keep working on it, or <a href="{% url 'publish' %}">upload Markdown</a> directly from My drafts. One UTF-8 <code>.md</code> document, up to 1 MB, is supported. You do not need to upload a file to write online.</p>
-      <p>Choose <strong>Edit</strong> while reading to improve an existing paper. The editor opens near your reading position and saves a private draft under <strong>My drafts</strong>. Use Paper details for the metadata and change description, then review changes before submitting. New papers publish when you confirm the initial submission. Revisions open a PR and require separate acceptance by the corresponding author.</p>
-      <p>Use <strong>Edit</strong> beside a section heading to edit only that section and its subsections. Each section has its own private draft; the icon-level Edit button still opens the whole paper. Section PRs preserve paper metadata and submit a complete paper snapshot. Unchanged sections can incorporate unrelated accepted changes when you review. If the section changed, compare and resolve it explicitly before submitting.</p>
-<p>To improve a pending PR, choose <strong>Update PR</strong> in its conversation. Each update adds an immutable snapshot with its own hash. Earlier snapshots and comments remain available, and only the latest snapshot can be accepted. Drafts start from the latest accepted paper when opened from the reader, or from the latest PR snapshot when opened from that PR.</p>
-      <p>If saving conflicts with another tab or device, download your text before choosing which copy to keep. If a newer paper version is accepted, compare its changes and explicitly update your draft base. Your text is preserved. Browser recovery is a fallback during connection failures, not a replacement for checking the Saved indicator.</p>
-      <p>Images, PDF uploads, and multiple-file submissions are not supported yet. The online editor offers a private autosaved draft and a live preview. Check the content and attribution of AI-assisted notes before publishing.</p>
-      <div class="notice"><strong>Publication is public and permanent in the history.</strong> Once confirmed, a submission’s document and metadata are frozen. To correct them, submit a new version.</div>
-    </section>
-    <section id="diagrams">
-      <h2>Draw diagrams in Markdown</h2>
-      <p>Use <code>CD</code> (uppercase) inside a display equation for a simple commutative diagram:</p>
-      <pre><code>$$
-\begin{CD}
-A @&gt;f&gt;&gt; B \\
-@VgVV @VVhV \\
-C @&gt;k&gt;&gt; D
-\end{CD}
-$$</code></pre>
-      <p>For labelled or diagonal arrows, use a <code>tikzcd</code> code block. Keep the environment inside the block:</p>
-      <pre><code>```tikzcd
-\begin{tikzcd}
-A \arrow[r, "f"] \arrow[d, "g"'] &amp; B \arrow[d, "h"] \\
-C \arrow[r, "k"'] &amp; D
-\end{tikzcd}
-```</code></pre>
-      <p>For general drawings, use <code>tikzpicture</code> (or <code>tikz</code>):</p>
-      <pre><code>```tikzpicture
-\begin{tikzpicture}
-\draw[-&gt;] (0,0) -- (3,0) node[right] {$x$};
-\draw[-&gt;] (0,0) -- (0,2) node[above] {$y$};
-\draw[blue, thick] (0,0) parabola (2,1.5);
-\end{tikzpicture}
-```</code></pre>
-      <p>Submitted diagrams are compiled once in the background and saved as images. Readers load those saved images without downloading a compiler. New submissions may briefly show “Preparing diagram”. The editor and upload preview still compile locally in your browser, requiring WebAssembly and an initial download of about 10 MB. No diagram source is sent to an external service.</p>
-      <p>Keep each diagram below 32 KB and each paper below 32 distinct diagrams. Editor compilation stops after eight seconds; background rendering has a thirty-second time limit. Other diagrams continue if one fails. Errors appear beside the source. After fixing a diagram in the editor, its preview updates automatically. Reload the reader to retry a failed download.</p>
-      <p>Start with basic TikZ drawing commands and <code>tikzcd</code>. This is not a complete LaTeX installation: only bundled libraries are available. External files, images, and arbitrary packages are not supported. Unsupported commands produce a compiler message. Use a <code>latex</code> code block when you want to show code without compiling it.</p>
-      <p>The reader shows diagrams without source-code controls. The Markdown source stays in the immutable submission and in its diff, and is available when editing. Rendering a diagram does not change the submission or its hash.</p>
-    </section>
-    <section id="contribute">
-      <h2>Propose a change</h2>
-      <p>Any verified account can propose an improvement to any paper. No invitation is needed. The same process applies when you update your own paper.</p>
-      <ol>
-        <li>Open the paper’s details and choose <strong>Download Markdown</strong> to get the latest accepted version.</li>
-        <li>Edit the document locally. A submission contains the <strong>whole revised document</strong>, not just the changed paragraphs.</li>
-        <li>Choose <strong>Upload a change</strong>, upload your revised file, and describe what changed. Preview the document and differences, then confirm.</li>
-        <li>Discuss the public proposal on its submission page. Only the corresponding author can accept or reject it; its contributor can withdraw it while it is pending.</li>
-      </ol>
-      <p>Acceptance makes the proposed document the current version. If another change is accepted first, your proposal has an old base and cannot be accepted. Download the newest version, incorporate your changes, and submit a new proposal.</p>
-      <p>An accepted contribution appears in the contribution history. It does not automatically add the contributor to the paper’s author list.</p>
-    </section>
-    <section id="review">
-      <h2>Review and discuss</h2>
-      <p>On a paper’s <strong>Reviews</strong> tab, choose 1–5 stars and write your assessment. Both are required. Each account has one editable review per paper, and authors may review their own work.</p>
-      <p>Reviews apply to the paper as a whole, across its versions. The displayed rating is the average of visible reviews. Reviews are listed newest first by their original posting time.</p>
-      <p>For a particular proposed change, use its submission conversation. Comments form a simple chronological discussion; replies, likes, and inline annotations are not available.</p>
-    </section>
-    <section id="passage-discussions">
-      <h2>Discuss a passage</h2>
-      <p>Select a sentence or several sentences in the reader, then choose <strong>Comment &amp; rate</strong>. Use the plus button beside an equation, table, or code block to discuss the whole block. Small margin counts open existing discussions. The <strong>Discussions</strong> button lists all locations, including discussions from earlier versions.</p>
-      <p>A new discussion needs both a rating from 1 to 5 and a written comment. Each person has one active rating per passage. Open <strong>⋯</strong> beside your comment and choose <strong>Edit</strong> to update it; earlier edits remain in <strong>History</strong>. The same menu holds resolution, reporting, and PR links. These ratings are separate from the paper’s overall rating. Replies need text only and can continue at any depth. Up and down thumbs help useful comments rise; click the same thumb again to remove your vote.</p>
-      <p>Only the person who started a discussion can resolve or reopen it. A contributor can link their PR as a proposed fix. Accepting that change asks the commenter to review it; acceptance does not close the discussion automatically. Deleting a comment leaves a placeholder and preserves its replies. Use <strong>Report</strong> to ask an administrator to review a comment.</p>
-      <p>Discussions work on accepted versions and PR snapshots. An exact, unambiguous passage match carries its discussion forward. Changed passages show earlier discussions as historical links, without carrying their ratings onto the new text. Original quotations and version links remain available.</p>
-      <p>Participation requires a verified account on the website. API tokens cannot post comments, rate passages, vote, or resolve threads. Use the CLI commands below to read feedback and propose fixes. AI tools have no write access to comments, ratings, votes, or thread resolution.</p>
-    </section>
-    <section id="history">
-      <h2>Understand the history</h2>
-      <p>The <strong>History</strong> tab lists accepted versions. Open an older version to read it, download its Markdown, or compare it with another accepted version. The <strong>Submissions</strong> tab also includes pending, rejected, and withdrawn proposals.</p>
-      <p>Every confirmed submission has a SHA-256 hash covering its document and submission metadata. Accepting or rejecting a submission does not change that hash. Reviews and comments are separate from the frozen document.</p>
-      <p>You can download a verification manifest alongside the Markdown. The <a href="{{ repository_url }}#content-verification">repository’s verification instructions</a> explain how to check them locally. A matching hash verifies content; it does not prove that a claim is correct or establish authorship.</p>
-      <p>Administrators can hide inappropriate content from public view. Hiding does not rewrite a frozen submission.</p>
-    </section>
-    <section id="local-tools">
-      <h2>Use local files and AI tools</h2>
-      <p>The <a href="{{ repository_url }}/tree/main/plugins/peerpedia">Peerpedia plugin for Codex desktop</a> can find papers, explain readers’ reactions, and help revise a paper from selected feedback. Reading needs no account. Changes stay local until you ask to submit them. Follow the linked installation guide to connect your own account when needed.</p>
-      <p>The optional command-line client lets you work in your own editor or with a local AI assistant, then upload the result. It uses the same publication and review rules as the website.</p>
-      <details>
-        <summary>Install the client and submit from your computer</summary>
-        <div class="help-details">
-          <p>You need Python 3.12 or newer and Git. Install the client in a virtual environment:</p>
-          <pre><code>python3 -m venv .venv
-# macOS / Linux
-source .venv/bin/activate
-# Windows PowerShell: .venv\Scripts\Activate.ps1
-python -m pip install "git+{{ repository_url }}.git#subdirectory=cli"</code></pre>
-          <p>Sign in on the website, open <a href="{% url 'access_tokens' %}">Access tokens</a>, and create a token. Then run:</p>
-          <pre><code>peerpedia login {{ site_url }}</code></pre>
-          <p>Paste the token at the hidden prompt. Use a token rather than your account password. Tokens allow proposals by default; select <strong>Also allow publishing new papers</strong> only if needed. They cannot accept changes or grant administrator access.</p>
-          <h3>Improve an existing paper</h3>
-          <p>Replace <code>PAPER_UUID</code> with the identifier in the paper’s address, between <code>/papers/</code> and the final slash.</p>
-          <pre><code>peerpedia clone PAPER_UUID my-paper --server {{ site_url }}
-cd my-paper
-# Edit paper.md and, if needed, paper.json.
-peerpedia diff
-peerpedia push -m "Explain your changes"
-peerpedia status</code></pre>
-          <p><code>paper.md</code> is your document. <code>paper.json</code> holds its title, authors, and abstract. A push creates a public, frozen proposal. The corresponding author accepts it on the website.</p>
-          <h3>Publish a new paper</h3>
-          <pre><code>peerpedia init my-new-paper --server {{ site_url }}
-cd my-new-paper
-# Fill in paper.md and title, authors, abstract, and primary_category in paper.json.
-peerpedia push -m "Initial publication"</code></pre>
-          <p>An initial push publishes immediately; check the files before running it.</p>
-          <h3>Stay up to date</h3>
-          <p>Use <code>peerpedia pull</code> after a proposal is accepted. It refuses to overwrite local edits. If your base is stale, use <code>peerpedia fetch</code>, reconcile your files with the downloaded version, then run <code>peerpedia rebase --acknowledge</code> before pushing again.</p>
-          <p>If a push loses its connection before you get a result, use <code>peerpedia push --retry</code>. This resends the saved submission, even if you edited your files afterward, without creating a duplicate.</p>
-          <h3>Work with a local AI assistant</h3>
-          <p>Let the assistant edit your local files, inspect the diff, and use the same client to submit. For an automated runner, supply <code>PEERPEDIA_TOKEN</code> securely and set <code>PEERPEDIA_SERVER</code> to <code>{{ site_url }}</code>. Commands support <code>--json</code> for structured output. Keep tokens out of paper files and public repositories.</p>
-          <h3>Read feedback and propose a fix</h3>
-          <p>CLI 0.3 adds public, read-only feedback commands. Inside a cloned paper directory, run:</p>
-<pre><code>peerpedia feedback --all --json
-peerpedia reviews --all --json
-peerpedia discussion PASSAGE_ID --all --json
-peerpedia comment-history COMMENT_ID --all --json</code></pre>
-          <p>The feedback list supplies passage IDs, exact quotations, original version hashes, and current or historical locations. A discussion supplies top-level thread IDs, ratings, replies, votes, resolution, and linked PRs. <code>--all</code> reads every page; on <code>discussion</code> it includes every reply. Use <code>feedback --submission SUBMISSION_ID</code> to inspect a frozen PR snapshot. Public reading does not require a token.</p>
-<pre><code>peerpedia push -m "Clarify the explanation" --address THREAD_ID --ai-assisted
-peerpedia pr PR_ID --json
-peerpedia push -m "Extend the proposed fix" --pr PR_ID --expected-head FULL_HEAD_HASH --address THREAD_ID --ai-assisted</code></pre>
-          <p>Repeat <code>--address</code> to link several discussions. Use the top-level thread ID from the discussion output. The first push opens a PR; the second example adds an immutable snapshot to that same PR. Obtain the full head hash with <code>peerpedia pr</code>. If the head or accepted base changed, fetch and review the new version before retrying. Acceptance remains a separate action for the corresponding author.</p>
-          <p>Tool submissions show your username and <strong>via CLI</strong>. Add <code>--ai-assisted</code> when AI helped prepare the snapshot; this label is self-declared. Use <code>peerpedia pr-comments PR_ID --all --json</code> for the PR conversation, or <code>peerpedia replies THREAD_ID --all --json</code> for replies alone. The CLI does not read private drafts or your inbox.</p>
-          <p>See the <a href="{{ repository_url }}#local-editing-and-command-line-pushes">full CLI guide</a> for retry behavior, conflict handling, and credential storage.</p>
-        </div>
-      </details>
-    </section>
-    <section id="inbox">
-      <h2>Your notification inbox</h2>
-      <p>The bell in the main navigation opens your inbox. It shows activity on your papers and conversations, including replies, reviews, proposed changes, linked fixes, and decisions. Related updates are grouped together; your own actions do not notify you.</p>
-      <p>Choose <strong>View discussion</strong>, <strong>View PR</strong>, or <strong>View paper</strong> to open an update and mark it read. Use <strong>Unread</strong> to catch up or <strong>Mark all read</strong> to clear older activity. New activity arriving while you read remains unread. Notifications stay on the website; no notification emails are sent.</p>
-    </section>
-    <section id="account">
-      <h2>Manage your account</h2>
-      <p>Choose <strong>Continue with Google</strong> to sign up or sign in using Google. New users choose a public username; the Google-verified email stays private. If you already have a Peerpedia account with that email, sign in with your password first, then open <strong>Account</strong> and connect Google.</p>
-      <p>Google-only users can choose <strong>Add a password by email</strong> in Account. Open the emailed link to set a Peerpedia password before creating CLI access tokens. You can disconnect Google after adding a password. Administrator accounts still require the Peerpedia authenticator code.</p>
-      <p>Sign in with your username or email address. You must verify your email before publishing, proposing changes, reviewing, or commenting.</p>
-      <p>If a verification email is missing, check your spam folder and use <a href="{% url 'verification_needed' %}">Verify email</a> to request another. Verification links expire after 24 hours.</p>
-      <p>Use <a href="{% url 'password_reset' %}">Forgot password?</a> to receive a recovery link, or <a href="{% url 'password_change' %}">Password</a> to change your password while signed in. Manage or revoke tool credentials under <a href="{% url 'access_tokens' %}">Access tokens</a>.</p>
-    </section>
-    <section id="about">
-      <h2>About Peerpedia</h2>
-      <p>Visit <a href="{% url 'about' %}">About Peerpedia</a> for developer information and contact options.</p>
-      <p><a href="{{ repository_url }}">View the source on GitHub</a> to explore the software, or <a href="{{ repository_url }}/issues">report a bug or suggest an improvement</a>. Include steps to reproduce a problem; leave out passwords, access tokens, and private information.</p>
-    </section>
+{% extends 'publishing/help_base.html' %}
+{% block title %}Website guide · Peerpedia{% endblock %}
+{% block guide_heading %}Using Peerpedia{% endblock %}
+{% block guide_intro %}Read research, write a note, and improve it together. Start here if you use Peerpedia in your browser.{% endblock %}
+{% block guide_tabs %}{% include 'publishing/includes/help_tabs.html' with current='website' %}{% endblock %}
+{% block guide_contents %}
+<a href="#read">Find and read a paper</a>
+<a href="#publish">Publish your first note</a>
+<a href="#chapters">Organize a longer work</a>
+<a href="#contribute">Suggest an improvement</a>
+<a href="#review">Review a paper</a>
+<a href="#passage-discussions">Discuss a passage</a>
+<a href="#history">Read earlier versions</a>
+<a href="#inbox">Follow the conversation</a>
+<a href="#account">Your account</a>
+<a href="#trouble">When something goes wrong</a>
+{% endblock %}
+{% block guide_body %}
+<section id="read">
+  <h2>Find and read a paper</h2>
+  <p>You can read every public paper and its discussions without signing in. On <a href="{% url 'browse' %}">Browse</a>, search for a title, an author, or words from the text. Sort by the latest accepted update or by average reader rating.</p>
+  <p id="subjects">Use <strong>Subject</strong> to narrow your search. Subjects follow arXiv’s categories. A paper can appear in several subjects when its authors choose more than one.</p>
+  <div class="help-choice-grid">
+    <div><h3>Open the title</h3><p>See the abstract, authors, overall rating, reviews, and proposed changes.</p></div>
+    <div><h3>Choose Read paper</h3><p>Open the current accepted text. Use the contents on the left to move between sections and chapters.</p></div>
   </div>
-</div>
-<section class="form-panel"><h2>Licenses and your rights</h2><p>Before publishing or commenting, <a href="{% url 'agreements' %}">accept the submission and discussion agreement</a> on the website. When publishing a new paper, explicitly choose one of <a href="{% url 'licenses' %}">six content licenses</a>. PRs inherit that paper's fixed license, and contributors confirm their authority to submit. All choices include permission for public on-platform PRs, including rejected and superseded snapshots.</p><p>New snapshots record the license and agreement in their verification manifest. Older papers may carry a dated licensing declaration without changing their original hashes. A license does not prove ownership or academic correctness. Comments and reviews receive permission for Peerpedia display and read-only API access; they are not automatically licensed for incorporation into papers.</p><p>For CLI publication, run <code>peerpedia licenses</code>, set <code>license</code> in <code>paper.json</code>, and accept the agreement on the website first. The API cannot accept it on your behalf. <a href="{% url 'rights_request' %}">Send a private copyright, withdrawal, or privacy request</a>.</p></section>
-<section id="chapters"><h2>Chapters and cross-references</h2><p>Use <strong>Add chapter</strong> in the editor to build a course. Rename and reorder chapters in the sidebar. Every chapter shares the paper's metadata, license, rating, and publication history; one PR can change several chapters.</p><p><strong>Insert reference</strong> finds sections, equations, figures, tables, and mathematical statements in this paper, or frozen versions of other Peerpedia works. <strong>Copy reference</strong> beside a target provides its permalink. Labels such as <code>{#sec:motivation}</code> stay with the source when it moves.</p><pre><code>## Motivation {#sec:motivation}
-
-::: theorem {#thm:main}
-Your statement goes here.
-:::
-
-See @sec:motivation and @thm:main.
-</code></pre><p><strong>Insert block</strong> creates theorem-like statements, proofs, captioned figures and tables, or equations. Display equations are numbered by chapter; use the <strong>unnumbered</strong> block to suppress numbering. A multi-line math display has one number.</p><p><strong>References.bib</strong> edits or imports a standard BibTeX library shared by all chapters. Use <code>[@wen2004]</code> or <code>[@wen2004, p. 12; @anotherWork]</code>. Compact citations link to full references at the chapter's end. Unsupported fields are preserved. Broken references produce warnings and do not block submission.</p><p>Mark chapters complete to track your progress. Signed-in progress follows your account; visitor progress stays in the browser. Later edits show an Updated indicator without removing your completion mark.</p><p>CLI 0.6.0 supports chapter IDs, titles, and Markdown filenames in <code>paper.json</code>, plus a shared <code>references.bib</code>. <a href="https://github.com/peerpedia/peerpedia#chapters-references-and-reading-progress">File-format example</a>.</p></section>{% endblock %}
+  <p>While reading, choose the Peerpedia icon to return home. Your browser’s Back button returns to the page you came from.</p>
+  <p>For a course with chapters, mark a chapter complete when you finish it. Your progress follows your account if you sign in. Otherwise, it stays in that browser. If a completed chapter changes, an <strong>Updated</strong> mark lets you know.</p>
+</section>
+<section id="publish">
+  <h2>Publish your first note</h2>
+  <p>A note begins as a <strong>draft</strong>, a private document you can keep editing. Publishing makes a copy available for everyone to read. Peerpedia uses the same process for short notes, courses, and research papers.</p>
+  <ol class="help-steps">
+    <li><strong>Create an account.</strong> <a href="{% url 'signup' %}">Sign up</a> and verify your email before publishing.</li>
+    <li><strong>Choose <a href="{% url 'write' %}">New note</a>.</strong> Write on the left and read the preview on the right. The editor uses Markdown, plain text with a few marks for headings, equations, and other formatting. The <a href="{% url 'help_writing' %}">writing guide</a> starts with a small example you can copy.</li>
+    <li><strong>Fill in Paper details.</strong> Add a title, an abstract, author names in publication order, and a primary subject. Put each author on a separate line. Use <strong>Cross-list subjects</strong> for other relevant subjects.</li>
+    <li><strong>Choose Review &amp; publish.</strong> Read the preview and check the details. Choose a license and confirm that you have permission to publish the work.</li>
+    <li><strong>Choose Publish initial submission.</strong> Your note is now public. You become its <strong>corresponding author</strong>, the account responsible for accepting or rejecting future edits.</li>
+  </ol>
+  <figure class="help-flow">
+    <ol><li><strong>Draft</strong><span>Private and editable</span></li><li><strong>Review</strong><span>Check text and details</span></li><li><strong>Publish</strong><span>Public and saved in history</span></li></ol>
+    <figcaption>Your first publication. Saving a draft does not publish it.</figcaption>
+  </figure>
+  <h3>Pause and come back</h3>
+  <p>Drafts save automatically. Wait for <strong>Saved</strong> before closing the page, then return through <a href="{% url 'drafts' %}">My drafts</a>. Use <strong>Split view</strong> to write and preview together, or <strong>Edit</strong> and <strong>Preview</strong> to give either pane more room.</p>
+  <h3>Start from a file</h3>
+  <p>In the editor, open <strong>Files</strong> and choose <strong>Import Markdown</strong> to load a <code>.md</code> file. If the file is finished, My drafts also offers <a href="{% url 'publish' %}">Upload Markdown</a>. PDF and image uploads are not supported.</p>
+  <h3>Choose a license</h3>
+  <p>A license tells other people how they may reuse your work. Read the <a href="{% url 'licenses' %}">license choices</a> before publishing. The paper keeps that license for later revisions. Contributors must have permission to submit their changes under it.</p>
+  <p class="notice"><strong>Check before publishing.</strong> A confirmed submission preserves its text and details in the public history. Corrections become new versions. Check claims, references, and attribution yourself, including when AI helped write the note.</p>
+</section>
+<section id="chapters">
+  <h2>Organize a longer work</h2>
+  <p>Chapters divide one paper into separate reading pages. For example, a course might have <em>Introduction</em>, <em>Examples</em>, and <em>Exercises</em>. They share a title, author list, license, and overall rating.</p>
+  <p>Choose <strong>Add chapter</strong> in the editor’s left sidebar. Select a chapter to edit it. Use the pencil to rename it and the up and down arrows to change its order. One proposed edit can change several chapters together.</p>
+  <p>The <a href="{% url 'help_writing' %}#references">writing guide</a> explains how to link to another chapter, a numbered equation, or another Peerpedia paper. It also covers a shared bibliography for the whole work.</p>
+  <p id="diagrams">For mathematical drawings, see <a href="{% url 'help_writing' %}#diagrams">the diagram examples</a>. You can write commutative diagrams and TikZ drawings directly in Markdown.</p>
+</section>
+<section id="contribute">
+  <h2>Suggest an improvement</h2>
+  <p>A <strong>pull request</strong>, or <strong>PR</strong>, is a proposed edit. It lets people read and discuss a change before it replaces the published text. Any verified user can propose one, without an invitation. You use this process to revise your own paper too.</p>
+  <ol class="help-steps">
+    <li><strong>Open the paper in the reader.</strong> Choose the pencil beside a section heading to edit that section and its subsections. Use the reader’s main Edit control to work on the whole paper.</li>
+    <li><strong>Make your changes in the private draft.</strong> Describe what you changed in <strong>Paper details</strong>, or <strong>Change description</strong> for a section draft.</li>
+    <li><strong>Choose Review &amp; submit PR.</strong> Check the preview and the comparison showing added and removed text. Confirm your submission rights, then choose <strong>Submit PR</strong>.</li>
+    <li><strong>Discuss the proposal.</strong> The PR is public. Only the corresponding author can accept or reject it. You can withdraw your own pending PR.</li>
+  </ol>
+  <div class="help-example"><h3>Example change description</h3><p>“The proof used compactness without stating it. I added the assumption and an example showing why it is needed.”</p><p>Tell the reader what changed and why. A useful description makes the proposal easier to review.</p></div>
+  <h3>Improve the same PR</h3>
+  <p>Choose <strong>Update PR</strong> in the PR conversation to continue editing it. After reviewing your changes, choose <strong>Submit PR update</strong>. Each submission saves a <strong>snapshot</strong>, a fixed copy of the complete paper at that point. Earlier snapshots remain available. Acceptance applies to the newest one.</p>
+  <p>Once accepted, your changes appear in the current paper and your contribution appears in its history. Contributing does not automatically add your name to the author list.</p>
+  <h3>If the paper changes while you work</h3>
+  <p>The editor warns you when a newer version has been accepted. Follow <strong>Compare and update your base</strong> to compare it with the version your draft started from. Keep the changes you need from both copies, then review your proposal again. For a section draft, unrelated changes elsewhere can be carried forward automatically when your section is unchanged.</p>
+</section>
+<section id="review">
+  <h2>Review a paper</h2>
+  <p>Open the paper’s title, then its <strong>Reviews</strong> tab. Choose one to five stars and write your assessment. Both are required. You can update your review later, and authors may review their own work.</p>
+  <p>The overall rating is the average of visible reviews. A review applies to the paper as a whole, even after it is revised. Use a passage discussion when your feedback concerns one sentence, equation, or proof.</p>
+</section>
+<section id="passage-discussions">
+  <h2>Discuss a passage</h2>
+  <p>A passage discussion stays beside the text it concerns. Select one or more sentences in the reader, then choose <strong>Comment &amp; rate</strong>. For an equation, table, or code block, use its plus button. The small counts in the margin open existing discussions.</p>
+  <div class="help-example"><h3>A comment that someone can act on</h3><p>“Does this argument require the space to be compact? Please state the assumption before the proof. The real line seems to be a counterexample.”</p></div>
+  <p>Starting a discussion requires a written comment and a rating. This rating concerns that passage only and is separate from the overall paper rating. Replies need only text. You can reply to replies, and use thumbs up or down to vote on comments.</p>
+  <p>Open the three-dot menu beside your comment to edit it. Earlier edits remain in <strong>History</strong>. The menu also offers reporting and links to proposed fixes. Only the person who started a discussion can mark it resolved or reopen it. Accepting a linked PR does not resolve the discussion automatically.</p>
+  <p>Use <strong>Discussions</strong> in the reader to find conversations throughout the paper. A discussion can follow unchanged text into a new version. When its passage changes, the earlier discussion remains linked to the old text, and its rating is not applied to the replacement.</p>
+  <p>Comments on a PR discuss that proposal as a whole. They appear in a chronological conversation, separate from the nested passage discussions.</p>
+  <p>Comments and ratings are written by people on the website. AI tools can read them and help prepare a proposed fix, but cannot post comments, vote, rate, or resolve discussions.</p>
+</section>
+<section id="history">
+  <h2>Read earlier versions</h2>
+  <p>On a paper’s details page, <strong>History</strong> lists accepted versions. Open one to read or download it, or compare two versions. <strong>Submissions</strong> also includes proposals that are pending, rejected, or withdrawn.</p>
+  <p>Each snapshot has a <strong>hash</strong>, a long code that can be used to check that its saved contents have not changed. Accepting or rejecting it does not alter those contents. Reviews and discussions are stored separately.</p>
+  <p>For a reference to an exact statement, use the link icon beside it in the reader. The reference window offers links to the fixed version. The <a href="{% url 'help_writing' %}#references">writing guide</a> explains how to insert these references into a note.</p>
+  <p>Administrators can hide inappropriate material. For a copyright, privacy, or withdrawal concern, use the private <a href="{% url 'rights_request' %}">rights request form</a>.</p>
+</section>
+<section id="inbox">
+  <h2>Follow the conversation</h2>
+  <p>The bell in the navigation opens your <a href="{% url 'inbox' %}">inbox</a>. It collects replies, reviews, proposed edits, and decisions related to your work and conversations.</p>
+  <p>Open an update to visit the discussion or paper and mark it read. Choose <strong>Unread</strong> to catch up, or <strong>Mark all read</strong> to clear the list. These notifications stay on the website. They are not sent by email.</p>
+</section>
+<section id="account">
+  <h2>Your account</h2>
+  <p>You can create an account with a username and password or choose <strong>Continue with Google</strong>. Your username is public and your email address is private. Verify your email and accept the <a href="{% url 'agreements' %}">submission and discussion agreement</a> before contributing.</p>
+  <p>If you already have an account with the same email as your Google account, sign in with your password first. Open <strong>Account</strong> to connect Google.</p>
+  <p>If a verification email does not arrive, check your spam folder and <a href="{% url 'verification_needed' %}">request another</a>. Verification links expire after 24 hours. Use <a href="{% url 'password_reset' %}">Forgot password?</a> to recover access.</p>
+</section>
+<section id="trouble">
+  <h2>When something goes wrong</h2>
+  <h3>The editor has not saved my work</h3>
+  <p>Keep the tab open. Use <strong>Files</strong> to download your text before reloading. If you worked on the same draft in two tabs, compare the copies before choosing which one to keep. For a paper with chapters, choose <strong>Download all files</strong>.</p>
+  <h3>A formula, reference, or diagram looks wrong</h3>
+  <p>Check the examples in the <a href="{% url 'help_writing' %}">writing guide</a>. Keep the preview open while making a small correction. Read any error shown beside a diagram, and check reference warnings before submitting.</p>
+  <h3>I need to report a problem</h3>
+  <p><a href="{{ repository_url }}/issues">Report a bug on GitHub</a> with the page address, what you did, and what happened. A screenshot can help. Leave out passwords, access tokens, and private information. Contact details are on the <a href="{% url 'about' %}">About page</a>.</p>
+  <p id="local-tools">Prefer to work in a local editor or with an AI assistant? The separate <a href="{% url 'help_cli' %}">CLI guide</a> covers installation, reading feedback, and submitting local files.</p>
+</section>
+{% endblock %}

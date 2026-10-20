@@ -1,0 +1,145 @@
+{% extends 'publishing/help_base.html' %}
+{% block title %}Command-line guide · Peerpedia{% endblock %}
+{% block guide_heading %}Work from your computer{% endblock %}
+{% block guide_intro %}Use the command-line client to read papers, edit local Markdown files, and submit changes. You can use your own editor or an AI assistant.{% endblock %}
+{% block guide_tabs %}{% include 'publishing/includes/help_tabs.html' with current='cli' %}{% endblock %}
+{% block guide_contents %}
+<a href="#install">Install the client</a>
+<a href="#read">Find and download a paper</a>
+<a href="#login">Connect your account</a>
+<a href="#propose">Submit an edit</a>
+<a href="#publish">Publish a new note</a>
+<a href="#chapters">Work with chapters</a>
+<a href="#feedback">Read feedback and fix the text</a>
+<a href="#update-pr">Update a pending PR</a>
+<a href="#sync">Keep your copy up to date</a>
+<a href="#ai">Use an AI assistant</a>
+{% endblock %}
+{% block guide_body %}
+<section id="install">
+  <h2>Install the client</h2>
+  <p>The <strong>CLI</strong> is Peerpedia’s command-line client. You run its commands in a terminal. You need Python 3.12 or newer and Git installed on your computer.</p>
+  <p>Create a Python environment for the client, then activate it. On macOS or Linux, run these commands.</p>
+  <pre><code>python3 -m venv ~/.venvs/peerpedia
+source ~/.venvs/peerpedia/bin/activate</code></pre>
+  <details class="help-disclosure"><summary>Windows PowerShell</summary><div><pre><code>py -m venv "$env:USERPROFILE\.venvs\peerpedia"
+&amp; "$env:USERPROFILE\.venvs\peerpedia\Scripts\Activate.ps1"</code></pre></div></details>
+  <p>With the environment active, install the client and check that it opens.</p>
+  <pre><code>python -m pip install "git+{{ repository_url }}.git#subdirectory=cli"
+peerpedia --help</code></pre>
+  <p>Activate the same environment whenever you open a new terminal. You only need to install the client once.</p>
+</section>
+<section id="read">
+  <h2>Find and download a paper</h2>
+  <p>Reading does not require an account or a token. Search for a title, author, or topic.</p>
+  <pre><code>peerpedia search "Galois" --server {{ site_url }}</code></pre>
+  <p>Each result includes a paper ID. You can also find it in the paper’s details-page address, between <code>/papers/</code> and the final slash. In the next command, replace <code>PAPER_ID</code> with that value.</p>
+  <pre><code>peerpedia clone PAPER_ID my-paper --server {{ site_url }}
+cd my-paper</code></pre>
+  <p><strong>Clone</strong> downloads a local working copy. For a single-page paper, <code>paper.md</code> holds the text and <code>paper.json</code> holds the title, authors, abstract, subjects, and license. For a work with chapters, the JSON file lists its Markdown files.</p>
+  <p>Keep the hidden <code>.peerpedia</code> directory with your working copy. It records which paper and accepted version you started from. Do not edit its contents by hand.</p>
+  <p>Run the remaining commands from inside this working-copy folder unless a step says otherwise.</p>
+</section>
+<section id="login">
+  <h2>Connect your account</h2>
+  <p>To submit changes, the CLI needs an <strong>access token</strong>, a credential that gives it limited permission to act through your account.</p>
+  <ol><li>Sign in on the website, verify your email, and accept the <a href="{% url 'agreements' %}">submission agreement</a>.</li><li>Open <a href="{% url 'access_tokens' %}">Access tokens</a>, confirm your password, and create a token. Enable <strong>Also allow publishing new papers</strong> if you want to create new work, rather than only propose edits.</li><li>Run the command below. Paste the token at the hidden prompt, not into the command itself.</li></ol>
+  <pre><code>peerpedia login {{ site_url }}</code></pre>
+  <p>If you signed up through Google and have no Peerpedia password, open <strong>Account</strong> and choose <strong>Add a password by email</strong> first.</p>
+  <p>Keep tokens out of Markdown files, messages, and Git repositories. You can revoke one on the Access tokens page. A token cannot accept PRs, post comments, give ratings, vote, or grant administrator access.</p>
+</section>
+<section id="propose">
+  <h2>Submit an edit</h2>
+  <p>A <strong>PR</strong> is a proposed change that the corresponding author reviews before accepting. Edit your local Markdown file, then inspect the difference from the version you downloaded.</p>
+  <pre><code>peerpedia diff</code></pre>
+  <p>When the change is ready, <strong>push</strong> submits it. The message explains what you changed and why.</p>
+  <pre><code>peerpedia push -m "State the compactness assumption before the proof"
+peerpedia status</code></pre>
+  <p>This creates a public PR and prints its address. It does not replace the accepted paper yet, even if you are its author. Open the PR on the website to discuss it or, as the corresponding author, accept it.</p>
+  <p>Add <code>--ai-assisted</code> to a push when AI helped prepare the text. Read the changes yourself before submitting them.</p>
+</section>
+<section id="publish">
+  <h2>Publish a new note</h2>
+  <p>Start in a directory outside any existing working copy. Choose a new folder name.</p>
+  <pre><code>peerpedia init my-note --server {{ site_url }}
+cd my-note</code></pre>
+  <p>Write your note in <code>paper.md</code>. Fill in <code>paper.json</code> with a title, author names, abstract, and primary subject. Separate author names with <code>\n</code> inside the authors string. The following commands list subject codes and license choices.</p>
+  <pre><code>peerpedia categories --server {{ site_url }}
+peerpedia licenses --server {{ site_url }}</code></pre>
+  <p>Read the <a href="{% url 'licenses' %}">license descriptions</a> and put your chosen code in the <code>license</code> field. You must choose it yourself. Also accept the submission agreement on the website and use a token with permission to publish new papers.</p>
+  <details class="help-disclosure"><summary>Example paper.json</summary><div><p>This example describes a short mathematics note. Replace its details with your own. It uses CC BY 4.0 as an example choice, so replace the license code too if you choose a different license.</p><pre><code>{
+  "title": "Symmetry through examples",
+  "authors": "Ada Example\nSam Example",
+  "abstract": "A short introduction to groups through rotations.",
+  "primary_category": "math.GR",
+  "secondary_categories": [],
+  "license": "CC-BY-4.0"
+}</code></pre></div></details>
+  <p>Check the files and their preview in your editor before publishing.</p>
+  <pre><code>peerpedia diff
+peerpedia push -m "Initial publication"</code></pre>
+  <p class="notice"><strong>An initial push publishes immediately.</strong> The first submission creates the public paper. Later pushes propose revisions for separate acceptance. Keep the same working-copy folder to continue editing that paper.</p>
+</section>
+<section id="chapters">
+  <h2>Work with chapters</h2>
+  <p>For a paper with several pages, store each chapter in a Markdown file. List them in reading order in the <code>chapters</code> field of <code>paper.json</code>. The example below shows the fields to add alongside the paper’s title and other details.</p>
+  <pre><code>"chapters": [
+  {"id": "intro", "title": "Introduction", "file": "chapters/intro.md"},
+  {"id": "examples", "title": "Examples", "file": "chapters/examples.md"}
+],
+"bibliography": "references.bib"</code></pre>
+  <p>Create the listed files inside your working-copy folder. The <code>id</code> is a stable name for a chapter. Keep it when renaming or reordering that chapter. The <code>title</code> is what readers see.</p>
+  <p>The bibliography is a shared BibTeX file. See the <a href="{% url 'help_writing' %}#citations">citation example</a> for its contents. Clone, diff, push, and pull include all chapters and the bibliography together.</p>
+</section>
+<section id="feedback">
+  <h2>Read feedback and fix the text</h2>
+  <p>Overall reviews concern the whole paper. Passage feedback concerns a particular sentence, equation, or other part of the text. These commands read both from your working-copy folder.</p>
+  <pre><code>peerpedia reviews --all
+peerpedia feedback --all</code></pre>
+  <p><code>--all</code> fetches every page of results. The feedback list gives passage IDs and quotations. To read a passage’s complete discussion, replace <code>PASSAGE_ID</code> with its ID.</p>
+  <pre><code>peerpedia discussion PASSAGE_ID --all</code></pre>
+  <p>A passage can have several conversations. Each begins with a top-level comment, called a <strong>thread</strong>. The discussion output gives its thread ID. Read the replies as well as the first comment before deciding what to change.</p>
+  <p>After editing your files and checking the diff, you can link your proposal to the thread it addresses. Replace <code>THREAD_ID</code> with that thread’s ID, not the passage ID.</p>
+  <pre><code>peerpedia push -m "Explain why compactness is needed" --address THREAD_ID --ai-assisted</code></pre>
+  <p>Repeat <code>--address</code> to link more than one thread. Omit <code>--ai-assisted</code> if AI did not help prepare the change. A linked fix leaves the discussion open for its commenter to review.</p>
+</section>
+<section id="update-pr">
+  <h2>Update a pending PR</h2>
+  <p>A PR can contain several <strong>snapshots</strong>, each a fixed copy of the proposed paper. Updating the PR adds a snapshot without erasing earlier text or conversation. Only its newest snapshot can be accepted.</p>
+  <p>List the paper’s PRs, then inspect the one you want to continue. Replace <code>PR_ID</code> with its ID.</p>
+  <pre><code>peerpedia prs --all
+peerpedia pr PR_ID --all --json
+peerpedia pr-comments PR_ID --all</code></pre>
+  <p>The PR output includes its current <strong>head hash</strong>, a code for its newest snapshot. Save that full value for the update command. Start from the newest proposed text, retain the changes you intend to keep, and review your local diff.</p>
+  <pre><code>peerpedia push -m "Add the example requested in review" --pr PR_ID --expected-head FULL_HEAD_HASH</code></pre>
+  <p>Replace <code>FULL_HEAD_HASH</code> with the value you just read. This check prevents overwriting a newer PR update by accident. If it fails, read the new snapshot and reconcile your edits before trying again. You can update your own pending PR.</p>
+  <details class="help-disclosure"><summary>Read a snapshot when resuming on another computer</summary><div><p>Use the snapshot ID from the PR output to retrieve its complete source and metadata without changing your working files.</p><pre><code>peerpedia snapshot SNAPSHOT_ID --server {{ site_url }} --json</code></pre><p>Copy the proposed text and metadata you need into your working copy before editing further. Keep the accepted base recorded in <code>.peerpedia</code> intact. A pending proposal is not an accepted version.</p></div></details>
+</section>
+<section id="sync">
+  <h2>Keep your copy up to date</h2>
+  <h3>After your PR is accepted</h3>
+  <pre><code>peerpedia pull</code></pre>
+  <p>Pull downloads the latest accepted version. It refuses to overwrite local edits. A PR that is still pending is not included.</p>
+  <h3>If another edit was accepted first</h3>
+  <p>Your <strong>base</strong> is the accepted version you started editing. A <code>stale_base</code> message means the server has a newer accepted version. Fetch it without replacing your files.</p>
+  <pre><code>peerpedia fetch</code></pre>
+  <p>Compare your files with the incoming files named in the output. For a single-page paper, these are <code>.peerpedia/incoming.md</code> and <code>.peerpedia/incoming-metadata.json</code>. For chapters, look in the incoming folder. Edit your working files to keep the changes you need from both versions.</p>
+  <p>Once you have reconciled them, acknowledge the new base and inspect the result.</p>
+  <pre><code>peerpedia rebase --acknowledge
+peerpedia diff</code></pre>
+  <p>Rebase records your decision. It does not merge the text for you. You can then push the revised proposal.</p>
+  <h3>If a push loses its connection</h3>
+  <p>If you do not know whether the server received a push, retry the saved request.</p>
+  <pre><code>peerpedia push --retry</code></pre>
+  <p>This sends the same saved submission without creating a duplicate. It sends that earlier copy even if you have edited your files since the failed attempt.</p>
+</section>
+<section id="ai">
+  <h2>Use an AI assistant</h2>
+  <p>The <a href="{{ repository_url }}/tree/main/plugins/peerpedia">Peerpedia plugin for Codex</a> helps find papers, read discussions, and prepare proposed changes. Its installation instructions are in the linked guide.</p>
+  <div class="help-example"><h3>Example request</h3><p>“Find the discussion about the compactness assumption. Read the paper and all replies in that thread. Suggest a correction, show me the diff, and wait before submitting it.”</p></div>
+  <p>An assistant can work on the same local Markdown and bibliography as you. Adding <code>--json</code> to commands gives it structured results. Public reading needs no token. Submitting needs your token and follows the same PR process.</p>
+  <p>For a scripted runner, provide <code>PEERPEDIA_TOKEN</code> through its secret settings and set <code>PEERPEDIA_SERVER</code> to <code>{{ site_url }}</code>. Never put a token in a paper, prompt, or repository.</p>
+  <p>AI access to feedback is read-only. The CLI cannot post comments, rate papers or passages, vote, resolve discussions, accept a PR, or read private website drafts and inbox messages.</p>
+  <p>For more command options, run <code>peerpedia --help</code> or <code>peerpedia push --help</code>. The <a href="{{ repository_url }}#local-editing-and-command-line-pushes">repository reference</a> covers credential storage and verification in more detail.</p>
+</section>
+{% endblock %}
