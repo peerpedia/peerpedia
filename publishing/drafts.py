@@ -160,7 +160,7 @@ def start(request, paper_id=None, pr_id=None):
                 request,
                 "The paper changed since you opened it. Choose a section from the latest version.",
             )
-            return redirect("read_paper", paper_id=paper.pk) if paper else redirect("browse")
+            return redirect(paper.read_url) if paper else redirect("browse")
         chapter_id = request.GET.get("chapter", "")
         chapter = (
             next((p for p in documents.pages(source) if p["id"] == chapter_id), None)
@@ -169,7 +169,7 @@ def start(request, paper_id=None, pr_id=None):
         )
         if source.chapters and chapter is None:
             messages.error(request, "Choose a section from an existing chapter.")
-            return redirect("read_paper", paper_id=paper.pk)
+            return redirect(paper.read_url)
         section = sections.find(chapter["markdown"] if chapter else source.markdown, scope)
         if chapter and section:
             section["chapter"] = chapter["id"]
@@ -179,7 +179,7 @@ def start(request, paper_id=None, pr_id=None):
                 request,
                 "That section is no longer available. Choose a section from the latest paper.",
             )
-            return redirect("read_paper", paper_id=paper.pk)
+            return redirect(paper.read_url)
     if request.method == "GET":
         if paper:
             existing = Draft.objects.filter(

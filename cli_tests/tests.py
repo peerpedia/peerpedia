@@ -326,12 +326,30 @@ class CLIJourneys(StaticLiveServerTestCase):
         paper = self.fixture_paper()
         for name, value in [
             ("number", paper.public_id),
+            ("details", self.live_server_url + paper.get_absolute_url()),
             ("url", self.live_server_url + paper.read_url),
         ]:
             result = self.command("clone", value, name, "--server", self.live_server_url)
             self.assertEqual(result["paper_id"], str(paper.pk))
             self.assertEqual(result["base_hash"], paper.current.hash)
         self.command("reviews", "--paper", paper.public_id, "--server", self.live_server_url)
+
+    def test_clone_snapshot_url_keeps_the_selected_version(self):
+        from publishing.services import decide, propose
+
+        paper = self.fixture_paper()
+        first = paper.current
+        revision = propose(self.owner, paper.pk, first.pk, document(markdown="Later text"))
+        decide(self.owner, revision.pk, "accepted")
+        result = self.command(
+            "clone",
+            self.live_server_url + first.read_url,
+            "snapshot",
+            "--server",
+            self.live_server_url,
+        )
+        self.assertEqual(result["paper_id"], str(paper.pk))
+        self.assertEqual(result["base_hash"], first.hash)
 
     def test_new_publication_clone_proposal_retry_accept_and_pull(self):
         self.login(self.owner_token)

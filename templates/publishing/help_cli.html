@@ -43,6 +43,7 @@ peerpedia --help</code></pre>
   <p>Each result includes a permanent paper number, such as <code>261025.a7c92e4b10d3</code>, and its internal UUID. You can also find it in the paper’s details-page address, between <code>/papers/</code> and the final slash. In the next command, replace <code>PAPER_ID</code> with that value. The client also accepts the paper’s details-page URL.</p>
   <pre><code>peerpedia clone PAPER_ID my-paper --server {{ site_url }}
 cd my-paper</code></pre>
+  <p>You can also replace <code>PAPER_ID</code> with a snapshot’s reading URL. This downloads that exact version, even if the paper has since changed.</p>
   <p><strong>Clone</strong> downloads a local working copy. For a single-page paper, <code>paper.md</code> holds the text and <code>paper.json</code> holds the title, authors, abstract, subjects, and license. For a work with chapters, the JSON file lists its Markdown files.</p>
   <p>Keep the hidden <code>.peerpedia</code> directory with your working copy. It records which paper and accepted version you started from. Do not edit its contents by hand.</p>
   <p>Run the remaining commands from inside this working-copy folder unless a step says otherwise.</p>

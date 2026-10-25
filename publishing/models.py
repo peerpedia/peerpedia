@@ -31,7 +31,7 @@ class Paper(models.Model):
 
     @property
     def read_url(self):
-        return self.get_absolute_url() + "read/"
+        return self.current.read_url
 
     def __str__(self):
         return self.current.title if self.current_id else str(self.pk)

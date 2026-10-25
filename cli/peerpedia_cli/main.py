@@ -536,8 +536,12 @@ def initialize(args):
     server = server_for(args)
     record = None
     if args.command == "clone":
-        paper_id = paper_reference(args.paper_id, server)
-        record = resolve_paper(server, paper_id)
+        if "://" in args.paper_id and urlsplit(args.paper_id).path.startswith("/submissions/"):
+            record = resolve_snapshot(server, args.paper_id)
+            paper_id = record["manifest"]["paper_id"]
+        else:
+            paper_id = paper_reference(args.paper_id, server)
+            record = resolve_paper(server, paper_id)
     root = Path(args.directory or ("paper-" + paper_id)).absolute()
     # Never overwrite an existing folder, even if it looks empty.
     root.mkdir()
