@@ -36,6 +36,7 @@ class PaperIdentifierTests(TestCase):
             decide(self.user, proposal.pk, "accepted")
         self.paper.refresh_from_db()
         self.assertEqual(self.paper.public_id, code)
+        self.assertEqual(self.paper.read_url, proposal.read_url)
         self.assertEqual(first.calculate_hash(), first.hash)
         self.assertEqual(self.client.get(first.read_url).context["submission"].pk, first.pk)
         self.assertEqual(self.client.get(self.paper.read_url).context["submission"].pk, proposal.pk)
@@ -74,6 +75,12 @@ class PaperIdentifierTests(TestCase):
         self.assertContains(response, self.paper.get_absolute_url())
         self.assertContains(response, self.paper.read_url)
         self.assertContains(response, self.paper.public_id)
+        self.assertEqual(self.paper.read_url, self.paper.current.read_url)
+        for page in (response, self.client.get(self.paper.get_absolute_url())):
+            self.assertContains(page, f'href="{self.paper.current.read_url}"')
+            self.assertNotContains(page, f'href="{self.paper.get_absolute_url()}read/"')
+        listed = self.client.get("/api/v1/papers/").json()["papers"]
+        self.assertEqual(listed[0]["read_url"], self.paper.current.read_url)
         self.assertEqual(
             len(self.client.get("/api/v1/papers/", {"q": self.paper.public_id}).json()["papers"]), 1
         )
