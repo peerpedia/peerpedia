@@ -80,8 +80,8 @@ class PublishingTests(TestCase):
     def test_browse_has_no_abstract_and_separate_read_link(self):
         response = self.client.get(reverse("browse"))
         self.assertNotContains(response, self.paper.current.abstract)
-        self.assertContains(response, reverse("paper", args=[self.paper.pk]))
-        self.assertContains(response, reverse("read_paper", args=[self.paper.pk]))
+        self.assertContains(response, self.paper.get_absolute_url())
+        self.assertContains(response, self.paper.read_url)
 
     def test_reader_has_no_platform_chrome(self):
         response = self.client.get(reverse("read_paper", args=[self.paper.pk]))

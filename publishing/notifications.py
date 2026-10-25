@@ -85,19 +85,19 @@ def destination(item):
         return reverse("admin:publishing_passagereport_changelist")
     if item.thread_id:
         return (
-            reverse("read_submission", args=[item.thread.passage.submission_id])
-            + "?discussion="
-            + str(item.thread.passage_id)
+            item.thread.passage.submission.read_url + "?discussion=" + str(item.thread.passage_id)
         )
     if item.pull_request_id:
         return reverse("pull_request", args=[item.pull_request_id])
-    return reverse("paper", args=[item.paper_id]) + "#reviews"
+    return item.paper.get_absolute_url() + "#reviews"
 
 
 @login_required
 def inbox(request):
     seen_before = timezone.now().isoformat()
-    query = visible(request.user).select_related("actor", "paper__current", "thread__passage")
+    query = visible(request.user).select_related(
+        "actor", "paper__current", "thread__passage__submission__paper"
+    )
     only_unread = request.GET.get("filter") == "unread"
     if only_unread:
         query = query.filter(unread=True)
@@ -121,7 +121,8 @@ def open_notification(request, notification_id):
 
         return HttpResponseForbidden("Use the website to manage your inbox.")
     item = get_object_or_404(
-        visible(request.user).select_related("thread__passage"), pk=notification_id
+        visible(request.user).select_related("thread__passage__submission__paper"),
+        pk=notification_id,
     )
     try:
         revision = int(request.POST.get("revision", ""))

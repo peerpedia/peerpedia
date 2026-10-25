@@ -115,6 +115,9 @@ def endpoint(method="GET", authenticated=False):
 def snapshot(submission):
     pr = getattr(submission, "pr_commit", None)
     return {
+        "paper_identifier": submission.paper.public_id,
+        "paper_url": submission.paper.get_absolute_url(),
+        "read_url": submission.read_url,
         "via_cli": submission.via_cli,
         "ai_assisted": submission.ai_assisted,
         "pull_request": {"id": str(pr.request_id), "snapshot": pr.number} if pr else None,
@@ -187,6 +190,7 @@ def search(request):
             "papers": [
                 {
                     "paper_id": str(item.pk),
+                    "paper_identifier": item.public_id,
                     "title": item.current.title,
                     "authors": item.current.authors,
                     "abstract": item.current.abstract,
@@ -198,8 +202,8 @@ def search(request):
                     "accepted_at": item.accepted_at,
                     "submission_id": str(item.current_id),
                     "hash": item.current.hash,
-                    "url": reverse("paper", args=[item.pk]),
-                    "read_url": reverse("read_paper", args=[item.pk]),
+                    "url": item.get_absolute_url(),
+                    "read_url": item.read_url,
                 }
                 for item in rows[:25]
             ],
@@ -239,9 +243,18 @@ def paper_prs(request, paper_id):
 
 
 @endpoint()
-def paper(request, paper_id):
-    item = get_object_or_404(public_papers(), pk=paper_id)
-    return JsonResponse({"paper_id": str(item.pk), "current": snapshot(item.current)})
+def paper(request, paper_id=None, public_id=None):
+    item = get_object_or_404(
+        public_papers(), **({"public_id": public_id} if public_id else {"pk": paper_id})
+    )
+    return JsonResponse(
+        {
+            "paper_id": str(item.pk),
+            "paper_identifier": item.public_id,
+            "url": item.get_absolute_url(),
+            "current": snapshot(item.current),
+        }
+    )
 
 
 @endpoint()
@@ -574,6 +587,7 @@ urlpatterns = [
     path("categories/", categories),
     path("me/", me),
     path("papers/<uuid:paper_id>/", paper),
+    path("papers/<paper_code:public_id>/", paper),
     path("submissions/<uuid:submission_id>/", submission),
     path("push/", push),
 ]

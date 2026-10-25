@@ -77,7 +77,7 @@ def lineage(submission):
 def anchors_for(submission):
     return (
         Passage.objects.filter(submission_id__in=lineage(submission))
-        .select_related("submission")
+        .select_related("submission__paper")
         .order_by("created_at", "pk")
     )
 
@@ -125,9 +125,7 @@ def anchor_data(anchor, submission, blocks):
             {"block": s["id"], "kind": s["kind"], "start": s["start"], "end": s["end"]}
             for s in anchor.spans
         ],
-        "original_url": reverse("read_submission", args=[anchor.submission_id])
-        + "?discussion="
-        + str(anchor.pk),
+        "original_url": anchor.submission.read_url + "?discussion=" + str(anchor.pk),
         **summary,
     }
 
@@ -211,7 +209,7 @@ def links_for(comment):
 
 def passage_detail(passage_id, user, start=0):
     anchor = get_object_or_404(
-        with_stats(Passage.objects.select_related("submission")),
+        with_stats(Passage.objects.select_related("submission__paper")),
         pk=passage_id,
         submission__paper__is_hidden=False,
     )

@@ -9,6 +9,7 @@ from django.utils import timezone
 
 class Paper(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    public_id = models.CharField(max_length=69, unique=True, null=True, editable=False)
     owner = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="papers"
     )
@@ -18,6 +19,19 @@ class Paper(models.Model):
     created_at = models.DateTimeField(default=timezone.now, editable=False)
     accepted_at = models.DateTimeField(default=timezone.now, db_index=True)
     is_hidden = models.BooleanField(default=False, db_index=True)
+
+    def get_absolute_url(self):
+        from django.urls import reverse
+
+        return (
+            reverse("paper_permalink", args=[self.public_id])
+            if self.public_id
+            else reverse("paper", args=[self.pk])
+        )
+
+    @property
+    def read_url(self):
+        return self.get_absolute_url() + "read/"
 
     def __str__(self):
         return self.current.title if self.current_id else str(self.pk)
@@ -70,6 +84,14 @@ class Submission(FrozenRecord):
         on_delete=models.PROTECT,
         related_name="submissions",
     )
+
+    @property
+    def read_url(self):
+        from django.urls import reverse
+
+        if self.paper.public_id:
+            return reverse("read_version", args=[self.paper.public_id, self.pk])
+        return reverse("read_submission", args=[self.pk])
 
     @property
     def licensing(self):

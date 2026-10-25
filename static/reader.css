@@ -138,3 +138,7 @@
   .reader-contents { grid-column:2; grid-row:1; }
   .chapter-navigation { max-height:180px; }
 }
+
+.reader-paper-number { display:block; margin:0 26px 12px; color:var(--reader-muted); font-size:12px; text-decoration:none; overflow-wrap:anywhere; }
+.reader-paper-number:hover { color:var(--reader-accent); text-decoration:underline; }
+@media(max-width:1049px) { .reader-paper-number { grid-column:1/-1; margin:0 18px 8px; } }
