@@ -97,6 +97,7 @@ def reference_search(request):
                 "id": str(paper.pk),
                 "paper_identifier": paper.public_id,
                 "submission": str(s.pk),
+                "snapshot_identifier": s.public_id,
                 "title": s.title,
                 "authors": s.authors,
                 "year": paper.created_at.year,

@@ -96,9 +96,7 @@ def state(draft):
         "base": str(draft.base_id) if draft.base_id else None,
         "latest": str(latest.pk) if latest else None,
         "stale": bool(latest and latest.pk != draft.base_id),
-        "submitted_url": reverse("submission", args=[draft.submitted_id])
-        if draft.submitted_id
-        else None,
+        "submitted_url": draft.submitted.get_absolute_url() if draft.submitted_id else None,
     }
 
 
@@ -263,7 +261,7 @@ def listing(request):
 def editor(request, draft_id):
     draft = owned(request, draft_id)
     if draft.submitted_id:
-        return redirect("submission", submission_id=draft.submitted_id)
+        return redirect(draft.submitted.get_absolute_url())
     initial = state(draft)
     is_revision = bool(
         draft.paper_id or getattr(getattr(draft, "workingcopy", None), "mirror_id", None)
@@ -681,7 +679,7 @@ def review(request, draft_id, *, consent_form=None):
         with transaction.atomic():
             draft = owned(request, draft_id, lock=True)
             if draft.submitted_id:
-                return redirect("submission", submission_id=draft.submitted_id)
+                return redirect(draft.submitted.get_absolute_url())
             if consent_form is None and request.POST.get("revision") != str(draft.revision):
                 raise ValidationError(
                     "Your draft changed. Review the latest saved copy before submitting."
@@ -752,7 +750,7 @@ def submit(request, draft_id):
         with transaction.atomic():
             draft = owned(request, draft_id, lock=True)
             if draft.submitted_id:
-                return redirect("submission", submission_id=draft.submitted_id)
+                return redirect(draft.submitted.get_absolute_url())
             if token["revision"] != draft.revision:
                 raise ValidationError(
                     "Your draft changed after this preview. Review it again before submitting."
@@ -810,7 +808,7 @@ def submit(request, draft_id):
         request,
         "Snapshot submitted and frozen." if submitted.base_id else "Your paper is published.",
     )
-    return redirect("submission", submission_id=submitted.pk)
+    return redirect(submitted.get_absolute_url())
 
 
 @private

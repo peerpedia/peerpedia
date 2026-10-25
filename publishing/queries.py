@@ -45,6 +45,7 @@ def search_papers(query="", subject="", sort="latest"):
     if query:
         matching = (
             Q(public_id__icontains=query)
+            | Q(pk__in=Submission.objects.filter(public_id=query).values("paper_id"))
             | Q(current__title__icontains=query)
             | Q(current__authors__icontains=query)
             | Q(current__abstract__icontains=query)

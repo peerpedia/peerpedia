@@ -118,7 +118,7 @@ def anchor_data(anchor, submission, blocks):
         "quote": anchor.quote,
         "state": state,
         "spans": spans,
-        "original_version": anchor.submission.short_hash,
+        "original_version": anchor.submission.public_id,
         "original_hash": anchor.submission.hash,
         "original_submission_id": str(anchor.submission_id),
         "original_spans": [
