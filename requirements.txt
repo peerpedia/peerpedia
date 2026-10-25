@@ -8,4 +8,4 @@ argon2-cffi>=23,<26
 django-otp>=1.7.5,<1.8
 segno>=1.6.6,<2
 django-allauth[socialaccount]>=65.20,<66
-bibtexparser>=1.4.3,<2
+bibtexparser>=2.1.0,<3
