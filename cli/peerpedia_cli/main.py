@@ -461,15 +461,47 @@ def login(args):
     return {"server": server, **identity}
 
 
+def paper_reference(value, server):
+    """Accept a public number, UUID, or paper URL on the selected server."""
+    import re
+
+    if "://" in value:
+        parts = urlsplit(value)
+        if origin(f"{parts.scheme}://{parts.netloc}") != server:
+            raise ClientError("wrong_server", "The paper URL must use the selected server.")
+        match = re.fullmatch(r"/papers/([^/]+)/(?:read/)?", parts.path)
+        if not match:
+            raise ClientError("invalid_paper", "Use a paper details or current reader URL.")
+        value = match[1]
+    if re.fullmatch(r"[0-9]{2}(?:0[1-9]|1[0-2])\.[0-9a-f]{12,64}", value):
+        return value
+    try:
+        return str(uuid.UUID(value))
+    except ValueError:
+        raise ClientError("invalid_paper", "Use a paper number, UUID, or paper URL.")
+
+
+def resolve_paper(server, reference):
+    reference = paper_reference(reference, server)
+    result = request(server, f"/api/v1/papers/{reference}/")
+    record = verify(result["current"])
+    expected = reference
+    if "." in reference:
+        if result.get("paper_identifier") != reference:
+            raise ClientError("wrong_paper", "Remote returned a different paper number.")
+        expected = result.get("paper_id")
+    if record["manifest"]["paper_id"] != expected:
+        raise ClientError("wrong_paper", "Remote returned a different paper.")
+    return record
+
+
 def initialize(args):
     server = server_for(args)
     record = None
     if args.command == "clone":
-        paper_id = str(uuid.UUID(args.paper_id))
-        record = verify(request(server, f"/api/v1/papers/{paper_id}/")["current"])
-        if record["manifest"]["paper_id"] != paper_id:
-            raise ClientError("wrong_paper", "Remote returned a different paper.")
-    root = Path(args.directory or ("paper-" + paper_id[:8])).absolute()
+        paper_id = paper_reference(args.paper_id, server)
+        record = resolve_paper(server, paper_id)
+    root = Path(args.directory or ("paper-" + paper_id)).absolute()
     # Never overwrite an existing folder, even if it looks empty.
     root.mkdir()
     (root / ".peerpedia").mkdir()
@@ -673,6 +705,14 @@ def read_feedback(args):
                 "Use --paper with --server, or run inside a published paper directory.",
             )
         return str(uuid.UUID(value))
+
+    if paper_id and args.command in {"feedback", "reviews", "prs"}:
+        reference = paper_reference(paper_id, server)
+        paper_id = (
+            resolve_paper(server, reference)["manifest"]["paper_id"]
+            if "." in reference
+            else reference
+        )
 
     if args.command == "feedback":
         submission_id = getattr(args, "submission", None)
@@ -894,7 +934,7 @@ def main(argv=None):
         if command == "snapshot":
             child.add_argument("target", help="Immutable submission UUID")
         if command == "clone":
-            child.add_argument("paper_id")
+            child.add_argument("paper_id", help="Paper number, UUID, or paper URL")
             child.add_argument("directory", nargs="?")
         if command == "init":
             child.add_argument("directory")

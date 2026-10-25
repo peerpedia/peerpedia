@@ -4,6 +4,13 @@ from . import views, drafts, discussions, notifications
 from . import licensing, diagrams, reading
 
 urlpatterns = [
+    path("papers/<paper_code:public_id>/", views.paper_permalink, name="paper_permalink"),
+    path("papers/<paper_code:public_id>/read/", views.read_permalink, name="read_paper_permalink"),
+    path(
+        "papers/<paper_code:public_id>/versions/<uuid:submission_id>/read/",
+        views.read_version,
+        name="read_version",
+    ),
     path("references/search/", reading.reference_search, name="reference_search"),
     path("papers/<uuid:paper_id>/progress/", reading.progress, name="reading_progress"),
     path("diagrams/<str:key>/status/", diagrams.status, name="diagram_status"),

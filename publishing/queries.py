@@ -44,7 +44,8 @@ def search_papers(query="", subject="", sort="latest"):
         raise Http404("Unknown subject")
     if query:
         matching = (
-            Q(current__title__icontains=query)
+            Q(public_id__icontains=query)
+            | Q(current__title__icontains=query)
             | Q(current__authors__icontains=query)
             | Q(current__abstract__icontains=query)
             | Q(current__markdown__icontains=query)

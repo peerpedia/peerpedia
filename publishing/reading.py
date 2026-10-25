@@ -7,7 +7,6 @@ from django.core.exceptions import ValidationError
 from accounts.security import limited
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404
-from django.urls import reverse
 from django.views.decorators.http import require_http_methods, require_GET
 from django.db import transaction
 from .models import ReadingProgress, Submission, Paper
@@ -79,7 +78,7 @@ def reference_search(request):
         except ValueError:
             return JsonResponse({"error": "Use a submission UUID."}, status=400)
         submission = get_object_or_404(Submission, pk=snapshot_id, paper__is_hidden=False)
-        reader = reverse("read_submission", args=[submission.pk])
+        reader = submission.read_url
         refs = ReferenceDocument(pages(submission), submission.bibliography, reader)
         return JsonResponse(
             {
@@ -96,11 +95,12 @@ def reference_search(request):
         results.append(
             {
                 "id": str(paper.pk),
+                "paper_identifier": paper.public_id,
                 "submission": str(s.pk),
                 "title": s.title,
                 "authors": s.authors,
                 "year": paper.created_at.year,
-                "url": request.build_absolute_uri(reverse("read_submission", args=[s.pk])),
+                "url": request.build_absolute_uri(s.read_url),
                 "hash": s.hash,
             }
         )

@@ -53,6 +53,15 @@ class ClientSafetyTests(SimpleTestCase):
             with self.assertRaises(client.ClientError):
                 client.token_for("https://untrusted.example")
 
+    def test_paper_url_stays_on_selected_server(self):
+        with self.assertRaises(client.ClientError):
+            client.paper_reference(
+                "https://other.example/papers/2610.123456789abc/", "https://peerpedia.dev"
+            )
+        for value in ["2613.123456789abc", "../../private", "2610.short"]:
+            with self.assertRaises(client.ClientError):
+                client.paper_reference(value, "https://peerpedia.dev")
+
     def test_manifest_tampering_is_detected(self):
         record = {
             "manifest": {
@@ -276,6 +285,17 @@ class CLIJourneys(StaticLiveServerTestCase):
             folder=work,
         )
         self.assertEqual(reverted["pull_request"]["snapshot"], 3)
+
+    def test_clone_public_number_and_url(self):
+        paper = self.fixture_paper()
+        for name, value in [
+            ("number", paper.public_id),
+            ("url", self.live_server_url + paper.read_url),
+        ]:
+            result = self.command("clone", value, name, "--server", self.live_server_url)
+            self.assertEqual(result["paper_id"], str(paper.pk))
+            self.assertEqual(result["base_hash"], paper.current.hash)
+        self.command("reviews", "--paper", paper.public_id, "--server", self.live_server_url)
 
     def test_new_publication_clone_proposal_retry_accept_and_pull(self):
         self.login(self.owner_token)

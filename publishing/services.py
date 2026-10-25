@@ -45,6 +45,9 @@ def publish(user, data):
     paper.current = submission
     paper.accepted_at = decision.created_at
     paper.save(update_fields=["current", "accepted_at"])
+    from .identifiers import assign
+
+    assign(paper, submission, decision.created_at)
     from .diagram_cache import enqueue
 
     enqueue(submission)

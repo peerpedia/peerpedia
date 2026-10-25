@@ -48,8 +48,14 @@ def browse(request):
     )
 
 
-def paper_detail(request, paper_id):
-    paper = get_object_or_404(public_papers(), pk=paper_id)
+def paper_permalink(request, public_id):
+    return paper_detail(request, public_id=public_id)
+
+
+def paper_detail(request, paper_id=None, public_id=None):
+    paper = get_object_or_404(
+        public_papers(), **({"public_id": public_id} if public_id else {"pk": paper_id})
+    )
     reviews = paper.reviews.filter(is_hidden=False).select_related("user")
     stats = reviews.aggregate(average=Avg("score"), count=Count("pk"))
     own_review = (
@@ -94,6 +100,18 @@ def read_paper(request, paper_id):
     return reader(request, paper.current)
 
 
+def read_permalink(request, public_id):
+    paper = get_object_or_404(public_papers(), public_id=public_id)
+    return reader(request, paper.current)
+
+
+def read_version(request, public_id, submission_id):
+    submission = get_object_or_404(
+        submission_queryset(), pk=submission_id, paper__public_id=public_id
+    )
+    return reader(request, submission)
+
+
 def read_submission(request, submission_id):
     submission = get_object_or_404(submission_queryset(), pk=submission_id)
     return reader(request, submission)
@@ -133,7 +151,7 @@ def reader(request, submission):
     if page is None:
         raise Http404("This chapter is not in this version.")
     index = chapters.index(page)
-    reader_url = reverse("read_submission", args=[submission.pk])
+    reader_url = submission.read_url
     refs = ReferenceDocument(
         chapters, submission.bibliography, reader_url, number_sections=bool(submission.chapters)
     )
@@ -389,7 +407,7 @@ def confirm_upload(request, paper):
     messages.success(
         request, "Your paper is published. Future changes will create new submissions."
     )
-    return redirect("paper", paper_id=new_paper.pk)
+    return redirect(new_paper.get_absolute_url())
 
 
 def submission_detail(request, submission_id):
@@ -486,7 +504,7 @@ def review(request, paper_id):
 
         notify([paper.owner_id], request.user, paper, "review")
         messages.success(request, "Your review has been saved.")
-        return redirect(reverse("paper", args=[paper.pk]) + "#reviews")
+        return redirect(paper.get_absolute_url() + "#reviews")
     return render(
         request, "publishing/review_form.html", {"form": form, "paper": paper}, status=400
     )

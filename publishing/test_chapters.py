@@ -79,9 +79,7 @@ class ChapterTests(TestCase):
         response = self.client.get(reverse("read_paper", args=[self.paper.pk]))
         self.assertContains(response, "A unique passage")
         self.assertNotContains(response, "Every example has a proof.")
-        self.assertContains(
-            response, f"/submissions/{self.paper.current_id}/read/?chapter=proof#eq%3Aone"
-        )
+        self.assertContains(response, self.paper.current.read_url + "?chapter=proof#eq%3Aone")
         self.assertContains(response, "Quantum Field Theory (Wen, 2004)")
         response = self.client.get(
             reverse("read_submission", args=[self.paper.current_id]) + "?chapter=proof"

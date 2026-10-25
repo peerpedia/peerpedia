@@ -223,6 +223,8 @@ class BrowserJourneys(StaticLiveServerTestCase):
         self.assertEqual(self.database_call(Paper.objects.count), 1)
         short_hash = self.database_call(lambda: Paper.objects.get().current.short_hash)
         metadata_url = self.page.url
+        public_id = self.database_call(lambda: Paper.objects.get().public_id)
+        self.assertTrue(metadata_url.endswith(f"/papers/{public_id}/"))
         with self.page.expect_download() as event:
             self.page.get_by_role("link", name="Download Markdown", exact=True).click()
         self.assertEqual(Path(event.value.path()).read_bytes(), SOURCE.encode())
@@ -231,6 +233,7 @@ class BrowserJourneys(StaticLiveServerTestCase):
         self.assert_math()
         expect(self.page.locator(".site-header, .site-footer")).to_have_count(0)
         expect(self.page.get_by_role("link", name="Peerpedia home")).to_be_visible()
+        expect(self.page.get_by_role("link", name=public_id, exact=True)).to_be_visible()
         expect(self.page.get_by_role("button", name="Discussions", exact=True)).to_be_visible()
         self.page.go_back()
         expect(self.page.get_by_role("heading", name="Abstract", exact=True)).to_be_visible()

@@ -2,7 +2,7 @@
 {% block head %}<script defer src="{% static 'subjects.js' %}"></script>{% endblock %}
 {% block title %}{% if paper %}Submit a change{% else %}Upload a paper{% endif %} · Peerpedia{% endblock %}
 {% block content %}
-<div class="form-layout"><a class="breadcrumb" href="{% if paper %}{% url 'paper' paper.pk %}{% else %}{% url 'browse' %}{% endif %}">← {% if paper %}Back to paper{% else %}All papers{% endif %}</a>
+<div class="form-layout"><a class="breadcrumb" href="{% if paper %}{{ paper.get_absolute_url }}{% else %}{% url 'browse' %}{% endif %}">← {% if paper %}Back to paper{% else %}All papers{% endif %}</a>
 <div class="eyebrow">01 UPLOAD <span class="muted">/ 02 PREVIEW / 03 PUBLISH</span></div>
 <h1>{% if paper %}Submit a change{% else %}Upload a paper{% endif %}</h1>
 <p class="lede">Upload a Markdown file, or <a href="{% if paper %}{% url 'edit_paper' paper.pk %}{% else %}{% url 'write' %}{% endif %}">write online with a live preview</a>.</p>
