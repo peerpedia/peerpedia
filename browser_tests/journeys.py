@@ -238,7 +238,7 @@ class BrowserJourneys(StaticLiveServerTestCase):
         self.page.go_back()
         expect(self.page.get_by_role("heading", name="Abstract", exact=True)).to_be_visible()
         self.page.get_by_role("link", name="History", exact=True).click()
-        expect(self.page.get_by_text(short_hash, exact=True)).to_be_visible()
+        expect(self.page.locator(".history-row code").filter(has_text=short_hash)).to_be_visible()
 
     def test_proposal_diff_conversation_acceptance_and_preserved_history(self):
         paper = self.fixture_paper()

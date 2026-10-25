@@ -40,7 +40,7 @@
 .button.secondary:hover { background:var(--control-hover); color:var(--control-ink); }
 
 /* Compact icons share exactly the same hit area and baseline. */
-.markdown-body :is(.copy-reference,.section-edit),.reader .reader-edit,
+.markdown-body :is(.copy-reference,.section-edit),.reader :is(.reader-edit,.reader-copy-reference),
 .editor-page .ui-icon-button,.reference-dialog button.ui-icon-button {
   box-sizing:border-box; display:inline-flex; width:32px; height:32px; min-height:32px;
   padding:6px; align-items:center; justify-content:center; flex:none;
@@ -49,7 +49,7 @@
   text-decoration:none; cursor:pointer; opacity:1;
 }
 .markdown-body :is(.copy-reference,.section-edit) { margin:0 0 0 6px; }
-.markdown-body :is(.copy-reference,.section-edit):hover,.reader .reader-edit:hover,
+.markdown-body :is(.copy-reference,.section-edit):hover,.reader :is(.reader-edit,.reader-copy-reference):hover,
 .editor-page .ui-icon-button:hover,.reference-dialog .ui-icon-button:hover {
   color:var(--control-ink); border-color:var(--control-border); background:var(--control-hover);
 }
