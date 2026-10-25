@@ -52,6 +52,7 @@ peerpedia feedback --json
 
 Replace `PAPER_ID` with an ID from the search results. A newly started site may
 have no papers yet. Cloning downloads the Markdown and metadata for local editing.
+You can also use a snapshot's reading URL to download that exact version.
 
 ## Propose an edit
 
