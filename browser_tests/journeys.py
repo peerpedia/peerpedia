@@ -229,7 +229,7 @@ class BrowserJourneys(StaticLiveServerTestCase):
             self.page.get_by_role("link", name="Download Markdown", exact=True).click()
         self.assertEqual(Path(event.value.path()).read_bytes(), SOURCE.encode())
         self.page.get_by_role("link", name="Read paper", exact=True).click()
-        expect(self.page).to_have_url(metadata_url + "read/")
+        expect(self.page).to_have_url(self.live_server_url + f"/submissions/{short_hash}/read/")
         self.assert_math()
         expect(self.page.locator(".site-header, .site-footer")).to_have_count(0)
         expect(self.page.get_by_role("link", name="Peerpedia home")).to_be_visible()
