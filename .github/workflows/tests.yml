@@ -54,6 +54,21 @@ jobs:
           /tmp/peerpedia-cli-release-check/bin/python -m pip install --no-deps dist/*.whl
           /tmp/peerpedia-cli-release-check/bin/peerpedia --version
           /tmp/peerpedia-cli-release-check/bin/peerpedia --help
+      - name: Record CLI artifact checksums
+        run: sha256sum dist/* > "$RUNNER_TEMP/cli-artifact-sha256"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: cli-validation-distributions
+          path: dist/
+          retention-days: 1
+      - uses: actions/download-artifact@v8
+        with:
+          name: cli-validation-distributions
+          path: ${{ runner.temp }}/artifact-check/dist
+      - name: Verify downloaded CLI artifacts
+        run: |
+          cd "$RUNNER_TEMP/artifact-check"
+          sha256sum -c "$RUNNER_TEMP/cli-artifact-sha256"
       - run: python scripts/check_plugin.py
       - run: python scripts/test_proxy.py
       - run: docker build --target diagram-renderer -t peerpedia-diagrams:test .
