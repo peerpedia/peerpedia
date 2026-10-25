@@ -8,6 +8,7 @@ updates:
     groups:
       python:
         patterns: ['*']
+        update-types: ['minor', 'patch']
   - package-ecosystem: npm
     directory: /editor
     schedule:
@@ -19,6 +20,12 @@ updates:
     directory: /
     schedule:
       interval: weekly
+    # Runtime upgrades need matching application tests, not just image builds.
+    ignore:
+      - dependency-name: python
+        update-types: ['version-update:semver-major', 'version-update:semver-minor']
+      - dependency-name: node
+        update-types: ['version-update:semver-major']
   - package-ecosystem: github-actions
     directory: /
     schedule:

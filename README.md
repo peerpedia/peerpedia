@@ -526,6 +526,12 @@ only, and appears in GitHub Actions as **Daily security scan**. It does not push
 commits or deploy the website. Deployment still requires all four jobs to pass
 on the exact main commit.
 
+CI also checks that `requirements.lock` satisfies `requirements.txt`. Update both
+when changing a dependency requirement, so tests exercise the proposed versions.
+Dependabot groups Python minor and patch updates; major upgrades get separate PRs.
+Docker runtime upgrades beyond Python 3.13 and Node 22 are deferred until their
+application tests are updated too. Patch updates and daily security audits continue.
+
 The hosted repository's
 `main` branch requires a pull request, up-to-date passing checks, and resolved
 conversations, including for administrators. Force pushes and branch deletion are
