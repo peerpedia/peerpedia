@@ -172,12 +172,15 @@ export function chapterWorkspace({
       .replaceAll("\\", "\\textbackslash{} ")
       .replaceAll("\n", " ");
   }
-  function addEntry({ key, title, authors, year, url }) {
+  function addEntry({ key, title, authors, year, url, snapshot_identifier }) {
     if (!/^[A-Za-z][A-Za-z0-9_:-]*$/.test(key))
       throw new Error(
         "Use a citation key starting with a letter, without spaces.",
       );
-    bibliography += `\n@misc{${key},\n  title = {${bibEscape(title)}},\n  author = {${bibEscape(authors)}},\n  year = {${bibEscape(String(year || ""))}},\n  url = {${bibEscape(url)}}\n}\n`;
+    const snapshotNote = snapshot_identifier
+      ? `  note = {Peerpedia snapshot ${bibEscape(snapshot_identifier)}},\n`
+      : "";
+    bibliography += `\n@misc{${key},\n  title = {${bibEscape(title)}},\n  author = {${bibEscape(authors)}},\n  year = {${bibEscape(String(year || ""))}},\n${snapshotNote}  url = {${bibEscape(url)}}\n}\n`;
     $("bib-source").value = bibliography;
     changed();
     return key;
@@ -302,7 +305,7 @@ export function chapterWorkspace({
           cite = document.createElement("button"),
           browse = document.createElement("button"),
           label = document.createElement("p");
-        label.textContent = `${paper.title} · ${paper.authors} (${paper.year})`;
+        label.textContent = `${paper.title} · ${paper.authors} · ${paper.snapshot_identifier}`;
         cite.textContent = "Cite frozen version";
         browse.textContent = "Sections and equations";
         cite.type = browse.type = "button";

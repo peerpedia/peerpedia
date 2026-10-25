@@ -254,7 +254,7 @@ class DiscussionTests(TestCase):
         self.assertIsNone(result["average"])
         self.assertEqual(result["ratings"], 0)
         self.assertIn("A unique claim", result["quote"])
-        self.assertIn(str(self.base.pk), result["original_url"])
+        self.assertIn(self.base.public_id, result["original_url"])
         duplicate = passages.blocks(SOURCE + "\n\nA unique claim with 🌱 and $x^2$.\n")
         self.assertNotEqual(passages.locate(root.passage, duplicate)[0], "current")
 

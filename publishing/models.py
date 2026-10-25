@@ -9,7 +9,7 @@ from django.utils import timezone
 
 class Paper(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    public_id = models.CharField(max_length=69, unique=True, null=True, editable=False)
+    public_id = models.CharField(max_length=71, unique=True, null=True, editable=False)
     owner = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="papers"
     )
@@ -69,6 +69,7 @@ class Submission(FrozenRecord):
     explanation = models.TextField(max_length=5000)
     created_at = models.DateTimeField(default=timezone.now, editable=False)
     hash = models.CharField(max_length=64, unique=True, editable=False)
+    public_id = models.CharField(max_length=71, unique=True, editable=False)
 
     class Meta:
         ordering = ["-created_at"]
@@ -89,9 +90,24 @@ class Submission(FrozenRecord):
     def read_url(self):
         from django.urls import reverse
 
-        if self.paper.public_id:
-            return reverse("read_version", args=[self.paper.public_id, self.pk])
-        return reverse("read_submission", args=[self.pk])
+        return reverse("read_snapshot", args=[self.public_id])
+
+    def get_absolute_url(self):
+        from django.urls import reverse
+
+        return reverse("snapshot", args=[self.public_id])
+
+    @property
+    def download_url(self):
+        from django.urls import reverse
+
+        return reverse("snapshot_download", args=[self.public_id])
+
+    @property
+    def manifest_url(self):
+        from django.urls import reverse
+
+        return reverse("snapshot_manifest", args=[self.public_id])
 
     @property
     def licensing(self):
@@ -192,6 +208,9 @@ class Submission(FrozenRecord):
             elif self.chapters or self.bibliography:
                 raise ValidationError("Chapters require manifest version 4.")
             self.hash = self.calculate_hash()
+            from .identifiers import save_snapshot
+
+            return save_snapshot(self, super().save, *args, **kwargs)
         return super().save(*args, **kwargs)
 
     @property

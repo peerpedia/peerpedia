@@ -56,11 +56,28 @@ class ClientSafetyTests(SimpleTestCase):
     def test_paper_url_stays_on_selected_server(self):
         with self.assertRaises(client.ClientError):
             client.paper_reference(
-                "https://other.example/papers/2610.123456789abc/", "https://peerpedia.dev"
+                "https://other.example/papers/261025.123456789abc/", "https://peerpedia.dev"
             )
-        for value in ["2613.123456789abc", "../../private", "2610.short"]:
+        for value in ["261332.123456789abc", "../../private", "2610.short"]:
             with self.assertRaises(client.ClientError):
                 client.paper_reference(value, "https://peerpedia.dev")
+
+    def test_dated_snapshot_url_parser(self):
+        code = "261103.123456789abc"
+        for value in [
+            code,
+            f"https://peerpedia.dev/submissions/{code}/",
+            f"https://peerpedia.dev/submissions/{code}/read/",
+        ]:
+            self.assertEqual(client.snapshot_reference(value, "https://peerpedia.dev"), code)
+        for value in [
+            "260230.123456789abc",
+            "2611.123456789abc",
+            f"https://elsewhere.example/submissions/{code}/",
+            f"https://peerpedia.dev/papers/{code}/",
+        ]:
+            with self.assertRaises(client.ClientError):
+                client.snapshot_reference(value, "https://peerpedia.dev")
 
     def test_manifest_tampering_is_detected(self):
         record = {
@@ -228,6 +245,25 @@ class CLIJourneys(StaticLiveServerTestCase):
             "snapshot", first["submission_id"], "--server", self.live_server_url
         )
         self.assertEqual(snapshot["hash"], first["hash"])
+        dated = self.command(
+            "snapshot", snapshot["snapshot_identifier"], "--server", self.live_server_url
+        )
+        self.assertEqual(dated["hash"], first["hash"])
+        dated_feedback = self.command(
+            "feedback",
+            "--submission",
+            dated["snapshot_identifier"],
+            "--server",
+            self.live_server_url,
+        )
+        self.assertEqual(dated_feedback["paper_id"], dated["manifest"]["paper_id"])
+        linked = self.command(
+            "snapshot",
+            self.live_server_url + snapshot["read_url"],
+            "--server",
+            self.live_server_url,
+        )
+        self.assertEqual(linked["manifest"], snapshot["manifest"])
         self.assertEqual(snapshot["markdown"].encode(), saved_markdown)
         self.assertEqual((work / "paper.md").read_bytes(), saved_markdown)
         pr = self.command("pr", pr_id, folder=work)

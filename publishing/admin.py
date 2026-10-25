@@ -91,7 +91,7 @@ class CommentAdmin(ModeratedAdmin):
 
 @admin.register(Submission)
 class SubmissionAdmin(ImmutableAdmin):
-    list_display = ("title", "short_hash", "contributor_name", "created_at")
+    list_display = ("title", "public_id", "contributor_name", "created_at")
     search_fields = ("title", "authors", "hash", "contributor_name")
     ordering = ("-created_at",)
 

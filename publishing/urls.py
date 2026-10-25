@@ -4,6 +4,18 @@ from . import views, drafts, discussions, notifications
 from . import licensing, diagrams, reading
 
 urlpatterns = [
+    path("submissions/<paper_code:public_id>/", views.snapshot_detail, name="snapshot"),
+    path("submissions/<paper_code:public_id>/read/", views.snapshot_read, name="read_snapshot"),
+    path(
+        "submissions/<paper_code:public_id>/download/",
+        views.snapshot_download,
+        name="snapshot_download",
+    ),
+    path(
+        "submissions/<paper_code:public_id>/manifest/",
+        views.snapshot_manifest,
+        name="snapshot_manifest",
+    ),
     path("papers/<paper_code:public_id>/", views.paper_permalink, name="paper_permalink"),
     path("papers/<paper_code:public_id>/read/", views.read_permalink, name="read_paper_permalink"),
     path(

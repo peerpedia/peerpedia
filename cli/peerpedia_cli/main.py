@@ -212,6 +212,19 @@ def verify(record):
                 != manifest["bibliography_sha256"]
             ):
                 raise ValueError()
+        if record.get("snapshot_identifier"):
+            from datetime import datetime, timezone
+
+            label = record["snapshot_identifier"]
+            date, prefix = label.split(".")
+            submitted = datetime.fromisoformat(manifest["submitted_at"])
+            if (
+                submitted.tzinfo is None
+                or date != submitted.astimezone(timezone.utc).strftime("%y%m%d")
+                or not 12 <= len(prefix) <= 64
+                or not record["hash"].startswith(prefix)
+            ):
+                raise ValueError()
         uuid.UUID(manifest["paper_id"])
         uuid.UUID(manifest["submission_id"])
         source = record["markdown"].encode("utf-8")
@@ -461,24 +474,37 @@ def login(args):
     return {"server": server, **identity}
 
 
-def paper_reference(value, server):
-    """Accept a public number, UUID, or paper URL on the selected server."""
+def public_reference(value, server, kind):
+    """Accept a dated label, internal UUID, or URL on the selected server."""
     import re
+    from datetime import datetime
 
     if "://" in value:
         parts = urlsplit(value)
         if origin(f"{parts.scheme}://{parts.netloc}") != server:
-            raise ClientError("wrong_server", "The paper URL must use the selected server.")
-        match = re.fullmatch(r"/papers/([^/]+)/(?:read/)?", parts.path)
+            raise ClientError("wrong_server", "The URL must use the selected server.")
+        match = re.fullmatch(r"/" + kind + r"/([^/]+)/(?:read/)?", parts.path)
         if not match:
-            raise ClientError("invalid_paper", "Use a paper details or current reader URL.")
+            raise ClientError("invalid_reference", "Use a details or reader URL for this command.")
         value = match[1]
-    if re.fullmatch(r"[0-9]{2}(?:0[1-9]|1[0-2])\.[0-9a-f]{12,64}", value):
-        return value
+    if re.fullmatch(r"[0-9]{6}\.[0-9a-f]{12,64}", value):
+        try:
+            datetime(2000 + int(value[:2]), int(value[2:4]), int(value[4:6]))
+            return value
+        except ValueError:
+            pass
     try:
         return str(uuid.UUID(value))
     except ValueError:
-        raise ClientError("invalid_paper", "Use a paper number, UUID, or paper URL.")
+        raise ClientError("invalid_reference", "Use a YYMMDD.hash label, UUID, or URL.")
+
+
+def paper_reference(value, server):
+    return public_reference(value, server, "papers")
+
+
+def snapshot_reference(value, server):
+    return public_reference(value, server, "submissions")
 
 
 def resolve_paper(server, reference):
@@ -492,6 +518,17 @@ def resolve_paper(server, reference):
         expected = result.get("paper_id")
     if record["manifest"]["paper_id"] != expected:
         raise ClientError("wrong_paper", "Remote returned a different paper.")
+    return record
+
+
+def resolve_snapshot(server, reference):
+    target = snapshot_reference(reference, server)
+    record = verify(request(server, f"/api/v1/submissions/{target}/"))
+    actual = (
+        record.get("snapshot_identifier") if "." in target else record["manifest"]["submission_id"]
+    )
+    if actual != target:
+        raise ClientError("wrong_snapshot", "Remote returned a different snapshot.")
     return record
 
 
@@ -672,7 +709,8 @@ def push(root, state, args):
         "submission_id": record["manifest"]["submission_id"],
         "hash": record["hash"],
         "status": record["status"],
-        "url": state["server"] + f"/submissions/{record['manifest']['submission_id']}/",
+        "url": state["server"] + record["url"],
+        "snapshot_identifier": record.get("snapshot_identifier"),
     }
 
 
@@ -716,6 +754,13 @@ def read_feedback(args):
 
     if args.command == "feedback":
         submission_id = getattr(args, "submission", None)
+        if submission_id:
+            target = snapshot_reference(submission_id, server)
+            submission_id = (
+                resolve_snapshot(server, target)["manifest"]["submission_id"]
+                if "." in target
+                else target
+            )
         path = (
             f"/api/v1/submissions/{uid(submission_id)}/feedback/"
             if submission_id
@@ -778,7 +823,7 @@ def run(args):
         )
         return request(server_for(args), "/api/v1/papers/?" + query)
     if args.command == "snapshot":
-        return verify(request(server_for(args), f"/api/v1/submissions/{uuid.UUID(args.target)}/"))
+        return resolve_snapshot(server_for(args), args.target)
     if args.command in READ_COMMANDS:
         return read_feedback(args)
     if args.command in {"categories", "licenses"}:

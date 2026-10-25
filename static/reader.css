@@ -142,3 +142,11 @@
 .reader-paper-number { display:block; margin:0 26px 12px; color:var(--reader-muted); font-size:12px; text-decoration:none; overflow-wrap:anywhere; }
 .reader-paper-number:hover { color:var(--reader-accent); text-decoration:underline; }
 @media(max-width:1049px) { .reader-paper-number { grid-column:1/-1; margin:0 18px 8px; } }
+
+.reader-snapshot { font:12px/1.5 system-ui,sans-serif; color:#59695f; margin:0 26px 12px; overflow-wrap:anywhere; }
+.reader-snapshot a,.reader-snapshot span,.reader-snapshot time { display:block; }
+.reader-snapshot a { color:inherit; }
+
+.reader-snapshot-heading { display:flex; align-items:center; gap:4px; }
+.reader-snapshot-heading a { min-width:0; flex:1; }
+@media(max-width:1049px) { .reader-snapshot { grid-column:1/-1; margin:0 18px 10px; } }

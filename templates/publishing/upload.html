@@ -6,7 +6,7 @@
 <div class="eyebrow">01 UPLOAD <span class="muted">/ 02 PREVIEW / 03 PUBLISH</span></div>
 <h1>{% if paper %}Submit a change{% else %}Upload a paper{% endif %}</h1>
 <p class="lede">Upload a Markdown file, or <a href="{% if paper %}{% url 'edit_paper' paper.pk %}{% else %}{% url 'write' %}{% endif %}">write online with a live preview</a>.</p>
-{% if paper %}<div class="notice"><strong>{{ paper.current.title }}</strong><p>Your proposal must be based on the latest accepted version: <code>{{ paper.current.short_hash }}</code>.</p><a href="{% url 'download' paper.current_id %}">Download the latest Markdown →</a></div>{% else %}<p class="muted">You will be the corresponding author, with authority to accept proposed changes.</p>{% endif %}
+{% if paper %}<div class="notice"><strong>{{ paper.current.title }}</strong><p>Your proposal must be based on the latest accepted version: <code>{{ paper.current.public_id }}</code>.</p><a href="{{ paper.current.download_url }}">Download the latest Markdown →</a></div>{% else %}<p class="muted">You will be the corresponding author, with authority to accept proposed changes.</p>{% endif %}
 <form method="post" enctype="multipart/form-data" class="upload-form">{% csrf_token %}{% include 'includes/form.html' %}<p class="help">You can inspect everything before publishing. The online editor also supports private saved drafts.</p><button class="button">Preview {% if paper %}submission{% else %}paper{% endif %} →</button></form>
 </div>
 {% endblock %}

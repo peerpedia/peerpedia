@@ -221,7 +221,7 @@ class BrowserJourneys(StaticLiveServerTestCase):
         self.page.get_by_role("button", name="Publish paper", exact=True).click()
         expect(self.page.get_by_role("heading", name="Browser paper", exact=True)).to_be_visible()
         self.assertEqual(self.database_call(Paper.objects.count), 1)
-        short_hash = self.database_call(lambda: Paper.objects.get().current.short_hash)
+        short_hash = self.database_call(lambda: Paper.objects.get().current.public_id)
         metadata_url = self.page.url
         public_id = self.database_call(lambda: Paper.objects.get().public_id)
         self.assertTrue(metadata_url.endswith(f"/papers/{public_id}/"))
@@ -238,7 +238,7 @@ class BrowserJourneys(StaticLiveServerTestCase):
         self.page.go_back()
         expect(self.page.get_by_role("heading", name="Abstract", exact=True)).to_be_visible()
         self.page.get_by_role("link", name="History", exact=True).click()
-        expect(self.page.get_by_text(short_hash, exact=True)).to_be_visible()
+        expect(self.page.locator(".history-row code").filter(has_text=short_hash)).to_be_visible()
 
     def test_proposal_diff_conversation_acceptance_and_preserved_history(self):
         paper = self.fixture_paper()
@@ -575,7 +575,7 @@ class BrowserJourneys(StaticLiveServerTestCase):
         expect(entry).to_contain_text("Pending")
         expect(entry).to_contain_text("contributor")
         expect(entry.get_by_role("link", name=explanation, exact=True)).to_have_attribute(
-            "href", f"/submissions/{draft.submitted_id}/"
+            "href", draft.submitted.get_absolute_url()
         )
         entry.get_by_role("link", name=explanation, exact=True).click()
         expect(self.page.get_by_text(explanation, exact=True)).to_be_visible()
@@ -1170,6 +1170,64 @@ C \arrow[r, "k"'] & D
         ).to_be_visible()
         self.page.goto(self.live_server_url + "/privacy/")
         expect(self.page.get_by_role("heading", name="Privacy", exact=True)).to_be_visible()
+
+    def test_dated_snapshot_citation_remains_pinned_after_revision(self):
+        from publishing.services import decide
+        from publishing.tests import document
+
+        paper = self.fixture_paper()
+        first = paper.current
+        self.page.goto(self.live_server_url + paper.read_url)
+        expect(self.page.locator(".reader-snapshot")).to_contain_text(first.public_id)
+        expect(self.page.locator(".reader-snapshot")).to_contain_text("Latest accepted")
+        self.page.get_by_role("button", name="Copy reference to Browser paper", exact=True).click()
+        expect(self.page.locator("#reference-permalink")).to_have_value(
+            self.live_server_url + first.read_url
+        )
+        expect(self.page.locator("#reference-citation")).to_have_value(
+            re.compile(re.escape(first.public_id))
+        )
+        expect(self.page.locator("#reference-paper")).to_have_value(
+            self.live_server_url + paper.get_absolute_url()
+        )
+        folder = Path(os.environ["PEERPEDIA_BROWSER_ARTIFACTS"]) / "dated-labels"
+        folder.mkdir(parents=True, exist_ok=True)
+        self.page.screenshot(path=str(folder / "snapshot-citation.png"))
+        self.page.get_by_role("button", name="Close reference tools", exact=True).click()
+        revised = self.database_call(
+            lambda: propose(
+                self.contributor,
+                paper.pk,
+                first.pk,
+                document(title="Revised title", markdown="# Revised title\n\nImproved proof."),
+            )
+        )
+        self.page.goto(self.live_server_url + revised.read_url)
+        expect(self.page.locator(".reader-snapshot")).to_contain_text("Pending")
+        self.database_call(lambda: decide(self.owner, revised.pk, "accepted"))
+        self.page.goto(self.live_server_url + first.read_url)
+        expect(self.page.locator(".markdown-body")).to_contain_text("Original proof")
+        expect(self.page.locator(".reader-snapshot")).not_to_contain_text("Latest accepted")
+        self.page.goto(self.live_server_url + paper.read_url)
+        expect(self.page.locator(".markdown-body")).to_contain_text("Improved proof")
+        self.page.set_viewport_size({"width": 390, "height": 844})
+        self.assert_no_page_overflow()
+        self.page.screenshot(path=str(folder / "mobile-reader.png"), full_page=True)
+        self.page.set_viewport_size({"width": 1365, "height": 900})
+        self.login()
+        self.page.get_by_role("link", name="New note", exact=True).click()
+        self.page.get_by_role("button", name="Insert reference", exact=True).click()
+        self.page.locator("#link-query").fill("Revised title")
+        self.page.get_by_role("button", name="Search Peerpedia", exact=True).click()
+        expect(self.page.locator("#link-results")).to_contain_text(revised.public_id)
+        self.page.get_by_role("button", name="Cite frozen version", exact=True).click()
+        self.page.get_by_role("button", name="References.bib", exact=True).click()
+        expect(self.page.locator("#bib-source")).to_have_value(
+            re.compile(re.escape("Peerpedia snapshot " + revised.public_id))
+        )
+        expect(self.page.locator("#bib-source")).to_have_value(
+            re.compile(re.escape(revised.read_url))
+        )
 
     def test_chapter_editor_references_publication_and_progress(self):
         from publishing.test_chapters import course

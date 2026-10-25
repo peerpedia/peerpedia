@@ -6,7 +6,8 @@
   <div class="reference-copy-row"><input id="reference-permalink" readonly name="permalink"><button type="button" class="ui-icon-button" data-copy-field="permalink" aria-label="Copy link" title="Copy link">{% include "includes/ui_icon.html" with name="copy" %}</button></div>
   <label for="reference-markdown">Markdown link</label>
   <div class="reference-copy-row"><input id="reference-markdown" readonly name="markdown"><button type="button" class="ui-icon-button" data-copy-field="markdown" aria-label="Copy Markdown" title="Copy Markdown">{% include "includes/ui_icon.html" with name="copy" %}</button></div>
-  <label for="reference-internal">Within this paper</label>
-  <div class="reference-copy-row"><input id="reference-internal" readonly name="internal"><button type="button" class="ui-icon-button" data-copy-field="internal" aria-label="Copy reference" title="Copy reference">{% include "includes/ui_icon.html" with name="copy" %}</button></div>
+  <label id="reference-internal-label" for="reference-internal">Within this paper</label>
+  <div id="reference-internal-row" class="reference-copy-row"><input id="reference-internal" readonly name="internal"><button type="button" class="ui-icon-button" data-copy-field="internal" aria-label="Copy reference" title="Copy reference">{% include "includes/ui_icon.html" with name="copy" %}</button></div>
+  <div id="reference-citation-group" hidden><label for="reference-citation">Citation of this snapshot</label><div class="reference-copy-row"><input id="reference-citation" readonly name="citation"><button type="button" class="ui-icon-button" data-copy-field="citation" aria-label="Copy citation" title="Copy citation">{% include "includes/ui_icon.html" with name="copy" %}</button></div><label for="reference-paper">Paper link · latest accepted text</label><div class="reference-copy-row"><input id="reference-paper" readonly name="paper"><button type="button" class="ui-icon-button" data-copy-field="paper" aria-label="Copy paper link" title="Copy paper link">{% include "includes/ui_icon.html" with name="copy" %}</button></div></div>
   <p id="reference-copy-status" role="status" aria-live="polite"></p>
 </dialog>

@@ -112,6 +112,26 @@ def read_version(request, public_id, submission_id):
     return reader(request, submission)
 
 
+def snapshot_target(public_id):
+    return get_object_or_404(submission_queryset(), public_id=public_id)
+
+
+def snapshot_detail(request, public_id):
+    return submission_detail(request, snapshot_target(public_id).pk)
+
+
+def snapshot_read(request, public_id):
+    return reader(request, snapshot_target(public_id))
+
+
+def snapshot_download(request, public_id):
+    return download(request, snapshot_target(public_id).pk)
+
+
+def snapshot_manifest(request, public_id):
+    return manifest(request, snapshot_target(public_id).pk)
+
+
 def read_submission(request, submission_id):
     submission = get_object_or_404(submission_queryset(), pk=submission_id)
     return reader(request, submission)
@@ -174,7 +194,7 @@ def reader(request, submission):
         and request.user.is_active
         and request.user.email_verified,
         "login": reverse("login") + "?" + urlencode({"next": request.get_full_path()}),
-        "version": submission.short_hash,
+        "version": submission.public_id,
         "status": submission.status,
     }
     from .licensing import acceptance
@@ -194,6 +214,11 @@ def reader(request, submission):
         "publishing/reader.html",
         {
             "submission": submission,
+            "citation_config": {
+                "text": f"{submission.authors.replace(chr(10), ', ')}. {submission.title}. Peerpedia, snapshot {submission.public_id}.",
+                "url": request.build_absolute_uri(submission.read_url),
+                "paper_url": request.build_absolute_uri(submission.paper.get_absolute_url()),
+            },
             "body": mark_safe(body),
             "contents": contents,
             "discussion_config": config,
@@ -259,12 +284,12 @@ def download(request, submission_id):
             {"manifest": submission.manifest(), "hash": submission.hash},
         )
         response = HttpResponse(content, content_type="application/zip")
-        response["Content-Disposition"] = f'attachment; filename="{submission.short_hash}.zip"'
+        response["Content-Disposition"] = f'attachment; filename="{submission.public_id}.zip"'
         return response
     response = HttpResponse(
         submission.markdown.encode("utf-8"), content_type="text/markdown; charset=utf-8"
     )
-    response["Content-Disposition"] = f'attachment; filename="{submission.short_hash}.md"'
+    response["Content-Disposition"] = f'attachment; filename="{submission.public_id}.md"'
     response["X-Content-SHA256"] = submission.manifest()["markdown_sha256"]
     response["X-Submission-SHA256"] = submission.hash
     rights = submission.licensing
@@ -284,7 +309,7 @@ def manifest(request, submission_id):
         },
         json_dumps_params={"indent": 2, "ensure_ascii": False},
     )
-    response["Content-Disposition"] = f'attachment; filename="{submission.short_hash}.json"'
+    response["Content-Disposition"] = f'attachment; filename="{submission.public_id}.json"'
     return response
 
 
@@ -363,7 +388,7 @@ def confirm_upload(request, paper):
         )
     existing = Submission.objects.filter(pk=payload["data"]["id"], contributor=request.user).first()
     if existing:
-        return redirect("submission", submission_id=existing.pk)
+        return redirect(existing.get_absolute_url())
     consent = PublicationConsentForm(request.POST, paper=paper)
     if not consent.is_valid():
         data = payload["data"]
@@ -388,7 +413,7 @@ def confirm_upload(request, paper):
         if paper:
             submission = propose(request.user, paper.pk, payload["base"], payload["data"])
             messages.success(request, "Submission published. Its contents are now frozen.")
-            return redirect("submission", submission_id=submission.pk)
+            return redirect(submission.get_absolute_url())
         new_paper = publish(request.user, payload["data"])
     except ValidationError as error:
         return render(
@@ -402,7 +427,7 @@ def confirm_upload(request, paper):
             pk=payload["data"]["id"], contributor=request.user
         ).first()
         if existing:
-            return redirect("submission", submission_id=existing.pk)
+            return redirect(existing.get_absolute_url())
         raise
     messages.success(
         request, "Your paper is published. Future changes will create new submissions."
@@ -470,14 +495,14 @@ def pull_request_detail(request, pr_id):
 @verified_required
 @require_POST
 def decision(request, submission_id):
-    get_object_or_404(submission_queryset(), pk=submission_id)
+    submission = get_object_or_404(submission_queryset(), pk=submission_id)
     try:
         decide(request.user, submission_id, request.POST.get("action"))
     except ValidationError as error:
         messages.error(request, " ".join(error.messages))
     else:
         messages.success(request, "Decision recorded. The submitted document remains unchanged.")
-    return redirect("submission", submission_id=submission_id)
+    return redirect(submission.get_absolute_url())
 
 
 @verified_required
@@ -531,7 +556,7 @@ def comment(request, submission_id):
             "pr_comment",
             pr=pr,
         )
-        return redirect(reverse("submission", args=[submission.pk]) + "#conversation")
+        return redirect(submission.get_absolute_url() + "#conversation")
     return render(
         request,
         "publishing/comment_form.html",

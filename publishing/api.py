@@ -116,6 +116,7 @@ def snapshot(submission):
     pr = getattr(submission, "pr_commit", None)
     return {
         "paper_identifier": submission.paper.public_id,
+        "snapshot_identifier": submission.public_id,
         "paper_url": submission.paper.get_absolute_url(),
         "read_url": submission.read_url,
         "via_cli": submission.via_cli,
@@ -127,7 +128,7 @@ def snapshot(submission):
         "chapters": submission.chapters,
         "bibliography": submission.bibliography,
         "status": submission.status,
-        "url": reverse("submission", args=[submission.pk]),
+        "url": submission.get_absolute_url(),
         "licensing": submission.licensing,
     }
 
@@ -233,7 +234,7 @@ def paper_prs(request, paper_id):
                     "status": pr.head.status,
                     "explanation": pr.head.explanation,
                     "created_at": pr.created_at,
-                    "url": reverse("submission", args=[pr.head_id]),
+                    "url": pr.head.get_absolute_url(),
                 }
                 for pr in prs[:100]
             ],
@@ -258,8 +259,9 @@ def paper(request, paper_id=None, public_id=None):
 
 
 @endpoint()
-def submission(request, submission_id):
-    return JsonResponse(snapshot(get_object_or_404(submission_queryset(), pk=submission_id)))
+def submission(request, submission_id=None, public_id=None):
+    lookup = {"public_id": public_id} if public_id else {"pk": submission_id}
+    return JsonResponse(snapshot(get_object_or_404(submission_queryset(), **lookup)))
 
 
 @endpoint(method="POST", authenticated=True)
@@ -589,5 +591,6 @@ urlpatterns = [
     path("papers/<uuid:paper_id>/", paper),
     path("papers/<paper_code:public_id>/", paper),
     path("submissions/<uuid:submission_id>/", submission),
+    path("submissions/<paper_code:public_id>/", submission),
     path("push/", push),
 ]

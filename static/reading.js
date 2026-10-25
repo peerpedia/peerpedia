@@ -27,7 +27,20 @@
     dialog.querySelector("[name=permalink]").value = url;
     dialog.querySelector("[name=markdown]").value =
       `[${button.getAttribute("aria-label").replace("Copy reference to ", "")}](${url})`;
-    dialog.querySelector("[name=internal]").value = button.dataset.reference;
+    dialog.querySelector("[name=internal]").value =
+      button.dataset.reference || "";
+    document.getElementById("reference-internal-label").hidden =
+      !button.dataset.reference;
+    document.getElementById("reference-internal-row").hidden =
+      !button.dataset.reference;
+    const citationData = document.getElementById("citation-config");
+    const citation = citationData ? JSON.parse(citationData.textContent) : null;
+    document.getElementById("reference-citation-group").hidden = !citation;
+    if (citation) {
+      dialog.querySelector("[name=citation]").value =
+        `${citation.text} ${citation.url}`;
+      dialog.querySelector("[name=paper]").value = citation.paper_url;
+    }
     document.getElementById("reference-copy-status").textContent = "";
     dialog.showModal();
   });
