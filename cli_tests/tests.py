@@ -249,6 +249,14 @@ class CLIJourneys(StaticLiveServerTestCase):
             "snapshot", snapshot["snapshot_identifier"], "--server", self.live_server_url
         )
         self.assertEqual(dated["hash"], first["hash"])
+        dated_feedback = self.command(
+            "feedback",
+            "--submission",
+            dated["snapshot_identifier"],
+            "--server",
+            self.live_server_url,
+        )
+        self.assertEqual(dated_feedback["paper_id"], dated["manifest"]["paper_id"])
         linked = self.command(
             "snapshot",
             self.live_server_url + snapshot["read_url"],

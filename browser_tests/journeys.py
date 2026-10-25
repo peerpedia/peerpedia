@@ -1213,6 +1213,21 @@ C \arrow[r, "k"'] & D
         self.page.set_viewport_size({"width": 390, "height": 844})
         self.assert_no_page_overflow()
         self.page.screenshot(path=str(folder / "mobile-reader.png"), full_page=True)
+        self.page.set_viewport_size({"width": 1365, "height": 900})
+        self.login()
+        self.page.get_by_role("link", name="New note", exact=True).click()
+        self.page.get_by_role("button", name="Insert reference", exact=True).click()
+        self.page.locator("#link-query").fill("Revised title")
+        self.page.get_by_role("button", name="Search Peerpedia", exact=True).click()
+        expect(self.page.locator("#link-results")).to_contain_text(revised.public_id)
+        self.page.get_by_role("button", name="Cite frozen version", exact=True).click()
+        self.page.get_by_role("button", name="References.bib", exact=True).click()
+        expect(self.page.locator("#bib-source")).to_have_value(
+            re.compile(re.escape("Peerpedia snapshot " + revised.public_id))
+        )
+        expect(self.page.locator("#bib-source")).to_have_value(
+            re.compile(re.escape(revised.read_url))
+        )
 
     def test_chapter_editor_references_publication_and_progress(self):
         from publishing.test_chapters import course

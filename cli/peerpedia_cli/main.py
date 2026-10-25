@@ -521,6 +521,17 @@ def resolve_paper(server, reference):
     return record
 
 
+def resolve_snapshot(server, reference):
+    target = snapshot_reference(reference, server)
+    record = verify(request(server, f"/api/v1/submissions/{target}/"))
+    actual = (
+        record.get("snapshot_identifier") if "." in target else record["manifest"]["submission_id"]
+    )
+    if actual != target:
+        raise ClientError("wrong_snapshot", "Remote returned a different snapshot.")
+    return record
+
+
 def initialize(args):
     server = server_for(args)
     record = None
@@ -743,6 +754,13 @@ def read_feedback(args):
 
     if args.command == "feedback":
         submission_id = getattr(args, "submission", None)
+        if submission_id:
+            target = snapshot_reference(submission_id, server)
+            submission_id = (
+                resolve_snapshot(server, target)["manifest"]["submission_id"]
+                if "." in target
+                else target
+            )
         path = (
             f"/api/v1/submissions/{uid(submission_id)}/feedback/"
             if submission_id
@@ -805,17 +823,7 @@ def run(args):
         )
         return request(server_for(args), "/api/v1/papers/?" + query)
     if args.command == "snapshot":
-        server = server_for(args)
-        target = snapshot_reference(args.target, server)
-        record = verify(request(server, f"/api/v1/submissions/{target}/"))
-        actual = (
-            record.get("snapshot_identifier")
-            if "." in target
-            else record["manifest"]["submission_id"]
-        )
-        if actual != target:
-            raise ClientError("wrong_snapshot", "Remote returned a different snapshot.")
-        return record
+        return resolve_snapshot(server_for(args), args.target)
     if args.command in READ_COMMANDS:
         return read_feedback(args)
     if args.command in {"categories", "licenses"}:

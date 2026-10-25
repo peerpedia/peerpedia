@@ -100,7 +100,7 @@ def reference_search(request):
                 "snapshot_identifier": s.public_id,
                 "title": s.title,
                 "authors": s.authors,
-                "year": paper.created_at.year,
+                "year": s.created_at.year,
                 "url": request.build_absolute_uri(s.read_url),
                 "hash": s.hash,
             }
