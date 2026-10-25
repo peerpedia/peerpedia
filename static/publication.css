@@ -23,3 +23,8 @@
 #source-pane { display:flex; flex-direction:column; }
 #source-editor { flex:1; min-height:0; height:auto; }
 .source-error { flex-shrink:0; margin:0; }
+.editor-page .editor-controls .editor-discard { color:#a32d2d; }
+@media(max-width:760px) {
+  .editor-page .editor-controls { flex-wrap:wrap; }
+  .publication-checklist button:not(.needs-attention) { display:none; }
+}

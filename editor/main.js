@@ -184,15 +184,7 @@ async function post(url, body, options = {}) {
   }
   if (!response.ok) {
     if (response.status === 409 && result.draft) showConflict(result.draft);
-    if (result.fields) guide?.serverErrors(result.fields);
-    const fields = result.fields
-      ? Object.entries(result.fields)
-          .map(
-            ([key, errors]) =>
-              `${key}: ${errors.map((e) => e.message).join(" ")}`,
-          )
-          .join(" ")
-      : "";
+    const fields = result.fields ? guide?.serverErrors(result.fields) : "";
     throw new Error(
       fields || result.error || "The request could not be completed.",
     );
@@ -452,12 +444,10 @@ $("discard-draft").addEventListener("click", async () => {
       throw new Error(
         "Sign in again before discarding this draft. Your text is preserved.",
       );
-    const result = await response
-      .json()
-      .catch(() => ({
-        error:
-          "Could not discard the draft. Reload the page and try again. Your text is preserved.",
-      }));
+    const result = await response.json().catch(() => ({
+      error:
+        "Could not discard the draft. Reload the page and try again. Your text is preserved.",
+    }));
     if (!response.ok || !result.url)
       throw new Error(
         result.error ||

@@ -162,12 +162,17 @@ export function publicationGuide({ initial, data, details, focusSource }) {
           field: field === "file" ? "markdown" : field,
           label:
             rules.find((r) => r.field === field)?.label ||
-            field.replaceAll("_", " "),
+            (field === "secondary_categories"
+              ? "Cross-list subjects"
+              : "Paper details"),
           message: e.message,
         })),
       );
       attempted = true;
       refresh();
+      return serverIssues
+        .map((issue) => `${issue.label} — ${issue.message}`)
+        .join(" ");
     },
   };
 }
