@@ -24,7 +24,8 @@ class SecurityTests(TestCase):
         self.client.force_login(self.user)
         self.client.post(self.url, {"action": "start", "password": PASSWORD})
         device = TOTPDevice.objects.get(user=self.user, confirmed=False)
-        response = self.client.post(self.url, {"action": "confirm", "code": self.code(device)})
+        self.enrollment_code = self.code(device)
+        response = self.client.post(self.url, {"action": "confirm", "code": self.enrollment_code})
         self.assertEqual(response.status_code, 200)
         device.refresh_from_db()
         self.assertTrue(device.confirmed)
@@ -59,7 +60,8 @@ class SecurityTests(TestCase):
         device, _ = self.enroll()
         self.client.logout()
         self.client.force_login(self.user)
-        response = self.client.post(self.url, {"action": "verify", "code": self.code(device)})
+        # Replay the exact accepted code, even if the real clock changed steps.
+        response = self.client.post(self.url, {"action": "verify", "code": self.enrollment_code})
         self.assertContains(response, "Invalid or recently used code")
         self.assertNotIn("otp_device_id", self.client.session)
         # Next time step, without real waiting or resetting the replay counter.
