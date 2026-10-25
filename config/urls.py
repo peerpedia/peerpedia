@@ -1,9 +1,6 @@
 from django.contrib import admin
-from django.urls import include, path, register_converter
+from django.urls import include, path
 from accounts.security import limited
-from publishing.identifiers import PaperCodeConverter
-
-register_converter(PaperCodeConverter, "paper_code")
 
 admin.site.login = limited("admin_login", limit=10, seconds=900, account_field="username")(
     admin.site.login
