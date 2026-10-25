@@ -383,8 +383,12 @@ class BrowserJourneys(StaticLiveServerTestCase):
         # Hints are not draft content; an untouched draft cannot publish.
         self.assertEqual(self.database_call(lambda: Draft.objects.get().markdown), "")
         self.page.get_by_role("button", name="Review & publish", exact=True).click()
+        expect(self.page.get_by_role("dialog")).to_be_visible()
+        self.page.get_by_role("dialog").get_by_role("button", name=re.compile("^Title")).click()
         expect(self.page.get_by_label("Title:", exact=True)).to_be_focused()
-        expect(self.page.locator("#editor-alert")).to_contain_text("Your draft is saved")
+        expect(self.page.get_by_label("Title:", exact=True)).to_have_attribute(
+            "aria-invalid", "true"
+        )
         self.page.set_viewport_size({"width": 390, "height": 844})
         self.assert_no_page_overflow()
         self.page.get_by_label("Title:", exact=True).fill("A note written online")
@@ -394,7 +398,10 @@ class BrowserJourneys(StaticLiveServerTestCase):
         expect(self.page.get_by_label("What changed?", exact=True)).to_have_count(0)
         self.page.get_by_role("button", name="Done", exact=True).click()
         self.page.get_by_role("button", name="Review & publish", exact=True).click()
-        expect(self.page.locator("#editor-alert")).to_contain_text("Write your note")
+        expect(self.page.get_by_role("dialog")).to_contain_text("Write your note")
+        self.page.get_by_role("dialog").get_by_role(
+            "button", name=re.compile("^Paper text")
+        ).click()
         source.fill(SOURCE)
         expect(self.page.locator("#save-status")).to_have_text("Saved")
         self.assert_no_page_overflow()
@@ -409,6 +416,11 @@ class BrowserJourneys(StaticLiveServerTestCase):
             self.page.get_by_role("heading", name="Review your paper", exact=True)
         ).to_be_visible()
         self.assertEqual(self.database_call(Paper.objects.count), 0)
+        self.page.get_by_role("button", name="Publish initial submission", exact=True).click()
+        expect(self.page.get_by_role("dialog")).to_contain_text("Choose the license")
+        self.page.get_by_role("dialog").get_by_role(
+            "button", name=re.compile("^Content license")
+        ).click()
         self.page.get_by_label("Content license:", exact=True).select_option("CC-BY-4.0")
         self.page.get_by_label("I have authority to submit", exact=False).check()
         self.page.get_by_role("button", name="Publish initial submission", exact=True).click()
@@ -420,6 +432,46 @@ class BrowserJourneys(StaticLiveServerTestCase):
         self.assertEqual(paper.current.explanation, "Initial publication.")
         self.assertEqual(paper.current.license_code, "CC-BY-4.0")
         self.assertEqual(paper.current.hash, paper.current.calculate_hash())
+
+    def test_publication_checklist_errors_and_visible_discard(self):
+        paper = self.fixture_paper()
+        self.login()
+        self.page.goto(self.live_server_url + f"/papers/{paper.pk}/edit/")
+        expect(self.page.get_by_role("button", name="Discard draft", exact=True)).to_be_visible()
+        expect(self.page.locator("#publication-checklist")).to_contain_text("What changed?")
+        self.page.get_by_role("button", name="Review & submit PR", exact=True).click()
+        popup = self.page.get_by_role("dialog")
+        expect(popup).to_contain_text("Describe your changes and why they help")
+        folder = Path(os.environ["PEERPEDIA_BROWSER_ARTIFACTS"]) / "publication-guidance"
+        folder.mkdir(parents=True, exist_ok=True)
+        self.page.screenshot(path=str(folder / "missing-description.png"))
+        popup.get_by_role("button", name=re.compile("^What changed")).click()
+        field = self.page.get_by_label("What changed?", exact=True)
+        expect(field).to_be_focused()
+        expect(field).to_have_attribute("aria-invalid", "true")
+        field.fill("Correct the proof and explain its assumptions.")
+        expect(field).not_to_have_attribute("aria-invalid", "true")
+        expect(self.page.locator("#publication-status")).to_have_text("Ready to review")
+        # Wrong combinations must get the same field guidance as missing values.
+        self.page.locator(".optional-subjects > summary").click()
+        self.page.locator('input[name="secondary_categories"][value="math.NT"]').check()
+        self.page.get_by_role("button", name="Review & submit PR", exact=True).click()
+        expect(popup).to_contain_text("Choose each subject only once")
+        self.page.keyboard.press("Escape")
+        self.page.locator('input[name="secondary_categories"][value="math.NT"]').uncheck()
+        self.page.get_by_role("button", name="Done", exact=True).click()
+        self.page.set_viewport_size({"width": 390, "height": 844})
+        expect(self.page.get_by_role("button", name="Discard draft", exact=True)).to_be_visible()
+        self.assert_no_page_overflow()
+        self.page.screenshot(path=str(folder / "mobile-editor.png"))
+        self.page.once("dialog", lambda prompt: prompt.accept())
+        self.page.get_by_role("button", name="Discard draft", exact=True).click()
+        expect(self.page.get_by_role("heading", name="My drafts", exact=True)).to_be_visible()
+        self.assertEqual(self.database_call(Draft.objects.count), 0)
+        self.assertEqual(
+            self.database_call(lambda: Paper.objects.get(pk=paper.pk).current.hash),
+            paper.current.hash,
+        )
 
     def test_editor_autosave_preview_reload_and_submission(self):
         paper = self.fixture_paper()
