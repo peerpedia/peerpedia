@@ -197,7 +197,8 @@ class SectionTests(TestCase):
             + "?"
             + urlencode({"scope": "section-a", "version": old})
         )
-        self.assertEqual(response.url, reverse("read_paper", args=[self.paper.pk]))
+        self.paper.refresh_from_db()
+        self.assertEqual(response.url, self.paper.current.read_url)
         self.assertFalse(Draft.objects.exists())
 
     def test_structure_escape_and_ambiguous_targets_require_review(self):
