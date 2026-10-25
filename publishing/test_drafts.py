@@ -251,6 +251,52 @@ class DraftTests(TestCase):
         draft.refresh_from_db()
         self.assertEqual(draft.submitted.base_id, update.pk)
 
+    def test_missing_revision_description_has_actionable_editor_errors(self):
+        draft = self.begin()
+        response = self.client.post(
+            reverse("draft_review", args=[draft.pk]), {"revision": draft.revision}, follow=True
+        )
+        issues = response.context["initial"]["publication_issues"]
+        issue = next(item for item in issues if item["field"] == "explanation")
+        self.assertEqual(issue["label"], "What changed?")
+        self.assertIn("For example", issue["message"])
+        self.assertContains(response, "publication-problems")
+        draft.refresh_from_db()
+        self.assertIsNone(draft.submitted_id)
+
+    def test_failed_confirmation_keeps_license_choice_on_review_page(self):
+        draft = self.prepared(paper=False)
+        token = self.reviewed(draft)
+        response = self.client.post(
+            reverse("draft_submit", args=[draft.pk]), {"token": token, "license": "CC0-1.0"}
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertTemplateUsed(response, "publishing/draft_review.html")
+        self.assertEqual(response.context["consent_form"]["license"].value(), "CC0-1.0")
+        self.assertIn("rights_confirmed", response.context["consent_form"].errors)
+        draft.refresh_from_db()
+        self.assertIsNone(draft.submitted_id)
+
+    def test_discard_json_preserves_newer_draft_and_accepts_current_revision(self):
+        draft = self.begin()
+        self.save(draft, markdown="Private changes")
+        response = self.client.post(
+            reverse("draft_discard", args=[draft.pk]),
+            {"revision": 1},
+            HTTP_ACCEPT="application/json",
+        )
+        self.assertEqual(response.status_code, 409)
+        self.assertTrue(Draft.objects.filter(pk=draft.pk).exists())
+        draft.refresh_from_db()
+        response = self.client.post(
+            reverse("draft_discard", args=[draft.pk]),
+            {"revision": draft.revision},
+            HTTP_ACCEPT="application/json",
+        )
+        self.assertEqual(response.json()["url"], reverse("drafts"))
+        self.assertFalse(Draft.objects.filter(pk=draft.pk).exists())
+        self.assertTrue(Submission.objects.filter(pk=self.paper.current_id).exists())
+
     def test_old_rebase_and_discard_cannot_overwrite_newer_save(self):
         draft = self.begin()
         self.save(draft, markdown="Keep this")

@@ -1,3 +1,4 @@
+import { publicationGuide } from "./publication.js";
 import { chapterWorkspace } from "./chapters.js";
 import { EditorView, placeholder } from "@codemirror/view";
 import { EditorState } from "@codemirror/state";
@@ -13,6 +14,7 @@ const previewPane = $("preview-pane");
 const preview = $("draft-preview");
 const mobile = matchMedia("(max-width:760px)");
 let revision = initial.revision;
+let guide;
 let saved,
   saving,
   saveTimer,
@@ -110,6 +112,15 @@ function serial(value = data()) {
   return JSON.stringify(value);
 }
 saved = serial();
+guide = publicationGuide({
+  initial,
+  data,
+  details,
+  focusSource() {
+    if (workspace.dataset.layout === "preview") setLayout("source");
+    view.focus();
+  },
+});
 function status(text) {
   $("save-status").textContent = text;
 }
@@ -135,6 +146,7 @@ function clearBackup() {
   } catch (_) {}
 }
 function changed() {
+  guide?.refresh();
   $("draft-title").textContent =
     details.elements.title?.value || initial.data.title || "Untitled paper";
   status("Unsaved changes");
@@ -172,14 +184,7 @@ async function post(url, body, options = {}) {
   }
   if (!response.ok) {
     if (response.status === 409 && result.draft) showConflict(result.draft);
-    const fields = result.fields
-      ? Object.entries(result.fields)
-          .map(
-            ([key, errors]) =>
-              `${key}: ${errors.map((e) => e.message).join(" ")}`,
-          )
-          .join(" ")
-      : "";
+    const fields = result.fields ? guide?.serverErrors(result.fields) : "";
     throw new Error(
       fields || result.error || "The request could not be completed.",
     );
@@ -263,6 +268,7 @@ function replaceCopy(contents) {
     el.checked = (contents.data.secondary_categories || []).includes(el.value);
   });
   $("draft-title").textContent = contents.data.title || "Untitled paper";
+  guide?.refresh();
   updatePreview();
 }
 $("use-server").addEventListener("click", () => {
@@ -354,29 +360,15 @@ $("review-form").addEventListener("submit", async (event) => {
   try {
     await save();
     if (serial() !== saved) await save();
-    if (!initial.base) {
-      const missing = ["title", "authors", "abstract", "primary_category"].find(
-        (name) => !details.elements[name].value.trim(),
-      );
-      if (missing) {
-        $("paper-details").open = true;
-        details.elements[missing].focus();
-        throw new Error(
-          "Add your title, authors, abstract, and primary subject in Paper details before reviewing. Your draft is saved.",
-        );
-      }
-      if (!view.state.doc.toString().trim()) {
-        $("paper-details").open = false;
-        view.focus();
-        throw new Error(
-          "Write your note or import a Markdown file before reviewing. Your details are saved.",
-        );
-      }
+    if (guide.showProblems()) {
+      $("review-button").disabled = false;
+      return;
     }
     leaving = true;
     $("review-form").submit();
   } catch (error) {
     warn(error.message);
+    guide.showProblems();
     $("review-button").disabled = false;
   }
 });
@@ -437,14 +429,33 @@ $("discard-draft").addEventListener("click", async () => {
     return;
   clearTimeout(saveTimer);
   try {
-    if (saving) await saving;
+    if (saving) await saving.catch(() => {});
     if (resolving)
       throw new Error(
         "Resolve the saved-copy conflict before discarding this draft.",
       );
+    const response = await fetch($("discard-form").action, {
+      method: "POST",
+      credentials: "same-origin",
+      headers: { Accept: "application/json" },
+      body: new FormData($("discard-form")),
+    });
+    if (response.redirected)
+      throw new Error(
+        "Sign in again before discarding this draft. Your text is preserved.",
+      );
+    const result = await response.json().catch(() => ({
+      error:
+        "Could not discard the draft. Reload the page and try again. Your text is preserved.",
+    }));
+    if (!response.ok || !result.url)
+      throw new Error(
+        result.error ||
+          "The draft could not be discarded. Your text is preserved.",
+      );
     leaving = true;
     clearBackup();
-    $("discard-form").submit();
+    location.assign(result.url);
   } catch (error) {
     warn(error.message);
   }

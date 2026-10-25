@@ -22,7 +22,7 @@ from .licensing import PublicationConsentForm, agreement_required
 from .rendering import has_images
 from .services import publish, propose
 from .subjects import METADATA_FIELDS
-from . import sections, documents
+from . import sections, documents, publication
 from .comparisons import diff_lines, metadata_diff
 
 
@@ -33,7 +33,13 @@ class DraftForm(UploadForm):
         super().__init__(*args, initial_publication=True, **kwargs)
         del self.fields["file"]
         del self.fields["base"]
-        self.fields["explanation"].widget = forms.Textarea(attrs={"rows": 3})
+        self.fields["explanation"].widget = forms.Textarea(
+            attrs={
+                "rows": 3,
+                "placeholder": "Correct the sign in Equation 2 and explain the assumption used in its proof.",
+            }
+        )
+        self.fields["explanation"].help_text = publication.CHANGE[2]
         for field in self.fields.values():
             field.required = False
 
@@ -259,6 +265,27 @@ def editor(request, draft_id):
     if draft.submitted_id:
         return redirect("submission", submission_id=draft.submitted_id)
     initial = state(draft)
+    is_revision = bool(
+        draft.paper_id or getattr(getattr(draft, "workingcopy", None), "mirror_id", None)
+    )
+    initial["publication_requirements"] = publication.requirements(is_revision)
+    initial["publication_issues"] = []
+    if request.GET.get("check") == "1":
+        try:
+            check = publication.form(
+                draft.data,
+                full_markdown(draft),
+                is_revision=is_revision,
+                base=draft.base_id
+                or getattr(getattr(draft, "workingcopy", None), "base", {})
+                .get("manifest", {})
+                .get("submission_id"),
+            )
+            initial["publication_issues"] = publication.issues(check)
+        except ValidationError as error:
+            initial["publication_issues"] = [
+                {"field": "markdown", "label": "Paper text", "message": " ".join(error.messages)}
+            ]
     initial.update(
         save_url=reverse("draft_save", args=[draft.pk]),
         preview_url=reverse("draft_preview", args=[draft.pk]),
@@ -649,13 +676,13 @@ def refresh_section(draft):
 @require_POST
 @limited("draft_submit", limit=40, seconds=3600)
 @agreement_required
-def review(request, draft_id):
+def review(request, draft_id, *, consent_form=None):
     try:
         with transaction.atomic():
             draft = owned(request, draft_id, lock=True)
             if draft.submitted_id:
                 return redirect("submission", submission_id=draft.submitted_id)
-            if request.POST.get("revision") != str(draft.revision):
+            if consent_form is None and request.POST.get("revision") != str(draft.revision):
                 raise ValidationError(
                     "Your draft changed. Review the latest saved copy before submitting."
                 )
@@ -667,9 +694,10 @@ def review(request, draft_id):
                 initial_publication=not draft.paper_id,
             )
             if not form.is_valid():
-                raise ValidationError(
-                    " ".join(f"{key}: {', '.join(errors)}" for key, errors in form.errors.items())
+                messages.error(
+                    request, "Your draft is saved. Complete the highlighted items before reviewing."
                 )
+                return redirect(reverse("editor", args=[draft.pk]) + "?check=1")
             if draft.paper_id and draft.base_id != draft.paper.current_id:
                 raise ValidationError("Update to the latest accepted version before submitting.")
             documents.validate(full_chapters(draft), draft.bibliography)
@@ -698,7 +726,9 @@ def review(request, draft_id):
                     ),
                     "metadata_changes": metadata_diff(draft.base, draft.data),
                     "subjects": form.cleaned_data,
-                    "consent_form": PublicationConsentForm(paper=draft.paper),
+                    "consent_form": consent_form
+                    if consent_form is not None
+                    else PublicationConsentForm(paper=draft.paper),
                 },
             )
     except ValidationError as error:
@@ -733,14 +763,14 @@ def submit(request, draft_id):
                 initial_publication=not draft.paper_id,
             )
             if not form.is_valid():
-                raise ValidationError(
-                    "The draft is not ready for submission. Review its contents and details."
+                messages.error(
+                    request,
+                    "Your draft is saved. Complete the highlighted items before submitting.",
                 )
+                return redirect(reverse("editor", args=[draft.pk]) + "?check=1")
             consent = PublicationConsentForm(request.POST, paper=draft.paper)
             if not consent.is_valid():
-                raise ValidationError(
-                    "Choose a license for a new paper and confirm your authority to submit. Your draft is preserved."
-                )
+                return review(request, draft.pk, consent_form=consent)
             data = form.submission_data()
             data.update(chapters=full_chapters(draft), bibliography=draft.bibliography)
             if not draft.paper_id:
@@ -790,10 +820,17 @@ def discard(request, draft_id):
     with transaction.atomic():
         draft = owned(request, draft_id, lock=True)
         if request.POST.get("revision") != str(draft.revision) or draft.submitted_id:
-            messages.error(request, "This draft changed. Open it again before discarding it.")
+            message = (
+                "This draft changed. Reload it before deciding whether to discard the latest copy."
+            )
+            if request.headers.get("Accept") == "application/json":
+                return JsonResponse({"error": message}, status=409)
+            messages.error(request, message)
             return redirect("editor", draft_id=draft.pk)
         draft.delete()
     messages.success(request, "Draft discarded. Published history is unchanged.")
+    if request.headers.get("Accept") == "application/json":
+        return JsonResponse({"url": reverse("drafts")})
     return redirect("drafts")
 
 
