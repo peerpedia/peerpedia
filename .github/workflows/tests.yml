@@ -1,4 +1,5 @@
 name: Tests
+run-name: ${{ github.event_name == 'schedule' && 'Daily security scan' || 'Tests' }}
 on:
   push:
   pull_request:
@@ -23,6 +24,7 @@ jobs:
           node-version: "22"
       - run: npm audit --prefix editor --audit-level=high
   quality:
+    if: github.event_name != 'schedule'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -56,6 +58,7 @@ jobs:
       - run: docker build --target diagram-renderer -t peerpedia-diagrams:test .
       - run: docker run --rm --network none --read-only --cap-drop ALL --security-opt no-new-privileges --memory 768m --memory-swap 768m --pids-limit 64 peerpedia-diagrams:test node --test diagram_renderer/test.mjs
   test:
+    if: github.event_name != 'schedule'
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -95,6 +98,7 @@ jobs:
       - run: python manage.py test --noinput
 
   browser:
+    if: github.event_name != 'schedule'
     runs-on: ubuntu-latest
     services:
       postgres:

@@ -520,7 +520,13 @@ editor/node_modules/.bin/prettier --check 'editor/*.js' 'editor/*.mjs' 'static/*
 python -m unittest discover -s scripts -p 'test_*_unit.py'
 ```
 
-CI has three required jobs: `test`, `browser`, and `quality`. The hosted repository's
+Full CI runs `test`, `browser`, `quality`, and `security` on pushes, pull requests,
+and manual runs. The daily scheduled run checks Python and npm dependency security
+only, and appears in GitHub Actions as **Daily security scan**. It does not push
+commits or deploy the website. Deployment still requires all four jobs to pass
+on the exact main commit.
+
+The hosted repository's
 `main` branch requires a pull request, up-to-date passing checks, and resolved
 conversations, including for administrators. Force pushes and branch deletion are
 blocked. Forks must configure their own equivalent branch protection.
