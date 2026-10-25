@@ -128,6 +128,9 @@ class LicensingTests(TestCase):
         Decision.objects.create(submission=record, actor=owner, action="accepted")
         paper.current = record
         paper.save()
+        from .identifiers import assign
+
+        assign(paper, record, record.decision.created_at)
         return paper
 
     def declare(self, confirm=True):
