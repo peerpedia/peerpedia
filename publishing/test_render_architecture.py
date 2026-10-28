@@ -81,6 +81,43 @@ class ReadingCopyTests(TestCase):
         self.paper.current.refresh_from_db()
         self.assertEqual(self.paper.current.hash, original)
 
+    def legacy_snapshot(self):
+        from .models import Submission
+        from .tests import document
+
+        data = document(markdown="# Historical heading {#old}\n\nOld test syntax.")
+        data.pop("license", None)
+        return Submission.objects.create(
+            paper=self.paper, contributor=self.user, contributor_name=self.user.username, **data
+        )
+
+    def test_backfill_skips_unrenderable_history_without_rewriting_it(self):
+        old = self.legacy_snapshot()
+        original_hash = old.hash
+        diagnostics = StringIO()
+        call_command("build_reading_copies", stdout=StringIO(), stderr=diagnostics)
+        self.assertIn("Skipped historical snapshot " + old.public_id, diagnostics.getvalue())
+        old.refresh_from_db()
+        self.assertEqual(old.hash, original_hash)
+        self.assertFalse(RenderedSubmission.objects.filter(submission=old).exists())
+        self.assertTrue(RenderedSubmission.objects.filter(submission=self.paper.current).exists())
+
+    def test_backfill_requires_current_versions_and_does_not_hide_outages(self):
+        from django.core.management.base import CommandError
+
+        with patch(
+            "publishing.management.commands.build_reading_copies.load",
+            side_effect=ValidationError("Invalid", code="katex"),
+        ):
+            with self.assertRaises(CommandError):
+                call_command("build_reading_copies", stdout=StringIO())
+        self.legacy_snapshot()
+        with patch(
+            "publishing.bananamark._request", side_effect=ValidationError("Renderer unavailable")
+        ):
+            with self.assertRaises(CommandError):
+                call_command("build_reading_copies", stdout=StringIO())
+
     def test_renderer_upgrade_keeps_existing_reading_copy_until_explicit_refresh(self):
         with patch("publishing.artifacts.renderer_version", return_value="f" * 64):
             with patch(

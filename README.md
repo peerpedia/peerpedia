@@ -842,6 +842,9 @@ Database backups include these reading copies.
 
 Deployments run `python manage.py build_reading_copies` to backfill missing copies.
 This command is idempotent and does not alter source snapshots or their hashes.
+Current publications must render successfully. Historical snapshots that use
+unsupported syntax are reported and skipped; renderer connection failures remain
+fatal. No historical syntax conversion is performed.
 Renderer upgrades retain existing copies until an explicit
 `python manage.py build_reading_copies --refresh`; the renderer fingerprint covers
 the locked dependencies, dialect and rendering adapter. Retain the existing font
