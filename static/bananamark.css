@@ -27,6 +27,9 @@
 .markdown-body .bm-envtitle {
   font-family: inherit;
 }
+.markdown-body .katex {
+  font-size: 1em;
+}
 .markdown-body .bm-math-display {
   overflow-x: auto;
   max-width: 100%;
