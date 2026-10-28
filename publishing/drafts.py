@@ -19,7 +19,6 @@ from accounts.security import verified_required, limited
 from .models import Draft, Paper, PullRequest
 from .forms import UploadForm
 from .licensing import PublicationConsentForm, agreement_required
-from .rendering import has_images
 from .services import publish, propose
 from .subjects import METADATA_FIELDS
 from . import sections, documents, publication
@@ -51,10 +50,8 @@ class DraftForm(UploadForm):
             raise forms.ValidationError("Use valid UTF-8 text.")
         if size > settings.MAX_MARKDOWN_BYTES:
             raise forms.ValidationError("Drafts can contain up to 1 MB of Markdown.")
-        if "\x00" in source or has_images(source):
-            raise forms.ValidationError(
-                "Use text, equations, tables, and links. Images are not supported yet."
-            )
+        if "\x00" in source:
+            raise forms.ValidationError("Use a text document without NUL characters.")
         return source
 
 
@@ -441,21 +438,24 @@ def preview(request, draft_id):
                 target["chapter"] = "main" if inside else target["chapter"]
             targets.append(target)
     except ValidationError as error:
-        return JsonResponse({"error": " ".join(error.messages)}, status=400)
+        return JsonResponse(
+            {
+                "error": " ".join(error.messages),
+                "diagnostics": [
+                    {
+                        **(e.params or {}),
+                        "message": e.message % e.params if e.params else str(e.message),
+                    }
+                    for e in error.error_list
+                ],
+            },
+            status=400,
+        )
     return JsonResponse(
         {
             "html": body,
             "contents": toc,
-            "targets": targets
-            + [
-                {
-                    "kind": "citation",
-                    "label": key,
-                    "text": entry.get("title", key),
-                    "title": entry.get("author", ""),
-                }
-                for key, entry in refs.entries.items()
-            ],
+            "targets": targets,
             "warnings": refs.warnings,
         }
     )
@@ -704,7 +704,9 @@ def review(request, draft_id, *, consent_form=None):
             chapters = full_chapters(draft) or [
                 {"id": "main", "title": draft.title, "markdown": source}
             ]
-            refs = ReferenceDocument(chapters, draft.bibliography)
+            refs = ReferenceDocument(
+                chapters, draft.bibliography, number_sections=bool(draft.chapters)
+            )
             body = "".join(refs.render(p["id"])[0] for p in chapters)
             token = signing.dumps(
                 {"draft": str(draft.pk), "revision": draft.revision, "owner": request.user.pk},

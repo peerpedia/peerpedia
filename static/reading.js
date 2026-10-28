@@ -13,7 +13,7 @@
   };
   document.addEventListener("click", async (event) => {
     const reference = event.target.closest(
-      "a.cross-reference, a.citation, .reference-list a",
+      "a[data-reference], a.bm-citation, .bm-bibliography a",
     );
     if (reference) {
       rememberReturn();

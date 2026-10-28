@@ -48,9 +48,6 @@ def publish(user, data):
     from .identifiers import assign
 
     assign(paper, submission, decision.created_at)
-    from .diagram_cache import enqueue
-
-    enqueue(submission)
     return paper
 
 
@@ -145,9 +142,6 @@ def propose(
     from .notifications import notify
 
     notify([paper.owner_id], user, paper, "proposal", pr=pr)
-    from .diagram_cache import enqueue
-
-    enqueue(submission)
     return submission
 
 

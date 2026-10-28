@@ -1,4 +1,4 @@
-::: theorem {#thm:identity}
+::: theorem {@thm:identity}
 A group has exactly one identity element.
 :::
 

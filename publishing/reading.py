@@ -79,7 +79,12 @@ def reference_search(request):
             return JsonResponse({"error": "Use a submission UUID."}, status=400)
         submission = get_object_or_404(Submission, pk=snapshot_id, paper__is_hidden=False)
         reader = submission.read_url
-        refs = ReferenceDocument(pages(submission), submission.bibliography, reader)
+        refs = ReferenceDocument(
+            pages(submission),
+            submission.bibliography,
+            reader,
+            number_sections=bool(submission.chapters),
+        )
         return JsonResponse(
             {
                 "targets": refs.targets,

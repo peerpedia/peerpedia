@@ -16,11 +16,11 @@ SOURCE = "# Course\n\nIntro.\n\n## A\n\nAlpha.\n\n### Child\n\nProof.\n\n## B\n\
 @override_settings(PASSWORD_HASHERS=["django.contrib.auth.hashers.MD5PasswordHasher"])
 class SectionTests(TestCase):
     def setUp(self):
-        self.user = consenting_user("section-writer", email_verified=True)
+        self.user = consenting_user("writer", email_verified=True)
         self.paper = publish(self.user, document(markdown=SOURCE))
         self.client.force_login(self.user)
 
-    def start(self, anchor="section-a"):
+    def start(self, anchor="a"):
         url = (
             reverse("edit_paper", args=[self.paper.pk])
             + "?"
@@ -67,13 +67,11 @@ class SectionTests(TestCase):
 
     def test_parser_boundaries_nested_fences_setext_and_duplicate_headings(self):
         found = sections.sections(SOURCE)
-        self.assertEqual([s["anchor"] for s in found], ["section-a", "section-child", "section-b"])
+        self.assertEqual([s["anchor"] for s in found], ["a", "child", "b"])
         self.assertIn("### Child", sections.text(SOURCE, found[0]))
         self.assertNotIn("## B", sections.text(SOURCE, found[0]))
-        tricky = "# T\n\nA\n---\n\n```\n## Not a section\n```\n\n> ## Quoted\n\n## A\n\nLast.\n"
-        self.assertEqual(
-            [s["anchor"] for s in sections.sections(tricky)], ["section-a", "section-a-2"]
-        )
+        tricky = "# T\n\nA\n---\n\n```\n## Not a section\n```\n\n> ### Quoted\n\n## A\n\nLast.\n"
+        self.assertEqual([s["anchor"] for s in sections.sections(tricky)], ["a", "a-1"])
         unicode_source = SOURCE.replace("Intro.", "Intro.\u2028Still the same Markdown line.")
         self.assertTrue(
             sections.text(unicode_source, sections.sections(unicode_source)[0]).startswith("## A\n")
@@ -82,7 +80,7 @@ class SectionTests(TestCase):
         self.assertTrue(sections.text(crlf, sections.sections(crlf)[0]).startswith("## A\r\n"))
 
     def test_independent_parent_child_whole_drafts_and_resume(self):
-        parent, child = self.start(), self.start("section-child")
+        parent, child = self.start(), self.start("child")
         whole = self.client.post(reverse("edit_paper", args=[self.paper.pk]))
         self.assertEqual(Draft.objects.filter(submitted__isnull=True).count(), 3)
         self.assertEqual(self.start().pk, parent.pk)
@@ -120,7 +118,7 @@ class SectionTests(TestCase):
         self.assertEqual(draft.submitted.markdown, expected)
         self.assertEqual(draft.submitted.hash, draft.submitted.calculate_hash())
         self.assertEqual(draft.submitted.status, "pending")
-        self.assertEqual(draft.submitted.pr_commit.section["anchor"], "section-a")
+        self.assertEqual(draft.submitted.pr_commit.section["anchor"], "a")
         self.assertEqual(self.paper.current.markdown, SOURCE)
 
     def test_review_preserves_unrelated_accepted_changes_and_metadata(self):
@@ -146,9 +144,7 @@ class SectionTests(TestCase):
         self.assertContains(compare, "Accepted child proof.")
         response = self.client.post(
             reverse("draft_rebase", args=[draft.pk]),
-            json.dumps(
-                {"revision": draft.revision, "latest": str(latest.pk), "target": "section-a"}
-            ),
+            json.dumps({"revision": draft.revision, "latest": str(latest.pk), "target": "a"}),
             content_type="application/json",
         )
         self.assertEqual(response.status_code, 200)
@@ -195,14 +191,14 @@ class SectionTests(TestCase):
         response = self.client.post(
             reverse("edit_paper", args=[self.paper.pk])
             + "?"
-            + urlencode({"scope": "section-a", "version": old})
+            + urlencode({"scope": "a", "version": old})
         )
         self.paper.refresh_from_db()
         self.assertEqual(response.url, self.paper.current.read_url)
         self.assertFalse(Draft.objects.exists())
 
     def test_structure_escape_and_ambiguous_targets_require_review(self):
-        section = sections.find(SOURCE, "section-a")
+        section = sections.find(SOURCE, "a")
         for edit in ["## A\n\n```\nUnclosed", "## A\n\n## Extra sibling\n", "# New paper\n"]:
             with self.assertRaises(ValidationError):
                 sections.combine(SOURCE, section, edit)

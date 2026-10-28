@@ -56,7 +56,7 @@ class DiscussionTests(TestCase):
         normalized = passages.validate(SOURCE, [{**self.spans[0], "ignored": "extra"}])
         self.assertEqual(chosen[2], normalized[2])
         html, _ = render_reader(SOURCE, passage_annotations=True, edit_url="/edit/?version=1")
-        self.assertIn('data-passage-math="$x^2$"', html)
+        self.assertIn('data-passage-math="$x^2$."', html)
         self.assertIn('data-passage-kind="table"', html)
         self.assertIn('data-passage-kind="equation"', html)
         self.assertEqual(html.count('data-passage-kind="code"'), 1)
@@ -65,9 +65,8 @@ class DiscussionTests(TestCase):
         self.assertEqual(
             passages.blocks("First line.  \nSecond line.")[0]["text"], "First line.\nSecond line."
         )
-        self.assertNotIn(
-            "<script>", render_reader("<script>alert(1)</script>", passage_annotations=True)[0]
-        )
+        with self.assertRaises(ValidationError):
+            render_reader("<script>alert(1)</script>", passage_annotations=True)
         for b in found[-3:]:
             with self.assertRaises(ValidationError):
                 passages.validate(SOURCE, [{"block": b["id"], "start": 1, "end": len(b["text"])}])

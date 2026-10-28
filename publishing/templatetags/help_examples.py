@@ -35,9 +35,9 @@ def example_data(name):
     source = (DIRECTORY / f"{name}.md").read_text(encoding="utf-8")
     bibliography = ""
     if name in {"citation", "citation_details"}:
-        bibliography = (DIRECTORY / "bibliography.bib").read_text(encoding="utf-8")
+        bibliography = (DIRECTORY / "bibliography.yaml").read_text(encoding="utf-8")
         if name == "citation":
-            bibliography = bibliography.split("\n@book{hatcher2002", 1)[0].strip() + "\n"
+            bibliography = bibliography.split("\nhatcher2002:", 1)[0].strip() + "\n"
     document = ReferenceDocument(
         [{"id": "example", "title": "Example", "markdown": source}],
         bibliography=bibliography,

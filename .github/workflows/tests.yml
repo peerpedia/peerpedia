@@ -40,8 +40,8 @@ jobs:
           cache: npm
           cache-dependency-path: editor/package-lock.json
       - run: npm ci --ignore-scripts --prefix editor
-      - run: editor/node_modules/.bin/prettier --check 'editor/*.js' 'editor/*.mjs' 'static/*.js' 'diagram_renderer/*.mjs'
-      - run: for source in static/*.js editor/*.js editor/*.mjs diagram_renderer/*.mjs; do node --check "$source"; done
+      - run: editor/node_modules/.bin/prettier --check 'editor/*.js' 'editor/*.mjs' 'static/*.js'
+      - run: for source in static/*.js editor/*.js editor/*.mjs; do node --check "$source"; done
       - run: python -m unittest discover -s scripts -p 'test_*_unit.py'
       - run: python scripts/check_dependencies.py
       - run: python scripts/check_version.py
@@ -71,8 +71,8 @@ jobs:
           sha256sum -c "$RUNNER_TEMP/cli-artifact-sha256"
       - run: python scripts/check_plugin.py
       - run: python scripts/test_proxy.py
-      - run: docker build --target diagram-renderer -t peerpedia-diagrams:test .
-      - run: docker run --rm --network none --read-only --cap-drop ALL --security-opt no-new-privileges --memory 768m --memory-swap 768m --pids-limit 64 peerpedia-diagrams:test node --test diagram_renderer/test.mjs
+      - run: docker build --target content-renderer -t peerpedia-renderer:test .
+      - run: docker run --rm --network none --read-only --tmpfs /cache:uid=1000,gid=1000 --cap-drop ALL --security-opt no-new-privileges --memory 768m --memory-swap 768m --pids-limit 64 peerpedia-renderer:test node --test render.test.mjs
   test:
     if: github.event_name != 'schedule'
     runs-on: ubuntu-latest
@@ -107,8 +107,6 @@ jobs:
           cache-dependency-path: editor/package-lock.json
       - run: npm ci --ignore-scripts --prefix editor
       - run: npm run build --prefix editor
-      - run: python scripts/fetch_mathjax.py
-      - run: python scripts/fetch_diagrams.py
       - run: python manage.py collectstatic --noinput
       - run: python manage.py makemigrations --check --dry-run
       - run: python manage.py test --noinput
@@ -147,8 +145,6 @@ jobs:
           cache-dependency-path: editor/package-lock.json
       - run: npm ci --ignore-scripts --prefix editor
       - run: npm run build --prefix editor
-      - run: python scripts/fetch_mathjax.py
-      - run: python scripts/fetch_diagrams.py
       - run: python scripts/test_browser.py
       - uses: actions/upload-artifact@v7
         if: failure()

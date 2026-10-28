@@ -143,7 +143,6 @@ class DraftTests(TestCase):
         draft = self.begin()
         for changes in [
             {"markdown": "x" * (1024 * 1024 + 1)},
-            {"markdown": "![x](https://example.org/x.png)"},
             {"markdown": "\x00"},
             {"markdown": "\ud800"},
             {"data": {"title": "\ud800"}},
@@ -158,6 +157,21 @@ class DraftTests(TestCase):
             400,
         )
 
+    def test_invalid_syntax_is_saved_even_when_renderer_is_unavailable(self):
+        from unittest.mock import patch
+
+        draft = self.begin()
+        with patch(
+            "publishing.bananamark.request", side_effect=AssertionError("saving must not render")
+        ):
+            self.assertEqual(self.save(draft, markdown="![x](x.png) $unclosed").status_code, 200)
+        response = self.client.post(
+            reverse("draft_preview", args=[draft.pk]),
+            json.dumps({"markdown": "![x](x.png)"}),
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 400)
+
     def test_preview_safely_renders_without_saving(self):
         draft = self.begin()
         source = "# Heading\n\n<script>alert(1)</script>\n\n[x](javascript:alert(1))\n\n$x$"
@@ -166,10 +180,9 @@ class DraftTests(TestCase):
             json.dumps({"revision": 1, "markdown": source}),
             content_type="application/json",
         )
-        self.assertEqual(response.status_code, 200)
-        self.assertNotIn("<script>", response.json()["html"])
-        self.assertNotIn('href="javascript:', response.json()["html"])
-        self.assertIn('data-source-line="1"', response.json()["html"])
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("HTML tag", response.json()["error"])
+        self.assertEqual(response.json()["diagnostics"][0]["line"], 3)
         draft.refresh_from_db()
         self.assertEqual(draft.revision, 1)
 

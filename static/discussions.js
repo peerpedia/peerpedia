@@ -102,7 +102,7 @@
     showLocations(anchors);
   });
 
-  // Canonical units ignore UI and MathJax's generated accessibility/rendering trees.
+  // Canonical units ignore UI and generated mathematical layout and accessibility trees.
   function units(block) {
     const result = [];
     function walk(n) {
@@ -113,7 +113,7 @@
       if (
         n.nodeType !== Node.ELEMENT_NODE ||
         n.matches(
-          ".section-edit,.passage-marker,.passage-block-action,.section-number,.copy-reference",
+          "[data-passage-ignore],.section-edit,.passage-marker,.passage-block-action,.section-number,.copy-reference",
         )
       )
         return;

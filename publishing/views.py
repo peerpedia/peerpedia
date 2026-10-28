@@ -143,7 +143,6 @@ def reader(request, submission):
         if submission.pk == submission.paper.current_id
         else None
     )
-    from .diagram_cache import saved_for
     from .documents import pages, digest
     from .references import ReferenceDocument
     from . import passages
@@ -177,13 +176,10 @@ def reader(request, submission):
     )
     if edit_url and submission.chapters:
         edit_url += "&" + urlencode({"chapter": selected})
-    offset = sum(len(passages.blocks(p["markdown"])) for p in chapters[:index])
     body, contents = refs.render(
         selected,
-        passage_offset=offset,
         edit_url=edit_url,
         passage_annotations=True,
-        saved_diagrams=saved_for(submission),
     )
     from urllib.parse import urlencode
 
@@ -234,10 +230,11 @@ def reader(request, submission):
             else [],
             "chapter": page,
             "chapter_number": index + 1,
-            "chapter_has_title": bool(
-                refs.tokens[selected]
-                and refs.tokens[selected][0].type == "heading_open"
-                and refs.tokens[selected][0].tag == "h1"
+            "chapter_has_title": any(
+                h.get("title")
+                for p in refs.result["pages"]
+                if p["id"] == selected
+                for h in p["headings"]
             ),
             "previous_chapter": reader_url + "?" + urlencode({"chapter": chapters[index - 1]["id"]})
             if index
@@ -340,6 +337,11 @@ def upload(request, paper_id=None):
             )
         else:
             data = form.submission_data()
+            try:
+                preview_body = render_markdown(data["markdown"])
+            except ValidationError as error:
+                form.add_error("file", error)
+                return render(request, "publishing/upload.html", {"form": form, "paper": paper})
             data["id"] = str(uuid.uuid4())
             payload = {
                 "user": request.user.pk,
@@ -361,7 +363,7 @@ def upload(request, paper_id=None):
                     ),
                     "diff": diff_lines(paper.current.markdown, data["markdown"]) if paper else [],
                     "metadata_changes": metadata_diff(paper.current if paper else None, data),
-                    "body": mark_safe(render_markdown(data["markdown"])),
+                    "body": mark_safe(preview_body),
                 },
             )
             response["Cache-Control"] = "no-store"

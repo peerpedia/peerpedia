@@ -406,11 +406,11 @@ def changed(root, base):
 def write_working(root, record):
     info = metadata(record)
     if record["manifest"]["format"] == "peerpedia-submission-v4":
-        info.update(chapters=[], bibliography="references.bib")
+        info.update(chapters=[], bibliography="references.yaml")
         # Preserve local filenames for matching chapter IDs when pulling.
         existing_info = read_json(root / "paper.json") if (root / "paper.json").exists() else {}
         filenames = {p["id"]: p["file"] for p in existing_info.get("chapters", [])}
-        bib_filename = existing_info.get("bibliography") or "references.bib"
+        bib_filename = existing_info.get("bibliography") or "references.yaml"
         info["bibliography"] = bib_filename
         bib_target = safe_file(root, bib_filename)
         if bib_target.exists() and not existing_info.get("bibliography"):

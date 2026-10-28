@@ -2,14 +2,14 @@
 
 import re
 from django.core.exceptions import ValidationError
-from .rendering import parser, heading_tokens
+from .rendering import headings as document_headings
 
 
 def sections(source):
     offsets = [0]
     # Match Markdown's newline normalization; Unicode paragraph separators are text.
     offsets.extend(match.end() for match in re.finditer(r"\r\n|\r|\n", source))
-    headings = [h for h in heading_tokens(parser().parse(source)) if h["token"].level == 0]
+    headings = [h for h in document_headings(source) if h.get("root")]
     result, parents = [], []
     for i, heading in enumerate(headings):
         while parents and parents[-1]["level"] >= heading["level"]:
@@ -64,8 +64,7 @@ def combine(base, section, replacement):
         replacement = replacement.rstrip("\r\n") + "\n\n"
     result = base[: section["start"]] + replacement + suffix
     # A fence/list/heading edit must not swallow or restructure neighboring sections.
-    tokens = parser().parse(replacement)
-    roots = [h for h in heading_tokens(tokens) if h["token"].level == 0]
+    roots = [h for h in document_headings(replacement) if h.get("root")]
     if (
         not roots
         or roots[0]["line"] != 1

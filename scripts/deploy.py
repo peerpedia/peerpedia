@@ -99,13 +99,12 @@ sudo sh scripts/restore-check.sh "$backup"
 sudo docker image tag peerpedia-web:local peerpedia-web:before-{args.sha[:12]}
 sudo tar -xzf {shlex.quote(destination)} -C /opt/peerpedia
 sudo docker compose exec -T caddy caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
-sudo docker compose build web diagrams
+sudo docker compose build web renderer
 sudo docker compose run --rm migrate
-sudo docker compose up -d --no-deps web diagrams diagram-jobs
+sudo docker compose up -d --no-deps --remove-orphans renderer web
 for attempt in $(seq 1 30); do
   if sudo docker inspect --format '{{{{.State.Health.Status}}}}' peerpedia-web-1 | grep -qx healthy &&
-     sudo docker inspect --format '{{{{.State.Health.Status}}}}' peerpedia-diagrams-1 | grep -qx healthy &&
-     sudo docker compose ps --status running -q diagram-jobs | grep -q .; then
+     sudo docker inspect --format '{{{{.State.Health.Status}}}}' peerpedia-renderer-1 | grep -qx healthy; then
     sudo docker compose exec -T web python manage.py verify_history
     sudo docker compose exec -T caddy caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile
     printf '%s\n' {args.sha} | sudo tee /opt/peerpedia/.release >/dev/null

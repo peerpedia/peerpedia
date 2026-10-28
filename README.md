@@ -34,15 +34,13 @@ Use Python 3.12–3.14. Python 3.13 is used by the production image.
 ```sh
 python3 -m venv .venv
 .venv/bin/python -m pip install -r requirements.lock
-.venv/bin/python scripts/fetch_mathjax.py
-.venv/bin/python scripts/fetch_diagrams.py
 .venv/bin/python manage.py migrate
 .venv/bin/python manage.py runserver 127.0.0.1:8000
 ```
 
 Open http://127.0.0.1:8000. Local development uses SQLite unless `DATABASE_URL` is set. Production requires PostgreSQL; SQLite is not a deployment option and does not provide the PostgreSQL concurrent-acceptance guarantee.
 
-MathJax is downloaded once from the official npm registry, verified against a pinned SHA-512 digest, and served locally. Reading a paper does not fetch scripts or fonts from a CDN.
+BananaMark 0.1.0 renders Markdown, references and KaTeX on the server. The editor build copies the pinned package styles and fonts locally; readers need no math JavaScript or CDN requests. Node 22 or newer is required for local development.
 
 ### Optional demonstration content
 
@@ -233,7 +231,7 @@ The application has three interfaces:
 - Django templates and forms for browsing, accounts, publication, and administration.
 - CodeMirror and browser JavaScript for autosave, preview, recovery, section editing,
   reader navigation, and passage discussions. Preview and publication use the same
-  safe Markdown renderer and locally served MathJax.
+  safe Markdown renderer and server-rendered KaTeX.
 - A versioned JSON API for public reading and scoped CLI submissions. API tokens
   cannot accept proposals or write comments, ratings, votes, or inbox state.
 
@@ -268,9 +266,9 @@ submission revalidates the source and goes through the same publication services
 Full documents remain in PostgreSQL so source, decisions, and metadata can be
 backed up and restored together.
 
-Rendering never rewrites source bytes. Embedded HTML is displayed as text; images
-are rejected; unsafe URL schemes are not links. MathJax's HTML and dynamic-require
-extensions are disabled. Equations accept `$...$` and `\(...\)` inline, or
+Rendering never rewrites source bytes. Unsupported HTML tags, images and unsafe
+URL schemes are rejected by the article validation path. KaTeX uses its untrusted
+default configuration. Equations accept `$...$` and `\(...\)` inline, or
 `$$...$$` and `\[...\]` in display blocks. Fenced code stays literal.
 
 File-upload previews use expiring signatures bound to the submitting account and
@@ -340,8 +338,6 @@ Install the browser dependencies into the application development environment, a
 ```sh
 .venv/bin/python -m pip install -r requirements-browser.txt
 .venv/bin/python -m playwright install chromium
-.venv/bin/python scripts/fetch_mathjax.py
-.venv/bin/python scripts/fetch_diagrams.py
 .test-tools/bin/python scripts/test_browser.py --python .venv/bin/python
 ```
 
@@ -418,7 +414,7 @@ python manage.py migrate
 
 Node is a build dependency only. Docker uses a separate asset build stage. The bundle and third-party license notices are generated under `static/vendor/editor/`; production browsers make no CDN requests.
 
-The reader's Edit link opens a private draft at the current section. The main navigation’s New note link opens a blank private editor for an initial paper or note. Add metadata under Paper details, then choose Review & publish to choose a license and confirm publication. My drafts also offers direct upload for finished Markdown files; Import Markdown loads a file into the editor for further work. Drafts autosave under My drafts and support Markdown import/download, a live preview using the publication renderer and MathJax, resizable panes, full-pane and mobile modes, and section-following scroll. Preview content is never published by saving or rendering it.
+The reader's Edit link opens a private draft at the current section. The main navigation’s New note link opens a blank private editor for an initial paper or note. Add metadata under Paper details, then choose Review & publish to choose a license and confirm publication. My drafts also offers direct upload for finished Markdown files; Import Markdown loads a file into the editor for further work. Drafts autosave under My drafts and support Markdown import/download, a live preview using the BananaMark publication renderer, resizable panes, full-pane and mobile modes, and section-following scroll. Preview content is never published by saving or rendering it.
 
 Draft access is owner-only, including for administrators through the application views. Saves compare a monotonically increasing revision while holding a row lock. A conflict never silently overwrites the other copy. Browser recovery uses per-user, per-draft, per-tab keys for unsaved changes; recovery remains subject to the browser's storage availability and can be removed by clearing site data. Successful saves remove that tab's recovery copy. One active draft per user, paper, and section scope is enforced by a database constraint. The full-paper draft has its own scope. New-paper drafts may be multiple.
 
@@ -722,70 +718,44 @@ Peerpedia's terms are original and adapt to public PRs; they do not assert arXiv
 affiliation or copy its jurisdiction and liability waivers. Content licensing is
 separate from licensing of this application's source code.
 
-### Markdown diagrams
+### BananaMark rendering
 
-`CD` environments inside `$$...$$` use the local MathJax AMSCD extension.
-Fenced `tikzcd`, `tikzpicture`, and `tikz` blocks compile to static SVG in the
-reader, upload/revision review, and live editor preview. Each block must include
-its `\begin{...}` / `\end{...}` environment. See `/help/#diagrams` for examples.
-Ordinary `latex` fences remain literal code. Source and passage anchors are
-unchanged; compilation is a presentation operation, not a new snapshot.
+Peerpedia uses pinned `bananamark`, `bananamark-codemirror` and `bananamark-tikz`
+0.1.0 packages. The npm override selects `markdown-it` 15.0.3, which fixes
+[the upstream parser denial-of-service advisory](https://github.com/advisories/GHSA-gfr2-rv44-r23c)
+in BananaMark 0.1.0's pinned 15.0.2 dependency.
+`editor/dialect.js` is the shared syntax configuration: native
+bibliography and TikZ enabled, wiki links disabled. The editor uses the upstream
+language, highlighting and completion; publication and preview share the server
+renderer. Formula errors and missing or duplicate labels prevent publication;
+incomplete drafts can still be saved. Only fenced `math` blocks are numbered.
+Theorem-like environments share a chapter counter; equations have their own.
 
-Run `python scripts/fetch_diagrams.py` when setting up local assets. It verifies
-SHA-256 pins for the TikZJax v1 distribution, its matching TeX memory image and
-WebAssembly engine, and the fonts from node-tikzjax 1.0.5. The generated
-`peerpedia-engine.js` replaces the pinned bundle's DOM entry point with a worker
-function. The original bundle and LPPL license are distributed beside it;
-BaKoMa's font license is retained. The adaptation is maintained by Peerpedia in
-`scripts/fetch_diagrams.py`. DOMPurify is pinned in the editor lockfile and its
-license is included in the built asset license file.
+Write diagrams in a `tikz` fence, retaining explicit `\begin` and `\end`, or use
+`tikzcd` / `tikzpicture` inside a formula. `bananamark-tikz` compiles SVG with its
+native cache and bundled fonts. No TeX engine runs in the reader or editor.
+Compilation is limited to 8 seconds per diagram and 20 seconds per rendering
+request, with at most 32 diagrams and 32 KB of source per diagram. Correct errors
+before publishing. Existing compiled diagrams share the package's cache.
 
-Submitted diagrams are queued in `DiagramArtifact`, keyed by the exact source and
-compiler/sanitizer version. This is rebuildable derived data, outside immutable
-submission manifests. Identical figures share one result across snapshots. The
-reader serves saved SVG images with ETags; it never starts a TeX worker. Pending
-figures are polled near the viewport, and failures retain their original source.
+Run `npm ci --prefix editor` and `npm run build --prefix editor` to install the
+renderer and build local assets. Development uses a persistent Node child process.
+Production sets `BANANAMARK_URL=http://renderer:8765` and uses the `renderer`
+Compose service: Node 22, an internal network, no database credentials, a read-only
+root filesystem and a writable cache volume. Docker provides process isolation.
+The renderer returns native HTML/MathML/SVG; the browser retains its existing CSP.
 
-`diagram-jobs` is a Django management worker that claims jobs with short database
-transactions and leases. It calls the credential-free `diagrams` container over a
-separate internal network. The renderer has no database network, credentials,
-host mounts, writable filesystem, or external network. It runs as a non-root user
-with dropped capabilities, 768 MiB memory, 0.75 CPU, and a thirty-second deadline
-per disposable Node worker. Only the pinned engine receives source; TeX sees its
-virtual filesystem. The server uses bounded native gzip inflation for the trusted
-compiler memory image, while browser previews retain their JavaScript inflater.
-An allowlisted fetch shim can load only its two local binary
-assets. Node's VM adapts browser APIs; Docker provides the isolation boundary.
-
-Output is bounded and validated again in Python. The SVG allowlist excludes
-scripts, external resources, foreign objects, event handlers, and arbitrary CSS.
-Only trusted bundled fonts are embedded. SVG responses have a restrictive sandbox
-CSP. Failed infrastructure calls retry up to three times; expired job leases can
-be reclaimed. TeX failures are terminal until an operator explicitly retries them.
-The per-source limit is 32 KB, with at most 32 distinct queued diagrams per snapshot.
-
-Deploy with `docker compose build web diagrams`, run migrations, then start
-`web`, `diagrams`, and `diagram-jobs`. The job service backfills existing public
-snapshots at startup without changing their content or hashes. To manually drain
-or rebuild jobs, use `python manage.py process_diagrams --backfill --once`; use
-`--retry-errors` only after resolving the cause. Bump `diagram_cache.VERSION`
-when changing the compiler, fonts, or SVG sanitization policy. Old cached versions
-are retained; backfill adds new artifacts rather than changing historical source.
-
-Editor and upload previews still use disposable browser workers with a 45-second
-asset-load deadline and eight-second compilation deadline. The WASM memory is
-fixed at 2,500 pages (about 156 MiB), plus compiler and conversion buffers. Initial
-editor use downloads roughly 10 MB. A bounded in-memory cache avoids recompiling
-unchanged preview blocks, and replacing a preview terminates obsolete work.
-Only `/diagram-worker.js` permits `wasm-unsafe-eval`; page script policies remain
-unchanged. DOMPurify validates preview output before display. No source goes to
-third parties. Basic TikZ and tikz-cd are supported, not external files or a full
-LaTeX/Overleaf environment.
+Build with `docker compose build web renderer`, run migrations, then start
+`renderer` and `web`. The old diagram queue and browser compiler are removed.
+`static/bananamark.css` supplies Peerpedia's article theme; it does not redefine the
+Markdown grammar. Passage annotations and source positions are added using the
+rendered document and BananaMark's editor grammar. No old syntax compatibility
+renderer is retained. Desktop packaging is a separate follow-up.
 
 ### Chapters, references, and reading progress
 
 A paper can contain up to 64 ordered Markdown chapters and one shared UTF-8
-`references.bib`. The complete source and bibliography are limited to 1 MB.
+`references.yaml`. The complete source and bibliography are limited to 1 MB.
 Existing single-file papers continue to work. In the editor, **Add chapter**
 converts the draft; a single PR publishes all chapter changes together. Readers
 see one chapter at a time. Chapter IDs survive file renaming and reordering.
@@ -804,7 +774,7 @@ In version 0.1.0, `paper.json` adds:
     {"id": "intro", "title": "Introduction", "file": "chapters/intro.md"},
     {"id": "proofs", "title": "Proofs", "file": "chapters/proofs.md"}
   ],
-  "bibliography": "references.bib"
+  "bibliography": "references.yaml"
 }
 ```
 
@@ -814,42 +784,36 @@ Old clients cannot accidentally replace a chaptered paper with a single file.
 Remote filenames are generated from validated IDs, never taken from arbitrary
 server paths. Local chapter paths must stay inside the project without symlinks.
 
-Use **Insert block** for theorem, lemma, proposition, corollary, definition,
-example, remark, proof, figure, table, equation, or unnumbered containers:
+Use BananaMark's native syntax, for example:
 
-```markdown
-## Motivation {#sec:motivation}
+````markdown
+## Motivation {@sec:motivation}
 
-::: theorem {#thm:main}
+::: theorem [Main result] {@thm:main}
 Every example has an explanation.
 :::
 
-::: equation {#eq:energy}
-$$
+```math {@eq:energy}
 E = mc^2
-$$
-:::
-
-See @sec:motivation, @thm:main, and @eq:energy.
-See [@einstein1905, p. 3; @anotherWork].
 ```
 
-Every display-math block gets a chapter-based equation number; wrap it in
-`::: unnumbered` to suppress numbering. An `align` display is one referenceable
-block. Theorem-like blocks share a chapter counter; proofs are unnumbered.
-Figures and tables use their own counters; text after their opening block name
-is the caption, before an optional `{#label}`. Figures may contain existing
-TikZ diagram fences; image uploads remain unsupported.
+See @sec:motivation, @thm:main and @eq:energy. See [@einstein1905].
 
-The reference picker inserts persistent labels when citing local objects.
-Manual labels must be unique across the paper. Unlabeled objects still have
-frozen-version permalinks, but their generated IDs can change when edited.
-Ambiguous or missing references are warnings, never silently retargeted.
-BibTeX is parsed as data and never executed. Unknown fields and entry types
-remain in the original file. Malformed files are retained with a preview warning.
-Citations display a compact title, first author and year, and link to the chapter's
-full reference list. External works use standard BibTeX fields including `url`
-or `doi`. Peerpedia's picker uses frozen submission URLs.
+```bibliography
+einstein1905:
+  type: article
+  author: Einstein, Albert
+  title: Example article
+  year: 1905
+```
+````
+
+Bibliographies use native BananaMark YAML. They may appear as `bibliography`
+blocks, or in the editor's shared bibliography, displayed at the end of the last
+chapter. All chapters share the same labels and bibliography entries. Native
+citations use author–year text. External Peerpedia references use frozen snapshot
+URLs. The reference picker lists declared labels; `@` also offers completion.
+There is no BibTeX parser or conversion layer.
 
 Manifest v4 hashes ordered chapter IDs, titles and individual Markdown hashes,
 as well as the exact bibliography hash and the existing canonical combined

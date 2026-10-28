@@ -27,7 +27,7 @@ def validate(chapters, bibliography="", *, allow_empty=False):
     if not isinstance(chapters, list) or len(chapters) > MAX_CHAPTERS:
         raise ValidationError("Use up to 64 chapters.")
     if not isinstance(bibliography, str):
-        raise ValidationError("references.bib must be UTF-8 text.")
+        raise ValidationError("The BananaMark bibliography must be UTF-8 YAML text.")
     seen = set()
     for chapter in chapters:
         if not isinstance(chapter, dict) or set(chapter) != {"id", "title", "markdown"}:
@@ -43,7 +43,7 @@ def validate(chapters, bibliography="", *, allow_empty=False):
             raise ValidationError("Give each chapter a title of up to 250 characters.")
         if not allow_empty and not chapter["markdown"].strip():
             raise ValidationError(f"Write some text in {chapter['title']} before submitting.")
-        if has_images(chapter["markdown"]):
+        if not allow_empty and has_images(chapter["markdown"]):
             raise ValidationError("Images are not supported. Use a diagram block instead.")
     text = combined(chapters) + bibliography
     try:
@@ -69,6 +69,17 @@ def prepare(data, base=None):
     if chapters:
         if data.get("markdown") != combined(chapters):
             raise ValidationError("Combined Markdown must exactly match the chapter files.")
+    # Saved drafts may be incomplete; every publication path validates the whole
+    # book and compiles its diagrams before any snapshot is written.
+    from .bananamark import request
+
+    request(
+        pages=chapters
+        or [{"id": "main", "title": data.get("title", ""), "markdown": data.get("markdown", "")}],
+        bibliography=bib,
+        numberSections=bool(chapters),
+        diagrams=True,
+    )
     return data
 
 
@@ -106,7 +117,7 @@ def chapter_diff(before, after):
         result.append(
             {
                 "id": "bibliography",
-                "title": "references.bib",
+                "title": "references.yaml",
                 "kind": "Changed",
                 "diff": diff_lines(before.bibliography if before else "", after.bibliography),
             }
@@ -127,7 +138,7 @@ def archive(chapters, bibliography, markdown, info, manifest=None):
                 {"id": p["id"], "title": p["title"], "file": f"chapters/{p['id']}.md"}
                 for p in chapters
             ],
-            bibliography="references.bib",
+            bibliography="references.yaml",
         )
         z.writestr("paper.json", json.dumps(info, ensure_ascii=False, indent=2))
         if chapters:
@@ -135,7 +146,7 @@ def archive(chapters, bibliography, markdown, info, manifest=None):
                 z.writestr(f"chapters/{page['id']}.md", page["markdown"])
         else:
             z.writestr("paper.md", markdown)
-        z.writestr("references.bib", bibliography)
+        z.writestr("references.yaml", bibliography)
         if manifest:
             z.writestr("submission.json", json.dumps(manifest, ensure_ascii=False, indent=2))
     return output.getvalue()
