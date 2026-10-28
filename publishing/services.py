@@ -8,16 +8,99 @@ def require_verified(user):
         raise PermissionDenied("A verified account is required.")
 
 
-@transaction.atomic
 def publish(user, data):
+    require_verified(user)
+    from .licensing import require_agreement
+
+    require_agreement(user)
+    from .documents import prepare, PreparedDocument
+
+    prepared = data if isinstance(data, PreparedDocument) else prepare(data)
+    if prepared.base_id is not None:
+        raise ValidationError("A new paper cannot use a revision's prepared content.")
+    return _publish(user, prepared)
+
+
+def prepare_proposal(data, base, section=None):
+    from .documents import prepare
+
+    prepared = prepare(data, base, section)
+    data = prepared.data
+    if section:
+        from . import sections
+        from .subjects import METADATA_FIELDS
+
+        from .drafts import section_source
+
+        current_source = section_source(base, section)
+        supplied_source = next(
+            (p["markdown"] for p in data.get("chapters", []) if p["id"] == section.get("chapter")),
+            data["markdown"],
+        )
+        boundary = {k: v for k, v in section.items() if k != "chapter"}
+        if sections.find(current_source, section.get("anchor")) != boundary:
+            raise ValidationError("The section boundary does not match the accepted base.")
+        replacement = sections.extract(current_source, section, supplied_source)
+        if sections.combine(current_source, section, replacement) != supplied_source:
+            raise ValidationError("The section does not form a complete document.")
+        if section.get("chapter"):
+            if (
+                [(p["id"], p["title"]) for p in data["chapters"]]
+                != [(p["id"], p["title"]) for p in base.chapters]
+                or any(
+                    p != q
+                    for p, q in zip(data["chapters"], base.chapters)
+                    if p["id"] != section["chapter"]
+                )
+                or data.get("bibliography", "") != base.bibliography
+            ):
+                raise ValidationError(
+                    "Section PRs cannot change other chapters or the bibliography."
+                )
+        if any(data.get(k) != getattr(base, k) for k in METADATA_FIELDS):
+            raise ValidationError("Section PRs cannot change paper metadata.")
+    return prepared
+
+
+def propose(
+    user, paper_id, base_id, data, *, pull_request_id=None, expected_head=None, section=None
+):
+    require_verified(user)
+    from .licensing import require_agreement
+
+    require_agreement(user)
+    from .documents import PreparedDocument
+
+    if isinstance(data, PreparedDocument):
+        prepared = data
+    else:
+        paper = Paper.objects.select_related("current").get(pk=paper_id, is_hidden=False)
+        if str(paper.current_id) != str(base_id):
+            raise ValidationError(
+                "This paper has a newer accepted version. Update your base before submitting."
+            )
+        prepared = prepare_proposal(data, paper.current, section)
+    if str(prepared.base_id) != str(base_id) or prepared.section != section:
+        raise ValidationError("Prepared content does not match this submission's base and section.")
+    return _propose(
+        user,
+        paper_id,
+        base_id,
+        prepared,
+        pull_request_id=pull_request_id,
+        expected_head=expected_head,
+        section=section,
+    )
+
+
+@transaction.atomic
+def _publish(user, prepared):
     require_verified(user)
     from .licensing import require_agreement, LICENSES, VERSION, document_hash
     from .models import PaperLicense
 
     agreement = require_agreement(user)
-    from .documents import prepare
-
-    data = prepare(data)
+    data = dict(prepared.data)
     license_code = data.pop("license", None)
     if not isinstance(license_code, str) or license_code not in LICENSES:
         raise ValidationError(
@@ -41,6 +124,9 @@ def publish(user, data):
         agreement=agreement,
         **data,
     )
+    from .artifacts import store
+
+    store(submission, prepared.result, prepared.renderer_version)
     decision = Decision.objects.create(submission=submission, actor=user, action="accepted")
     paper.current = submission
     paper.accepted_at = decision.created_at
@@ -52,8 +138,8 @@ def publish(user, data):
 
 
 @transaction.atomic
-def propose(
-    user, paper_id, base_id, data, *, pull_request_id=None, expected_head=None, section=None
+def _propose(
+    user, paper_id, base_id, prepared, *, pull_request_id=None, expected_head=None, section=None
 ):
     require_verified(user)
     from .licensing import require_agreement, paper_license
@@ -61,9 +147,7 @@ def propose(
     agreement = require_agreement(user)
     paper = Paper.objects.select_for_update().get(pk=paper_id, is_hidden=False)
     license_code = paper_license(paper)
-    from .documents import prepare
-
-    data = prepare(data, paper.current)
+    data = dict(prepared.data)
     supplied = data.pop("license", license_code)
     if supplied != license_code:
         raise ValidationError(
@@ -86,39 +170,6 @@ def propose(
             raise ValidationError(
                 "This PR has changed or closed. Your draft has been preserved. Open the PR to review its latest state."
             )
-    if section:
-        from . import sections
-        from .subjects import METADATA_FIELDS
-
-        from .drafts import section_source
-
-        current_source = section_source(paper.current, section)
-        supplied_source = next(
-            (p["markdown"] for p in data.get("chapters", []) if p["id"] == section.get("chapter")),
-            data["markdown"],
-        )
-        boundary = {k: v for k, v in section.items() if k != "chapter"}
-        if sections.find(current_source, section.get("anchor")) != boundary:
-            raise ValidationError("The section boundary does not match the accepted base.")
-        replacement = sections.extract(current_source, section, supplied_source)
-        if sections.combine(current_source, section, replacement) != supplied_source:
-            raise ValidationError("The section does not form a complete document.")
-        if section.get("chapter"):
-            if (
-                [(p["id"], p["title"]) for p in data["chapters"]]
-                != [(p["id"], p["title"]) for p in paper.current.chapters]
-                or any(
-                    p != q
-                    for p, q in zip(data["chapters"], paper.current.chapters)
-                    if p["id"] != section["chapter"]
-                )
-                or data.get("bibliography", "") != paper.current.bibliography
-            ):
-                raise ValidationError(
-                    "Section PRs cannot change other chapters or the bibliography."
-                )
-        if any(data.get(k) != getattr(paper.current, k) for k in METADATA_FIELDS):
-            raise ValidationError("Section PRs cannot change paper metadata.")
     submission = Submission.objects.create(
         paper=paper,
         contributor=user,
@@ -129,6 +180,9 @@ def propose(
         agreement=agreement,
         **data,
     )
+    from .artifacts import store
+
+    store(submission, prepared.result, prepared.renderer_version)
     if pr:
         number = pr.commits.count() + 1
         pr.head = submission

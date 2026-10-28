@@ -264,9 +264,27 @@ def submission(request, submission_id=None, public_id=None):
     return JsonResponse(snapshot(get_object_or_404(submission_queryset(), **lookup)))
 
 
+def push_retry(request, key, fingerprint):
+    existing = (
+        ApiPush.objects.select_related("submission__paper")
+        .filter(user=request.user, key=key)
+        .first()
+    )
+    if existing:
+        if existing.request_hash != fingerprint:
+            raise APIError(
+                "idempotency_conflict",
+                "This request ID was already used for different content.",
+                409,
+            )
+        if existing.submission.paper.is_hidden:
+            raise Http404()
+        return JsonResponse(snapshot(existing.submission))
+    return None
+
+
 @endpoint(method="POST", authenticated=True)
 @limited("api_push", limit=40, seconds=3600)
-@transaction.atomic
 def push(request):
     if request.content_type != "application/json":
         raise APIError("invalid_content_type", "Send application/json.", 415)
@@ -350,27 +368,12 @@ def push(request):
                 raise ValueError()
         except (ValueError, TypeError, AttributeError):
             raise APIError("invalid_request", "Provide a paper UUID and its full base hash.")
-    # Serialize retry checks and creation for the same account, including when
-    # two different access tokens retry an identical push concurrently.
-    User.objects.select_for_update(no_key=True).get(pk=request.user.pk)
     fingerprint = hashlib.sha256(
         json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode()
     ).hexdigest()
-    existing = (
-        ApiPush.objects.select_related("submission__paper")
-        .filter(user=request.user, key=key)
-        .first()
-    )
-    if existing:
-        if existing.request_hash != fingerprint:
-            raise APIError(
-                "idempotency_conflict",
-                "This request ID was already used for different content.",
-                409,
-            )
-        if existing.submission.paper.is_hidden:
-            raise Http404()
-        return JsonResponse(snapshot(existing.submission))
+    retry = push_retry(request, key, fingerprint)
+    if retry is not None:
+        return retry
     require_agreement(request.user)
     item = get_object_or_404(public_papers(), pk=payload["paper_id"]) if not initial else None
     if item and item.current.hash != payload["base_hash"]:
@@ -433,31 +436,45 @@ def push(request):
             data[field] = payload[field]
     if "license" in payload:
         data["license"] = payload["license"]
-    record = (
-        publish(request.user, data).current
-        if initial
-        else propose(
-            request.user,
-            item.pk,
-            item.current_id,
-            data,
-            pull_request_id=pr.pk if pr else None,
-            expected_head=expected_id,
-        )
-    )
-    SubmissionSource.objects.create(
-        submission=record, ai_assisted=payload.get("ai_assisted", False)
-    )
-    from .notifications import link_activity
+    from .documents import prepare
+    from .services import prepare_proposal
 
-    for thread in threads:
-        link, created = PassagePRLink.objects.get_or_create(
-            thread=thread, pull_request=record.pr_commit.request, defaults={"user": request.user}
+    prepared = prepare(data) if initial else prepare_proposal(data, item.current)
+    with transaction.atomic():
+        # Serialize only retry checks and writes, across all tokens for this account.
+        User.objects.select_for_update(no_key=True).get(pk=request.user.pk)
+        retry = push_retry(request, key, fingerprint)
+        if retry is not None:
+            return retry
+        record = (
+            publish(request.user, prepared).current
+            if initial
+            else propose(
+                request.user,
+                item.pk,
+                item.current_id,
+                prepared,
+                pull_request_id=pr.pk if pr else None,
+                expected_head=expected_id,
+            )
         )
-        if created:
-            link_activity(link)
-    ApiPush.objects.create(user=request.user, key=key, request_hash=fingerprint, submission=record)
-    return JsonResponse(snapshot(record), status=201)
+        SubmissionSource.objects.create(
+            submission=record, ai_assisted=payload.get("ai_assisted", False)
+        )
+        from .notifications import link_activity
+
+        for thread in threads:
+            link, created = PassagePRLink.objects.get_or_create(
+                thread=thread,
+                pull_request=record.pr_commit.request,
+                defaults={"user": request.user},
+            )
+            if created:
+                link_activity(link)
+        ApiPush.objects.create(
+            user=request.user, key=key, request_hash=fingerprint, submission=record
+        )
+        return JsonResponse(snapshot(record), status=201)
 
 
 @endpoint()

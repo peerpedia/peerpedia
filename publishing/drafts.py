@@ -411,6 +411,7 @@ def preview(request, draft_id):
             chapters or [{"id": "main", "title": "", "markdown": full_source}],
             bibliography,
             number_sections=bool(chapters),
+            render_chapter=chapter,
         )
         if chapter not in refs.sources:
             raise ValidationError("Select an existing chapter.")
@@ -510,7 +511,7 @@ def rebase(request, draft_id):
             {
                 "draft": draft,
                 "latest": latest,
-                "diff": diff_lines(section_source(draft.base, draft.section), latest_source),
+                "diff": diff_lines(draft.base.markdown, latest.markdown),
                 "metadata_changes": metadata_diff(
                     draft.base, {k: getattr(latest, k) for k in METADATA_FIELDS}
                 ),
@@ -519,56 +520,61 @@ def rebase(request, draft_id):
     data = payload(request)
     if data is None:
         return JsonResponse({"error": "Invalid request."}, status=400)
+    draft = owned(request, draft_id)
+    if draft.submitted_id or data["revision"] != draft.revision:
+        return conflict(draft)
+    if not draft.paper_id or str(draft.paper.current_id) != data.get("latest"):
+        return JsonResponse(
+            {"error": "The accepted version changed again. Refresh the comparison."}, status=409
+        )
+    if draft.section:
+        try:
+            latest_source = section_source(draft.paper.current, draft.section)
+        except ValidationError as error:
+            return JsonResponse({"error": " ".join(error.messages)}, status=409)
+        target = sections.find(latest_source, data.get("target", ""))
+        if not target or target["level"] != draft.section["level"]:
+            return JsonResponse(
+                {"error": "Select a replacement section at the same heading level."}, status=400
+            )
+        if (
+            Draft.objects.filter(
+                owner=request.user,
+                paper=draft.paper,
+                scope_key=(
+                    draft.section.get("chapter", "") + ":" if draft.section.get("chapter") else ""
+                )
+                + target["anchor"],
+                submitted__isnull=True,
+            )
+            .exclude(pk=draft.pk)
+            .exists()
+        ):
+            return JsonResponse(
+                {"error": "You already have a draft for that section. Finish or discard it first."},
+                status=409,
+            )
+        if draft.section.get("chapter"):
+            target["chapter"] = draft.section["chapter"]
+        draft.section = target
+        draft.scope_key = (
+            target.get("chapter", "") + ":" if target.get("chapter") else ""
+        ) + target["anchor"]
+        draft.data.update({k: getattr(draft.paper.current, k) for k in METADATA_FIELDS})
+        draft.bibliography = draft.paper.current.bibliography
+    draft.base = draft.paper.current
+    draft.revision += 1
     with transaction.atomic():
-        draft = owned(request, draft_id, lock=True)
-        if draft.submitted_id or data["revision"] != draft.revision:
-            return conflict(draft)
-        if not draft.paper_id or str(draft.paper.current_id) != data.get("latest"):
+        locked = owned(request, draft_id, lock=True)
+        if locked.submitted_id or data["revision"] != locked.revision:
+            return conflict(locked)
+        if locked.paper.current_id != draft.base_id:
             return JsonResponse(
                 {"error": "The accepted version changed again. Refresh the comparison."}, status=409
             )
-        if draft.section:
-            try:
-                latest_source = section_source(draft.paper.current, draft.section)
-            except ValidationError as error:
-                return JsonResponse({"error": " ".join(error.messages)}, status=409)
-            target = sections.find(latest_source, data.get("target", ""))
-            if not target or target["level"] != draft.section["level"]:
-                return JsonResponse(
-                    {"error": "Select a replacement section at the same heading level."}, status=400
-                )
-            if (
-                Draft.objects.filter(
-                    owner=request.user,
-                    paper=draft.paper,
-                    scope_key=(
-                        draft.section.get("chapter", "") + ":"
-                        if draft.section.get("chapter")
-                        else ""
-                    )
-                    + target["anchor"],
-                    submitted__isnull=True,
-                )
-                .exclude(pk=draft.pk)
-                .exists()
-            ):
-                return JsonResponse(
-                    {
-                        "error": "You already have a draft for that section. Finish or discard it first."
-                    },
-                    status=409,
-                )
-            if draft.section.get("chapter"):
-                target["chapter"] = draft.section["chapter"]
-            draft.section = target
-            draft.scope_key = (
-                target.get("chapter", "") + ":" if target.get("chapter") else ""
-            ) + target["anchor"]
-            draft.data.update({k: getattr(draft.paper.current, k) for k in METADATA_FIELDS})
-            draft.bibliography = draft.paper.current.bibliography
-        draft.base = draft.paper.current
-        draft.revision += 1
-        draft.save(
+        for field in ("base", "section", "scope_key", "data", "bibliography", "revision"):
+            setattr(locked, field, getattr(draft, field))
+        locked.save(
             update_fields=[
                 "base",
                 "section",
@@ -655,17 +661,6 @@ def refresh_section(draft):
     draft.data.update({k: getattr(latest, k) for k in METADATA_FIELDS})
     draft.bibliography = latest.bibliography
     draft.revision += 1
-    draft.save(
-        update_fields=[
-            "base",
-            "section",
-            "scope_key",
-            "data",
-            "bibliography",
-            "revision",
-            "updated_at",
-        ]
-    )
     return True
 
 
@@ -676,61 +671,81 @@ def refresh_section(draft):
 @agreement_required
 def review(request, draft_id, *, consent_form=None):
     try:
+        draft = owned(request, draft_id)
+        original_revision = draft.revision
+        if draft.submitted_id:
+            return redirect(draft.submitted.get_absolute_url())
+        if consent_form is None and request.POST.get("revision") != str(draft.revision):
+            raise ValidationError(
+                "Your draft changed. Review the latest saved copy before submitting."
+            )
+        refreshed = refresh_section(draft) if draft.section else False
+        source = full_markdown(draft)
+        form = UploadForm(
+            {**draft.data, "base": draft.base_id},
+            {"file": SimpleUploadedFile("paper.md", source.encode("utf-8"))},
+            initial_publication=not draft.paper_id,
+        )
+        if not form.is_valid():
+            messages.error(
+                request, "Your draft is saved. Complete the highlighted items before reviewing."
+            )
+            return redirect(reverse("editor", args=[draft.pk]) + "?check=1")
+        if draft.paper_id and draft.base_id != draft.paper.current_id:
+            raise ValidationError("Update to the latest accepted version before submitting.")
+        documents.validate(full_chapters(draft), draft.bibliography)
+        from .references import ReferenceDocument
+
+        chapters = full_chapters(draft) or [
+            {"id": "main", "title": draft.title, "markdown": source}
+        ]
+        refs = ReferenceDocument(chapters, draft.bibliography, number_sections=bool(draft.chapters))
+        body = "".join(refs.render(p["id"])[0] for p in chapters)
         with transaction.atomic():
-            draft = owned(request, draft_id, lock=True)
-            if draft.submitted_id:
-                return redirect(draft.submitted.get_absolute_url())
-            if consent_form is None and request.POST.get("revision") != str(draft.revision):
+            locked = owned(request, draft_id, lock=True)
+            if locked.submitted_id or locked.revision != original_revision:
                 raise ValidationError(
                     "Your draft changed. Review the latest saved copy before submitting."
                 )
-            refreshed = refresh_section(draft) if draft.section else False
-            source = full_markdown(draft)
-            form = UploadForm(
-                {**draft.data, "base": draft.base_id},
-                {"file": SimpleUploadedFile("paper.md", source.encode("utf-8"))},
-                initial_publication=not draft.paper_id,
-            )
-            if not form.is_valid():
-                messages.error(
-                    request, "Your draft is saved. Complete the highlighted items before reviewing."
+            if draft.paper_id and draft.base_id != locked.paper.current_id:
+                raise ValidationError("The accepted version changed. Review your draft again.")
+            if refreshed:
+                for field in ("base", "section", "scope_key", "data", "bibliography", "revision"):
+                    setattr(locked, field, getattr(draft, field))
+                locked.save(
+                    update_fields=[
+                        "base",
+                        "section",
+                        "scope_key",
+                        "data",
+                        "bibliography",
+                        "revision",
+                        "updated_at",
+                    ]
                 )
-                return redirect(reverse("editor", args=[draft.pk]) + "?check=1")
-            if draft.paper_id and draft.base_id != draft.paper.current_id:
-                raise ValidationError("Update to the latest accepted version before submitting.")
-            documents.validate(full_chapters(draft), draft.bibliography)
-            from .references import ReferenceDocument
-
-            chapters = full_chapters(draft) or [
-                {"id": "main", "title": draft.title, "markdown": source}
-            ]
-            refs = ReferenceDocument(
-                chapters, draft.bibliography, number_sections=bool(draft.chapters)
-            )
-            body = "".join(refs.render(p["id"])[0] for p in chapters)
-            token = signing.dumps(
-                {"draft": str(draft.pk), "revision": draft.revision, "owner": request.user.pk},
-                salt="draft-review",
-            )
-            return render(
-                request,
-                "publishing/draft_review.html",
-                {
-                    "draft": draft,
-                    "token": token,
-                    "body": body,
-                    "reference_warnings": refs.warnings,
-                    "refreshed": refreshed,
-                    "diff": diff_lines(
-                        section_source(draft.base, draft.section) if draft.base else "", source
-                    ),
-                    "metadata_changes": metadata_diff(draft.base, draft.data),
-                    "subjects": form.cleaned_data,
-                    "consent_form": consent_form
-                    if consent_form is not None
-                    else PublicationConsentForm(paper=draft.paper),
-                },
-            )
+        token = signing.dumps(
+            {"draft": str(draft.pk), "revision": draft.revision, "owner": request.user.pk},
+            salt="draft-review",
+        )
+        return render(
+            request,
+            "publishing/draft_review.html",
+            {
+                "draft": draft,
+                "token": token,
+                "body": body,
+                "reference_warnings": refs.warnings,
+                "refreshed": refreshed,
+                "diff": diff_lines(
+                    section_source(draft.base, draft.section) if draft.base else "", source
+                ),
+                "metadata_changes": metadata_diff(draft.base, draft.data),
+                "subjects": form.cleaned_data,
+                "consent_form": consent_form
+                if consent_form is not None
+                else PublicationConsentForm(paper=draft.paper),
+            },
+        )
     except ValidationError as error:
         messages.error(request, " ".join(error.messages))
         return redirect("editor", draft_id=draft_id)
@@ -749,44 +764,58 @@ def submit(request, draft_id):
         messages.error(request, "The review expired. Please review your draft again.")
         return redirect("editor", draft_id=draft_id)
     try:
+        draft = owned(request, draft_id)
+        if draft.submitted_id:
+            return redirect(draft.submitted.get_absolute_url())
+        if token["revision"] != draft.revision:
+            raise ValidationError(
+                "Your draft changed after this preview. Review it again before submitting."
+            )
+        form = UploadForm(
+            {**draft.data, "base": draft.base_id},
+            {"file": SimpleUploadedFile("paper.md", full_markdown(draft).encode())},
+            initial_publication=not draft.paper_id,
+        )
+        if not form.is_valid():
+            messages.error(
+                request,
+                "Your draft is saved. Complete the highlighted items before submitting.",
+            )
+            return redirect(reverse("editor", args=[draft.pk]) + "?check=1")
+        consent = PublicationConsentForm(request.POST, paper=draft.paper)
+        if not consent.is_valid():
+            return review(request, draft.pk, consent_form=consent)
+        data = form.submission_data()
+        data.update(chapters=full_chapters(draft), bibliography=draft.bibliography)
+        if not draft.paper_id:
+            data["license"] = consent.code()
+        from .services import prepare_proposal
+
+        prepared = (
+            prepare_proposal(data, draft.base, draft.section or None)
+            if draft.paper_id
+            else documents.prepare(data)
+        )
         with transaction.atomic():
             draft = owned(request, draft_id, lock=True)
             if draft.submitted_id:
                 return redirect(draft.submitted.get_absolute_url())
             if token["revision"] != draft.revision:
                 raise ValidationError(
-                    "Your draft changed after this preview. Review it again before submitting."
+                    "Your draft changed while preparing it. Review it again before submitting."
                 )
-            form = UploadForm(
-                {**draft.data, "base": draft.base_id},
-                {"file": SimpleUploadedFile("paper.md", full_markdown(draft).encode())},
-                initial_publication=not draft.paper_id,
-            )
-            if not form.is_valid():
-                messages.error(
-                    request,
-                    "Your draft is saved. Complete the highlighted items before submitting.",
-                )
-                return redirect(reverse("editor", args=[draft.pk]) + "?check=1")
-            consent = PublicationConsentForm(request.POST, paper=draft.paper)
-            if not consent.is_valid():
-                return review(request, draft.pk, consent_form=consent)
-            data = form.submission_data()
-            data.update(chapters=full_chapters(draft), bibliography=draft.bibliography)
-            if not draft.paper_id:
-                data["license"] = consent.code()
             if draft.paper_id:
                 submitted = propose(
                     request.user,
                     draft.paper_id,
                     draft.base_id,
-                    data,
+                    prepared,
                     pull_request_id=draft.pull_request_id,
                     expected_head=draft.pr_head_id,
-                    section=draft.section,
+                    section=draft.section or None,
                 )
             else:
-                submitted = publish(request.user, data).current
+                submitted = publish(request.user, prepared).current
             draft.submitted = submitted
             draft.data = {}
             draft.markdown = ""

@@ -1,6 +1,7 @@
 import { createServer } from "node:http";
 import { createInterface } from "node:readline";
 import { renderDocument } from "./render-document.mjs";
+import { pruneCache } from "./cache-maintenance.mjs";
 
 async function handle(input) {
   try {
@@ -29,7 +30,26 @@ if (process.argv.includes("--stdio")) {
   }
   process.exit(0);
 } else {
-  let active = 0;
+  let active = 0,
+    maintaining = false,
+    nextMaintenance = 0;
+  setInterval(async () => {
+    if (active || maintaining || Date.now() < nextMaintenance) return;
+    maintaining = true;
+    try {
+      console.log(
+        JSON.stringify({ event: "tikz_cache", ...(await pruneCache()) }),
+      );
+      nextMaintenance = Date.now() + 3600 * 1000;
+    } catch (error) {
+      console.error(
+        JSON.stringify({ event: "tikz_cache_error", message: error.message }),
+      );
+      nextMaintenance = Date.now() + 60 * 1000;
+    } finally {
+      maintaining = false;
+    }
+  }, 60 * 1000).unref();
   createServer(async (req, res) => {
     if (req.url === "/health") {
       res.end("ok");
@@ -39,7 +59,7 @@ if (process.argv.includes("--stdio")) {
       res.writeHead(404).end();
       return;
     }
-    if (active >= 8) {
+    if (active >= 8 || maintaining) {
       res.writeHead(503).end();
       return;
     }

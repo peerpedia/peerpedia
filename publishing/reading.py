@@ -12,7 +12,7 @@ from django.db import transaction
 from .models import ReadingProgress, Submission, Paper
 from .queries import search_papers
 from .documents import pages, digest
-from .references import ReferenceDocument
+from .artifacts import references
 
 
 @require_http_methods(["GET", "POST"])
@@ -79,12 +79,7 @@ def reference_search(request):
             return JsonResponse({"error": "Use a submission UUID."}, status=400)
         submission = get_object_or_404(Submission, pk=snapshot_id, paper__is_hidden=False)
         reader = submission.read_url
-        refs = ReferenceDocument(
-            pages(submission),
-            submission.bibliography,
-            reader,
-            number_sections=bool(submission.chapters),
-        )
+        refs = references(submission)
         return JsonResponse(
             {
                 "targets": refs.targets,

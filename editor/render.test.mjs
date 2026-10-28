@@ -123,3 +123,59 @@ test("unsafe author HTML and links are rejected", async () => {
     await assert.rejects(renderDocument({ source }));
   }
 });
+
+test("selected chapter preview retains book numbering and cross-chapter references", async () => {
+  const result = await renderDocument({
+    pages: [
+      { id: "a", title: "First", markdown: "::: theorem {@thm:a}\nA.\n:::" },
+      {
+        id: "b",
+        title: "Second",
+        markdown: "::: theorem {@thm:b}\nSee @thm:a.\n:::",
+      },
+    ],
+    renderChapter: "b",
+    diagrams: true,
+  });
+  assert.deepEqual(
+    result.pages.map((p) => p.id),
+    ["b"],
+  );
+  assert.match(result.pages[0].html, /Theorem 2.1/);
+  assert.match(result.pages[0].html, /\?chapter=a#thm:a/);
+  assert.equal(result.targets.length, 2);
+});
+
+test("cache maintenance expires old diagrams and applies the capacity budget", async () => {
+  const { mkdtemp, writeFile, utimes, readFile, rm } =
+    await import("node:fs/promises");
+  const { tmpdir } = await import("node:os");
+  const { join } = await import("node:path");
+  const { pruneCache } = await import("./cache-maintenance.mjs");
+  const cache = await mkdtemp(join(tmpdir(), "peerpedia-cache-test-"));
+  try {
+    const old = join(cache, "a".repeat(64) + ".json"),
+      recent = join(cache, "b".repeat(64) + ".json");
+    await writeFile(old, "old");
+    await writeFile(recent, "recent diagram");
+    await writeFile(join(cache, "keep.txt"), "not a diagram");
+    await utimes(old, new Date(0), new Date(0));
+    await utimes(
+      recent,
+      new Date(Date.now() - 10000),
+      new Date(Date.now() - 10000),
+    );
+    const first = await pruneCache({ cache });
+    assert.equal(first.removed, 1);
+    assert.equal(first.files, 1);
+    const second = await pruneCache({ cache, maxBytes: 1 });
+    assert.equal(second.removed, 1);
+    assert.equal(second.bytes, 0);
+    assert.equal(
+      await readFile(join(cache, "keep.txt"), "utf8"),
+      "not a diagram",
+    );
+  } finally {
+    await rm(cache, { recursive: true, force: true });
+  }
+});

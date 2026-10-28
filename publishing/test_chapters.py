@@ -267,4 +267,4 @@ class ReferenceTests(SimpleTestCase):
             with self.assertRaises(ValidationError):
                 ReferenceDocument(
                     [{"id": "main", "title": "One", "markdown": source}], bibliography
-                )
+                ).render("main")
