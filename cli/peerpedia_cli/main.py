@@ -116,7 +116,7 @@ class NoRedirect(HTTPRedirectHandler):
 
 
 def request(server, route, token=None, payload=None, key=None):
-    headers = {"Accept": "application/json", "User-Agent": "peerpedia-cli/0.5"}
+    headers = {"Accept": "application/json", "User-Agent": f"peerpedia-cli/{__version__}"}
     if token:
         headers["Authorization"] = "Bearer " + token
     data = None

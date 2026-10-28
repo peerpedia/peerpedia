@@ -14,8 +14,15 @@ python3 -m venv "$HOME/.local/share/peerpedia/venv"
 
 If `python3` is older than 3.12, use an available newer Python interpreter for the
 venv; otherwise explain the missing prerequisite rather than changing system Python.
-For upgrades, use a clean updated official checkout and pip install --upgrade its
-`cli` directory into the same dedicated environment. Re-run check_setup.py.
+For upgrades, run the following in the same dedicated environment, then re-run
+`check_setup.py`:
+
+```sh
+"$HOME/.local/share/peerpedia/venv/bin/python" -m pip install --upgrade peerpedia-cli
+```
+
+Use CLI 0.1.1 or newer with this plugin. For development, install the `cli`
+directory from a current official checkout instead.
 
 Reading and searching do not need authentication. For writes, ask the user to
 create their own token on https://peerpedia.dev/accounts/tokens/ ("Access tokens" on the website). Use proposal-only scope unless they also want new publications.

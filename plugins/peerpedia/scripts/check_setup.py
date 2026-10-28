@@ -24,7 +24,7 @@ def check():
         match = re.fullmatch(r"peerpedia (\d+)\.(\d+)\.(\d+)\s*", result.stdout)
         if result.returncode == 0 and match:
             version = tuple(int(n) for n in match.groups())
-            if version >= (0, 1, 0):
+            if version >= (0, 1, 1):
                 return {
                     "ready": True,
                     "executable": str(Path(candidate).absolute()),
@@ -36,7 +36,7 @@ def check():
         checked.append({"executable": candidate, "status": "upgrade_required"})
     return {
         "ready": False,
-        "requires": "peerpedia-cli >=0.1.0 on Python >=3.12",
+        "requires": "peerpedia-cli >=0.1.1 on Python >=3.12",
         "checked": checked,
         "instructions": "Follow skills/peerpedia/references/setup.md in this plugin.",
     }

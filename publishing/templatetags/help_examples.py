@@ -16,6 +16,7 @@ EXAMPLES = (
     "code",
     "math",
     "unnumbered",
+    "aligned",
     "references",
     "theorem",
     "citation",

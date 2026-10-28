@@ -8,7 +8,10 @@ independent versions. Do not rename those when making a software release.
 
 Update `VERSION`, `cli/peerpedia_cli/__init__.py`, both plugin manifests,
 and the editor package files. Update the release notes and download links.
-Run `python scripts/check_version.py` to catch mismatched labels.
+Run `python scripts/check_version.py` to catch mismatched labels, including the
+root package entry in the npm lock file. Keep dependency versions and historical
+release notes unchanged. Check the CLI compatibility floor in the plugin setup
+probe and its instructions when the writing format changes.
 
 Build the CLI with Python 3.12 or newer
 
@@ -55,7 +58,7 @@ long-lived API token to the repository.
 ## Publish a CLI release on PyPI
 
 After publishing the GitHub release, open GitHub Actions and run
-**Publish CLI to PyPI** with its tag, such as `v0.1.0`.
+**Publish CLI to PyPI** with its tag, such as `v0.1.1`.
 The workflow verifies the release, builds and checks both distributions,
 and publishes through the trusted publisher.
 

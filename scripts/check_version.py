@@ -31,6 +31,17 @@ def check():
         "editor/package-lock.json",
     ):
         assert json.loads((ROOT / path).read_text())["version"] == version, path
+    lock = json.loads((ROOT / "editor/package-lock.json").read_text())
+    assert lock["packages"][""]["version"] == version, "npm lock root package version"
+    for path, heading in (
+        ("README.md", f"# Peerpedia {version}"),
+        ("cli/README.md", f"# Peerpedia CLI {version}"),
+    ):
+        assert (ROOT / path).read_text().splitlines()[0] == heading, path
+    releases = [
+        line for line in (ROOT / "CHANGELOG.md").read_text().splitlines() if line.startswith("## ")
+    ]
+    assert releases[0] == f"## {version}", "Current release notes are missing"
     for path in ("cli/LICENSE", "plugins/peerpedia/LICENSE"):
         assert (ROOT / path).read_bytes() == (ROOT / "LICENSE").read_bytes(), path
     print(f"Release labels and software licenses agree at {version}.")

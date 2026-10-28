@@ -24,7 +24,7 @@
     "esbuild": "0.28.2",
     "prettier": "3.9.10"
   },
-  "version": "0.1.0",
+  "version": "0.1.1",
   "overrides": {
     "markdown-it": "15.0.3"
   },

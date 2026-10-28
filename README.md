@@ -1,4 +1,4 @@
-# Peerpedia 0.1.0
+# Peerpedia 0.1.1
 
 To a better academia
 
@@ -6,7 +6,7 @@ A small, public research-publishing application built with Django and PostgreSQL
 
 [Website](https://peerpedia.dev) · [Usage guide](https://peerpedia.dev/help/) · [Source](https://github.com/peerpedia/peerpedia)
 
-[Download 0.1.0](https://github.com/peerpedia/peerpedia/releases/tag/v0.1.0) · [Install the CLI](cli/README.md) · [Release notes](CHANGELOG.md)
+[Download 0.1.1](https://github.com/peerpedia/peerpedia/releases/tag/v0.1.1) · [Install the CLI](cli/README.md) · [Release notes](CHANGELOG.md)
 
 The software uses the [MIT license](LICENSE). Papers have their own author-selected licenses. Developer information is on the [About page](https://peerpedia.dev/about/).
 
@@ -29,11 +29,13 @@ The website and an optional command-line client share the same publication rules
 
 ## Run locally
 
-Use Python 3.12–3.14. Python 3.13 is used by the production image.
+Use Python 3.12–3.14 and Node 22 or newer. Python 3.13 is used by the production image.
 
 ```sh
 python3 -m venv .venv
 .venv/bin/python -m pip install -r requirements.lock
+npm ci --prefix editor
+npm run build --prefix editor
 .venv/bin/python manage.py migrate
 .venv/bin/python manage.py runserver 127.0.0.1:8000
 ```
@@ -158,9 +160,9 @@ peerpedia diff
 peerpedia push -m "Initial publication"
 ```
 
-`paper.json` contains the strings `title`, `authors`, `abstract`, and `primary_category`, plus a `secondary_categories` list (which may be empty). For example, use `"primary_category": "cond-mat.str-el"` and `"secondary_categories": ["hep-th"]`. Run `peerpedia categories --server https://peerpedia.dev --json` to list the supported category codes and names. Upgrade the CLI to 0.2 or newer before working with classified submissions.
+`paper.json` contains the strings `title`, `authors`, `abstract`, and `primary_category`, plus a `secondary_categories` list (which may be empty). For example, use `"primary_category": "cond-mat.str-el"` and `"secondary_categories": ["hep-th"]`. Run `peerpedia categories --server https://peerpedia.dev --json` to list the supported category codes and names. Use CLI 0.1.1 or newer for the current BananaMark bibliography format.
 
-The taxonomy is pinned from [arXiv](https://arxiv.org/category_taxonomy) in `publishing/data/arxiv_categories.json` (retrieved 2026-10-18); there is no live dependency on arXiv. Classification follows the latest **accepted** submission, including cross-lists. It can be revised through the same proposal/acceptance workflow as other metadata. Existing unclassified submissions retain their v1 manifests and hashes; new submissions use v2, which includes subject codes in the hash. No migration guesses subjects or rewrites historical content. Both manifest formats remain verifiable. Once v2 submissions exist, the subject migration refuses a downgrade that would delete their hashed metadata.
+The taxonomy is pinned from [arXiv](https://arxiv.org/category_taxonomy) in `publishing/data/arxiv_categories.json` (retrieved 2026-10-18); there is no live dependency on arXiv. Classification follows the latest **accepted** submission, including cross-lists. It can be revised through the same proposal/acceptance workflow as other metadata. Existing unclassified submissions retain their v1 manifests and hashes; subject codes are included in v2 and later manifests. Current publications use v3 for single-file papers or v4 for chapters and shared bibliographies. No migration guesses subjects or rewrites historical content. All manifest formats remain verifiable. Once v2 submissions exist, the subject migration refuses a downgrade that would delete their hashed metadata.
 
 Separate author names with `\n` inside the authors string. `paper.md` preserves UTF-8 bytes and original line endings. Existing directories are never overwritten by init/clone. `.peerpedia/` stores the verified base, server, paper ID, and local receipts; it is automatically ignored by Git. Keep this directory when moving a working copy. It contains document snapshots but never login tokens.
 
@@ -244,6 +246,8 @@ The module boundaries are explicit:
 | `discussion_actions.py` | Verified-participant discussion mutations and preserved edit records |
 | `queries.py`, `feedback_queries.py` | Shared visibility rules and paginated data retrieval |
 | `comparisons.py`, `rendering.py`, `sections.py`, `passages.py` | Derived document representations and anchors |
+| `artifacts.py`, `bananamark.py` | Durable reading copies and transport to the BananaMark renderer |
+| `editor/render-document.mjs`, `editor/dialect.js` | Native BananaMark rendering and shared syntax configuration |
 | `views.py`, `api.py`, `discussions.py`, `drafts.py` | HTTP authentication, request validation, and responses |
 | `notifications.py` | Account-private grouped activity |
 
@@ -269,27 +273,33 @@ backed up and restored together.
 Rendering never rewrites source bytes. Unsupported HTML tags, images and unsafe
 URL schemes are rejected by the article validation path. KaTeX uses its untrusted
 default configuration. Equations accept `$...$` and `\(...\)` inline, or
-`$$...$$` and `\[...\]` in display blocks. Fenced code stays literal.
+`$$...$$` and `\[...\]` in display blocks. Fenced `math` blocks are numbered;
+`tikz` fences compile diagrams and `bibliography` fences define YAML references.
+Other fenced code stays literal.
 
 File-upload previews use expiring signatures bound to the submitting account and
 target paper. Editor previews use owner-only saved drafts. Both confirmation paths
 are idempotent and preserve existing immutable snapshots.
 
 This is still a small-server architecture. Search constructs PostgreSQL text-search
-expressions at request time, document rendering is not cached, and notification
-fan-out is synchronous. Capacity claims require representative load tests. Introduce
-indexed search, derived-content caching, or a durable job queue when measurements
-justify them; those are independent of the publication-history format.
+expressions at request time and notification fan-out is synchronous. Published
+renderings and indexes are stored in durable reading copies, and TikZ compilation
+uses a shared cache. Capacity claims require representative load tests. Introduce
+indexed search or a durable job queue when measurements justify them; those are
+independent of the publication-history format.
 
 ## Content verification
 
-Download a submission's Markdown and verification manifest from its page, then run:
+Download a submission's verification manifest and complete source from its page.
+For a chaptered or bibliography-bearing v4 snapshot, use its source ZIP:
 
 ```sh
-python3 scripts/verify_submission.py submission.json submission.md
+python3 scripts/verify_submission.py submission.json source.zip
 ```
 
-The versioned manifest (`peerpedia-submission-v1` for old snapshots, `peerpedia-submission-v2` for new ones) includes the Markdown's SHA-256, source metadata, stable record identifiers, contributor identity at submission, base hash, explanation, and timestamp. The submission hash is SHA-256 of that manifest encoded as UTF-8 JSON with sorted keys, compact separators, and unescaped Unicode. Accepted status and subsequent conversations are outside this hash.
+For a single-file v1–v3 snapshot, pass `submission.md` instead of the ZIP.
+
+The versioned manifest (v1–v3 for single-file snapshots, v4 for chapters or a shared bibliography) includes the Markdown's SHA-256, source metadata, stable record identifiers, contributor identity at submission, base hash, explanation, and timestamp. The submission hash is SHA-256 of that manifest encoded as UTF-8 JSON with sorted keys, compact separators, and unescaped Unicode. Accepted status and subsequent conversations are outside this hash.
 
 Check the complete database with:
 
@@ -364,6 +374,7 @@ docker compose run --rm migrate
 docker compose run --rm web python manage.py createsuperuser
 docker compose up -d
 docker compose exec web python manage.py check --deploy
+docker compose exec web python manage.py build_reading_copies
 docker compose exec web python manage.py verify_history
 ```
 
@@ -690,7 +701,7 @@ an incompatible PR license returns `license_mismatch`. CLI users run
 paper's license. API discovery is `/api/v1/licenses/`; `/api/v1/me/` reports consent.
 The website requires a rights confirmation on every publication/PR submission.
 
-New manifests use `peerpedia-submission-v3` and hash the license code and agreement
+Single-file manifests use `peerpedia-submission-v3` and hash the license code and agreement
 version, document hash, acceptance ID and time. v1/v2 hashes remain byte-for-byte
 compatible. API and downloaded verification records include separate `licensing`
 information; any later declaration is outside the original snapshot hash.
@@ -760,7 +771,7 @@ Existing single-file papers continue to work. In the editor, **Add chapter**
 converts the draft; a single PR publishes all chapter changes together. Readers
 see one chapter at a time. Chapter IDs survive file renaming and reordering.
 
-In version 0.1.0, `paper.json` adds:
+For chaptered papers in 0.1.1, `paper.json` includes:
 
 ```json
 {
