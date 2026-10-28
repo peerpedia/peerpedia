@@ -530,7 +530,7 @@ class BrowserJourneys(StaticLiveServerTestCase):
         self.page.locator('input[name="secondary_categories"][value="math.NT"]').check()
         self.page.get_by_role("button", name="Review & submit PR", exact=True).click()
         expect(popup).to_contain_text("Choose each subject only once")
-        popup.get_by_role("button", name=re.compile("^Cross-lists")).click()
+        popup.get_by_role("button", name=re.compile("^Cross-list subjects")).click()
         self.page.locator('input[name="secondary_categories"][value="math.NT"]').uncheck()
         self.page.get_by_role("button", name="Done", exact=True).click()
         self.page.set_viewport_size({"width": 390, "height": 844})
