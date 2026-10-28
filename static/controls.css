@@ -165,7 +165,6 @@
 .chapter-heading-actions { display:flex; align-items:center; flex-wrap:wrap; gap:8px; margin-bottom:12px; }
 .chapter-heading-actions p { margin:0; font:13px/1.5 system-ui; color:var(--control-muted); }
 .chapter-heading-actions .chapter-edit { margin-left:0; }
-.markdown-body .bm-heading-link { display:none; }
 .paper-details-link { margin:8px 0 18px; }
 
 /* Keep guidance available without spending the editor's height on banners. */

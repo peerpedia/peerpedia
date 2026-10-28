@@ -44,7 +44,8 @@
   color: inherit;
   opacity: 0.35;
 }
-.markdown-body .bm-heading-link:hover {
+.markdown-body .bm-heading-link:hover,
+.markdown-body .bm-heading-link:focus {
   opacity: 1;
 }
 .cm-tooltip-autocomplete {

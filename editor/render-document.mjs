@@ -75,8 +75,6 @@ function annotate(
     blocks = [],
     path = [],
     counts = new Map();
-  // Peerpedia supplies the shared link/reference controls next to headings.
-  root.querySelectorAll(".bm-heading-link").forEach((node) => node.remove());
   // Canonical references keep passage quotes stable when chapter numbers change.
   for (const link of root.querySelectorAll("a[href]")) {
     const href = link.getAttribute("href");
