@@ -152,7 +152,9 @@ test("cache maintenance expires old diagrams and applies the capacity budget", a
   const { tmpdir } = await import("node:os");
   const { join } = await import("node:path");
   const { pruneCache } = await import("./cache-maintenance.mjs");
-  const cache = await mkdtemp(join(tmpdir(), "peerpedia-cache-test-"));
+  const cache = await mkdtemp(
+    join(process.env.BANANAMARK_CACHE || tmpdir(), "peerpedia-cache-test-"),
+  );
   try {
     const old = join(cache, "a".repeat(64) + ".json"),
       recent = join(cache, "b".repeat(64) + ".json");
