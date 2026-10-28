@@ -151,6 +151,8 @@ def reader(request, submission):
 
     try:
         refs = references(submission)
+        titles = {p["id"]: p.get("title") for p in refs.result["pages"]}
+        chapters = [{**p, "title": titles.get(p["id"]) or p["title"]} for p in chapters]
     except ValidationError:
         response = render(
             request,
@@ -240,6 +242,8 @@ def reader(request, submission):
             if submission.chapters
             else [],
             "chapter": page,
+            "chapter_edit_url": edit_url,
+            "chapter_reference_url": reader_url + "?" + urlencode({"chapter": selected}),
             "chapter_number": index + 1,
             "chapter_has_title": any(
                 h.get("title")
@@ -326,6 +330,8 @@ def manifest(request, submission_id):
 @agreement_required
 def upload(request, paper_id=None):
     paper = get_object_or_404(public_papers(), pk=paper_id) if paper_id else None
+    if request.method == "GET":
+        return redirect("edit_paper", paper_id=paper.pk) if paper else redirect("write")
     if request.method == "POST" and request.POST.get("action") == "confirm":
         return confirm_upload(request, paper)
     initial = (

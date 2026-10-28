@@ -23,7 +23,14 @@
     if (!button) return;
     const dialog = document.getElementById("reference-copy-dialog");
     if (!dialog) return;
-    const url = new URL(button.dataset.referenceUrl, location.href).href;
+    const citationData = document.getElementById("citation-config");
+    const citation = citationData ? JSON.parse(citationData.textContent) : null;
+    // A desktop reader uses a loopback URL. Shared citations must still open
+    // the published snapshot on Peerpedia, not this computer's private server.
+    const url = new URL(
+      button.dataset.referenceUrl,
+      citation?.url || location.href,
+    ).href;
     dialog.querySelector("[name=permalink]").value = url;
     dialog.querySelector("[name=markdown]").value =
       `[${button.getAttribute("aria-label").replace("Copy reference to ", "")}](${url})`;
@@ -33,8 +40,6 @@
       !button.dataset.reference;
     document.getElementById("reference-internal-row").hidden =
       !button.dataset.reference;
-    const citationData = document.getElementById("citation-config");
-    const citation = citationData ? JSON.parse(citationData.textContent) : null;
     document.getElementById("reference-citation-group").hidden = !citation;
     if (citation) {
       dialog.querySelector("[name=citation]").value =

@@ -122,16 +122,25 @@ class BrowserJourneys(StaticLiveServerTestCase):
             return pool.submit(call).result()
 
     def upload(self, source=SOURCE, proposal=False):
+        expect(self.page.locator(".cm-content")).to_be_visible()
+        self.page.locator("#editor-files > summary").click()
+        if proposal:
+            self.page.once("dialog", lambda dialog: dialog.accept())
+        self.page.locator("#import-draft").set_input_files(
+            {"name": "paper.md", "mimeType": "text/markdown", "buffer": source.encode()}
+        )
+        expect(self.page.locator("#save-status")).to_have_text("Saved")
+        if not self.page.locator("#paper-details").evaluate("el => el.open"):
+            self.page.locator("#paper-details > summary").click()
         self.page.get_by_label("Title:", exact=True).fill("Browser paper")
         self.page.get_by_label("Authors:", exact=True).fill("Ada Example")
         self.page.get_by_label("Abstract:", exact=True).fill("A private-to-metadata abstract.")
         self.page.get_by_label("Primary subject:", exact=True).select_option("math.NT")
-        self.page.get_by_label("Markdown document").set_input_files(
-            {"name": "paper.md", "mimeType": "text/markdown", "buffer": source.encode()}
-        )
         if proposal:
-            self.page.get_by_label("What changed?").fill("Correct the proof.")
-        self.page.get_by_role("button", name=re.compile("Preview (submission|paper)")).click()
+            self.page.get_by_label("What changed?", exact=True).fill("Correct the proof.")
+        self.page.get_by_role(
+            "button", name="Review & submit PR" if proposal else "Review & publish", exact=True
+        ).click()
 
     def assert_math(self):
         expect(self.page.locator(".katex-mathml")).to_have_count(2)
@@ -161,6 +170,68 @@ class BrowserJourneys(StaticLiveServerTestCase):
         })""")
         self.assertLessEqual(layout["width"], layout["viewport"] + 1, str(layout))
 
+    def test_reader_chapter_edit_import_and_reference_controls(self):
+        from publishing.test_chapters import course
+
+        paper = self.database_call(lambda: publish(self.owner, course()))
+        self.login()
+        self.page.goto(self.live_server_url + paper.current.read_url + "?chapter=intro")
+        self.page.get_by_role("link", name="Paper details", exact=True).click()
+        expect(self.page.locator(".paper-metadata")).to_be_visible()
+        self.page.go_back()
+        for title, suffix in [
+            ("Introduction", "?chapter=intro"),
+            ("Motivation", "?chapter=intro#motivation"),
+        ]:
+            self.page.get_by_role("button", name="Copy reference to " + title, exact=True).click()
+            expect(self.page.locator('[name="permalink"]')).to_have_value(
+                self.live_server_url + paper.current.read_url + suffix
+            )
+            self.page.get_by_role("button", name="Close reference tools", exact=True).click()
+        self.page.get_by_role("link", name="Edit chapter", exact=True).click()
+        expect(self.page.locator("#active-chapter")).to_have_text("Introduction")
+        self.page.locator(".cm-content").fill(
+            "# Clearer introduction\n\n## Motivation\n\nA clearer explanation."
+        )
+        expect(self.page.locator("#chapter-list button").first).to_have_text(
+            "1. Clearer introduction"
+        )
+        expect(self.page.locator("#save-status")).to_have_text("Saved")
+        self.page.reload()
+        expect(self.page.locator("#active-chapter")).to_have_text("Clearer introduction")
+        self.page.locator("#editor-files > summary").click()
+        self.page.once("dialog", lambda dialog: dialog.accept())
+        self.page.locator("#import-draft").set_input_files(
+            {
+                "name": "intro.md",
+                "mimeType": "text/markdown",
+                "buffer": b"# Imported introduction\n\n## Motivation\n\nNew text.",
+            }
+        )
+        expect(self.page.locator("#active-chapter")).to_have_text("Imported introduction")
+        expect(self.page.locator("#save-status")).to_have_text("Saved")
+        self.page.locator("#editor-files > summary").click()
+        for width in [1365, 900, 390]:
+            self.page.set_viewport_size({"width": width, "height": 900})
+            self.assertGreater(self.page.locator("#workspace").bounding_box()["height"], 450)
+            self.assert_no_page_overflow()
+        self.page.set_viewport_size({"width": 1365, "height": 900})
+        self.page.locator("#paper-details > summary").click()
+        self.page.get_by_label("What changed?", exact=True).fill("Improve the introduction")
+        self.page.get_by_role("button", name="Review & submit PR", exact=True).click()
+        expect(self.page.get_by_role("link", name="Paper details", exact=True)).to_have_attribute(
+            "href", paper.get_absolute_url()
+        )
+        self.page.get_by_label("I have authority to submit", exact=False).check()
+        self.page.get_by_role("button", name="Submit PR", exact=True).click()
+        expect(self.page.locator(".submission-heading .status")).to_have_text("Pending")
+        pages = self.database_call(
+            lambda: Submission.objects.filter(paper=paper).latest("created_at").chapters
+        )
+        self.assertEqual(pages[0]["id"], "intro")
+        self.assertEqual(pages[0]["title"], "Imported introduction")
+        self.assertEqual(pages[1]["markdown"], course()["chapters"][1]["markdown"])
+
     def test_author_license_choice_requires_human_agreement(self):
         from accounts.models import User
         from publishing.models import AgreementAcceptance
@@ -187,10 +258,11 @@ class BrowserJourneys(StaticLiveServerTestCase):
         expect(self.page.get_by_label("Content license:", exact=True)).to_have_value("")
         self.page.get_by_label("Content license:", exact=True).select_option("CC-BY-NC-ND-4.0")
         self.page.get_by_label("I have authority to submit", exact=False).check()
-        self.page.get_by_role("button", name="Publish paper", exact=True).click()
+        self.page.get_by_role("button", name="Publish initial submission", exact=True).click()
         expect(self.page.get_by_role("link", name="CC BY-NC-ND 4.0", exact=True)).to_be_visible()
         paper = self.database_call(lambda: Paper.objects.get(owner=new_user))
         self.assertEqual(self.database_call(lambda: paper.current.license_code), "CC-BY-NC-ND-4.0")
+        self.page.get_by_role("link", name="Paper details", exact=True).click()
         self.page.get_by_role("link", name="Edit paper", exact=True).click()
         self.page.locator(".cm-content").fill(REVISED)
         expect(self.page.locator("#save-status")).to_have_text("Saved")
@@ -211,17 +283,18 @@ class BrowserJourneys(StaticLiveServerTestCase):
     def test_upload_preview_publish_reader_and_download(self):
         self.login()
         self.page.get_by_role("link", name="My drafts", exact=True).click()
-        self.page.get_by_role("link", name="Upload Markdown", exact=True).click()
+        self.page.get_by_role("link", name="Write a new note", exact=True).click()
         self.upload()
-        expect(self.page.get_by_role("heading", name="Review your upload")).to_be_visible()
+        expect(self.page.get_by_role("heading", name="Review your paper")).to_be_visible()
         self.assertEqual(self.database_call(Paper.objects.count), 0)
         self.assert_math()
         self.page.get_by_label("Content license:", exact=True).select_option("CC-BY-4.0")
         self.page.get_by_label("I have authority to submit", exact=False).check()
-        self.page.get_by_role("button", name="Publish paper", exact=True).click()
+        self.page.get_by_role("button", name="Publish initial submission", exact=True).click()
         expect(self.page.get_by_role("heading", name="Browser paper", exact=True)).to_be_visible()
         self.assertEqual(self.database_call(Paper.objects.count), 1)
         short_hash = self.database_call(lambda: Paper.objects.get().current.public_id)
+        self.page.get_by_role("link", name="Paper details", exact=True).click()
         metadata_url = self.page.url
         public_id = self.database_call(lambda: Paper.objects.get().public_id)
         self.assertTrue(metadata_url.endswith(f"/papers/{public_id}/"))
@@ -245,14 +318,14 @@ class BrowserJourneys(StaticLiveServerTestCase):
         original_id = paper.current_id
         self.login("contributor")
         self.page.goto(f"{self.live_server_url}/papers/{paper.pk}/")
-        self.page.get_by_role("link", name="Upload a change", exact=True).click()
+        self.page.get_by_role("link", name="Edit paper", exact=True).click()
         self.upload(REVISED, proposal=True)
         expect(self.page.get_by_role("region", name="Markdown source differences")).to_contain_text(
             "+Corrected proof."
         )
         self.assertEqual(self.database_call(Submission.objects.count), 1)
         self.page.get_by_label("I have authority to submit", exact=False).check()
-        self.page.get_by_role("button", name="Publish submission", exact=True).click()
+        self.page.get_by_role("button", name="Submit PR", exact=True).click()
         expect(self.page.locator(".submission-heading .status")).to_have_text("Pending")
         submission_url = self.page.url
         frozen_hash = self.page.locator(".hash-info dd code").first.inner_text()
@@ -457,7 +530,7 @@ class BrowserJourneys(StaticLiveServerTestCase):
         self.page.locator('input[name="secondary_categories"][value="math.NT"]').check()
         self.page.get_by_role("button", name="Review & submit PR", exact=True).click()
         expect(popup).to_contain_text("Choose each subject only once")
-        self.page.keyboard.press("Escape")
+        popup.get_by_role("button", name=re.compile("^Cross-list subjects")).click()
         self.page.locator('input[name="secondary_categories"][value="math.NT"]').uncheck()
         self.page.get_by_role("button", name="Done", exact=True).click()
         self.page.set_viewport_size({"width": 390, "height": 844})
@@ -1042,6 +1115,7 @@ C \arrow[r, "k"'] & D
     def test_subject_upload_cross_list_filter_and_mobile(self):
         self.login()
         self.page.goto(self.live_server_url + "/publish/")
+        self.page.locator("#paper-details > summary").click()
         self.page.get_by_text("Cross-list subjects (optional)", exact=True).click()
         self.page.get_by_label("Find a cross-list subject").fill("hep-th")
         expect(self.page.get_by_label("math.GR — Group Theory", exact=True)).not_to_be_visible()
@@ -1051,15 +1125,11 @@ C \arrow[r, "k"'] & D
             self.page.get_by_label("hep-th — High Energy Physics - Theory", exact=True)
         ).to_be_visible()
         self.upload()
-        expect(
-            self.page.get_by_role("link", name="math.NT — Number Theory · Primary")
-        ).to_be_visible()
-        expect(
-            self.page.get_by_role("link", name="hep-th — High Energy Physics - Theory", exact=True)
-        ).to_be_visible()
+        expect(self.page.locator("main")).to_contain_text("Primary subject · math.NT")
+        expect(self.page.locator("main")).to_contain_text("Cross-lists · hep-th")
         self.page.get_by_label("Content license:", exact=True).select_option("CC-BY-4.0")
         self.page.get_by_label("I have authority to submit", exact=False).check()
-        self.page.get_by_role("button", name="Publish paper", exact=True).click()
+        self.page.get_by_role("button", name="Publish initial submission", exact=True).click()
         expect(
             self.page.get_by_role("link", name="hep-th — High Energy Physics - Theory", exact=True)
         ).to_be_visible()
@@ -1198,6 +1268,8 @@ C \arrow[r, "k"'] & D
         self.page.get_by_role("button", name="Search Peerpedia", exact=True).click()
         expect(self.page.locator("#link-results")).to_contain_text(revised.public_id)
         self.page.get_by_role("button", name="Cite frozen version", exact=True).click()
+        if not self.page.locator("#chapter-panel").is_visible():
+            self.page.get_by_role("button", name="Chapters", exact=True).click()
         self.page.get_by_role("button", name="Bibliography", exact=True).click()
         expect(self.page.locator("#bib-source")).to_have_value(
             re.compile(re.escape("Peerpedia snapshot " + revised.public_id))
@@ -1219,7 +1291,6 @@ C \arrow[r, "k"'] & D
             "# Introduction\n\nA revised introduction. See @eq:one and [@wen]."
         )
         expect(self.page.locator("#save-status")).to_have_text("Saved")
-        self.page.once("dialog", lambda dialog: dialog.accept("Exercises"))
         self.page.get_by_role("button", name="Add chapter", exact=True).click()
         self.page.locator(".cm-content").fill(
             "# Exercises\n\nExplain the result in your own words.\n\n```math {@eq:warmup}\ny = 2\n```\n\nSee "
@@ -1241,6 +1312,8 @@ C \arrow[r, "k"'] & D
             self.assertIn("Quantum Field Theory", archive.read("references.yaml").decode())
         self.page.reload()
         expect(self.page.locator("#chapter-list button")).to_have_count(3)
+        if not self.page.locator("#chapter-panel").is_visible():
+            self.page.get_by_role("button", name="Chapters", exact=True).click()
         self.page.get_by_role("button", name="Bibliography", exact=True).click()
         expect(self.page.locator("#bib-source")).to_have_value(re.compile("Quantum Field Theory"))
         self.page.locator("#bib-dialog").get_by_role("button", name="Done", exact=True).click()

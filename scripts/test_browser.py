@@ -42,6 +42,12 @@ def main():
         default=sys.executable,
         help="Python with app and browser dependencies installed",
     )
+    parser.add_argument(
+        "--tests",
+        nargs="+",
+        default=["browser_tests.journeys"],
+        help="Django test labels to run against the disposable website",
+    )
     args = parser.parse_args()
     root = Path(__file__).resolve().parent.parent
     # Preserve the virtualenv entry point; resolving its symlink bypasses the venv.
@@ -65,7 +71,7 @@ def main():
                     app_python,
                     "manage.py",
                     "test",
-                    "browser_tests.journeys",
+                    *args.tests,
                     "--noinput",
                     "--verbosity=2",
                 ],

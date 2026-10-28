@@ -50,6 +50,8 @@ class ReadingCopyTests(TestCase):
         ):
             response = self.client.get(self.paper.current.read_url)
             self.assertContains(response, self.paper.current.read_url + "?chapter=proof#eq:one")
+            self.assertContains(response, 'aria-label="Copy reference to Motivation"')
+            self.assertContains(response, 'data-reference="@sec:motivation"')
             self.assertEqual(
                 self.client.get(reverse("passage_index", args=[self.paper.current_id])).status_code,
                 200,

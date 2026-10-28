@@ -256,6 +256,16 @@ async function save() {
   })();
   return saving;
 }
+window.peerpediaSaveBeforeClose = async () => {
+  try {
+    await save();
+    if (serial() !== saved) await save();
+    return serial() === saved && !resolving && $("recovery").hidden;
+  } catch (error) {
+    warn(error.message);
+    return false;
+  }
+};
 function showConflict(server) {
   resolving = server;
   $("conflict").hidden = false;
@@ -696,12 +706,31 @@ const filesMenu = document.getElementById("editor-files");
 filesMenu.addEventListener("click", (event) => {
   if (event.target.closest("button,.file-button")) filesMenu.open = false;
 });
+const toolbarMenus = [
+  filesMenu,
+  $("paper-details"),
+  $("publication-readiness"),
+];
+for (const menu of toolbarMenus) {
+  menu.addEventListener("toggle", () => {
+    if (menu.open)
+      toolbarMenus
+        .filter((other) => other !== menu)
+        .forEach((other) => (other.open = false));
+  });
+  menu.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") {
+      menu.open = false;
+      menu.querySelector("summary").focus();
+    }
+  });
+}
 document.addEventListener("click", (event) => {
-  if (!filesMenu.contains(event.target)) filesMenu.open = false;
-});
-filesMenu.addEventListener("keydown", (event) => {
-  if (event.key === "Escape") {
-    filesMenu.open = false;
-    filesMenu.querySelector("summary").focus();
+  for (const menu of toolbarMenus) {
+    if (
+      !menu.contains(event.target) &&
+      !event.target.closest(".publication-dialog")
+    )
+      menu.open = false;
   }
 });

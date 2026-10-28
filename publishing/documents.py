@@ -30,8 +30,13 @@ def validate(chapters, bibliography="", *, allow_empty=False):
         raise ValidationError("The BananaMark bibliography must be UTF-8 YAML text.")
     seen = set()
     for chapter in chapters:
-        if not isinstance(chapter, dict) or set(chapter) != {"id", "title", "markdown"}:
-            raise ValidationError("Each chapter needs an id, title, and markdown.")
+        if not isinstance(chapter, dict) or set(chapter) not in (
+            {"id", "markdown"},
+            {"id", "title", "markdown"},
+        ):
+            raise ValidationError(
+                "Each chapter needs an id and markdown. Its title comes from its heading."
+            )
         if not all(isinstance(value, str) for value in chapter.values()):
             raise ValidationError("Chapter fields must be text.")
         if not ID.fullmatch(chapter["id"]) or chapter["id"].casefold() in seen:
@@ -39,10 +44,8 @@ def validate(chapters, bibliography="", *, allow_empty=False):
                 "Chapter IDs must be unique letters, numbers, hyphens or underscores."
             )
         seen.add(chapter["id"].casefold())
-        if not chapter["title"].strip() or len(chapter["title"]) > 250:
-            raise ValidationError("Give each chapter a title of up to 250 characters.")
         if not allow_empty and not chapter["markdown"].strip():
-            raise ValidationError(f"Write some text in {chapter['title']} before submitting.")
+            raise ValidationError(f"Write some text in chapter {chapter['id']} before submitting.")
     text = combined(chapters) + bibliography
     try:
         size = len(text.encode("utf-8"))
@@ -87,6 +90,8 @@ def prepare(data, base=None, section=None):
         numberSections=bool(chapters),
         diagrams=True,
     )
+    titles = {page["id"]: page["title"] for page in result["pages"]}
+    data["chapters"] = [{**page, "title": titles[page["id"]]} for page in chapters]
     from .artifacts import renderer_version
 
     return PreparedDocument(

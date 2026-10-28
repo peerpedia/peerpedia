@@ -361,7 +361,10 @@ def save(request, draft_id):
                 raise ValidationError("The saved chapters do not match the complete document.")
         except ValidationError as error:
             return JsonResponse({"error": " ".join(error.messages)}, status=400)
-        draft.chapters, draft.bibliography = chapters, bibliography
+        # Draft titles are display hints from the editor. Publication derives them
+        # from Markdown again, outside the transaction. Saving never needs the renderer.
+        draft.chapters = [{**p, "title": p.get("title", "Untitled chapter")} for p in chapters]
+        draft.bibliography = bibliography
         draft.data = {key: form.cleaned_data[key] for key in FIELDS}
         draft.markdown = form.cleaned_data["markdown"]
         draft.revision += 1
@@ -429,7 +432,9 @@ def preview(request, draft_id):
             target = dict(target)
             if draft.section:
                 inside = target["chapter"] == chapter and (
-                    line_offset < target["line"] <= line_offset + len(source.splitlines())
+                    line_offset
+                    < (target.get("line") or 0)
+                    <= line_offset + len(source.splitlines())
                 )
                 if not inside and not target["explicit"]:
                     continue

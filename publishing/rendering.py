@@ -13,7 +13,16 @@ def headings(source):
     return structure(source)["headings"]
 
 
-def decorate(page, *, edit_url=None, source_lines=False, line_offset=0):
+def decorate(
+    page,
+    *,
+    edit_url=None,
+    source_lines=False,
+    line_offset=0,
+    reader_url="",
+    chapter="main",
+    targets=(),
+):
     body, contents = page["html"], []
     for heading in page["headings"]:
         if heading.get("title"):
@@ -28,9 +37,30 @@ def decorate(page, *, edit_url=None, source_lines=False, line_offset=0):
             body = body.replace(
                 f'data-source-line="{line}"', f'data-source-line="{line - line_offset}"'
             )
-        if edit_url and heading.get("root"):
-            from .ui import icon
+        from .ui import icon
 
+        controls = ""
+        if reader_url:
+            from urllib.parse import quote
+
+            target = next(
+                (t for t in targets if t["id"] == heading["id"] and t["chapter"] == chapter), None
+            )
+            location = "?" + urlencode({"chapter": chapter}) + "#" + quote(heading["id"])
+            reference = (
+                "@" + target["label"]
+                if target and target.get("explicit")
+                else f"[{heading['label']}]({location})"
+            )
+            controls += (
+                '<button type="button" class="copy-reference ui-icon-button" data-passage-ignore '
+                f'data-reference-url="{escape(reader_url + location, quote=True)}" '
+                f'data-reference="{escape(reference, quote=True)}" '
+                f'aria-label="Copy reference to {escape(heading["label"], quote=True)}" title="Copy citation or link">'
+                + str(icon("link"))
+                + "</button>"
+            )
+        if edit_url and heading.get("root"):
             link = (
                 '<a class="section-edit ui-icon-button" data-passage-ignore aria-label="Edit section '
                 + escape(heading["label"], quote=True)
@@ -40,10 +70,12 @@ def decorate(page, *, edit_url=None, source_lines=False, line_offset=0):
                 + icon("edit")
                 + "</a>"
             )
+            controls += link
+        if controls:
             start = body.find('id="' + escape(heading["id"], quote=True) + '"')
             end = body.find(f"</h{heading['level']}>", start)
             if start >= 0 and end >= 0:
-                body = body[:end] + link + body[end:]
+                body = body[:end] + controls + body[end:]
     if contents:
         base = min(h["level"] for h in contents)
         for item in contents:

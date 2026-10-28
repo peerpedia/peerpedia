@@ -72,5 +72,11 @@ class ReferenceDocument:
             self.options["section"] = section
         page = next(p for p in self.result["pages"] if p["id"] == chapter)
         return decorate(
-            page, edit_url=edit_url, source_lines=source_lines, line_offset=reference_line_offset
+            page,
+            edit_url=edit_url,
+            source_lines=source_lines,
+            line_offset=reference_line_offset,
+            reader_url=self.options["reader"],
+            chapter=chapter,
+            targets=self.targets,
         )

@@ -33,14 +33,6 @@
       else link.removeAttribute("aria-current");
     });
     active = index;
-    const edit = document.querySelector(".reader-edit");
-    if (edit) {
-      const url = new URL(edit.href);
-      if (index >= 0)
-        url.searchParams.set("section", links[index].dataset.section);
-      else url.searchParams.delete("section");
-      edit.href = url.pathname + url.search;
-    }
     currentLabel.textContent = index < 0 ? "" : links[index].textContent;
     if (index >= 0 && desktop.matches) {
       const link = links[index];

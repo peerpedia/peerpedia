@@ -2,6 +2,38 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { JSDOM } from "jsdom";
 import { renderDocument, scan } from "./render-document.mjs";
+import { chapterTitle } from "./chapter-title.js";
+
+test("chapter names come from headings without treating examples as titles", async () => {
+  assert.equal(
+    chapterTitle("```md\n# Example\n```\n\n# **Actual** title {@ch:title}"),
+    "Actual title",
+  );
+  assert.equal(
+    chapterTitle("A title\n=======\n\nUnfinished $\\badcommand"),
+    "A title",
+  );
+  assert.equal(chapterTitle("> # Quoted\n\n# Real"), "Real");
+  assert.equal(chapterTitle("No heading"), "Untitled chapter");
+  const result = await renderDocument({
+    pages: [
+      {
+        id: "stable",
+        title: "Old metadata",
+        markdown:
+          "# New title\n\n## A section\n\n### A detail {@sec:detail}\n\nText.",
+      },
+    ],
+    reader: "/submissions/frozen/read/",
+  });
+  assert.equal(result.pages[0].title, "New title");
+  const chapter = result.targets.find((t) => t.kind === "chapter");
+  assert.equal(chapter.url, "/submissions/frozen/read/?chapter=stable");
+  assert.ok(
+    result.targets.some((t) => t.text === "A section" && t.explicit === false),
+  );
+  assert.ok(result.targets.some((t) => t.label === "sec:detail" && t.explicit));
+});
 
 test("native book numbering, bibliography and version links", async () => {
   const result = await renderDocument({
@@ -143,7 +175,13 @@ test("selected chapter preview retains book numbering and cross-chapter referenc
   );
   assert.match(result.pages[0].html, /Theorem 2.1/);
   assert.match(result.pages[0].html, /\?chapter=a#thm:a/);
-  assert.equal(result.targets.length, 2);
+  assert.equal(result.targets.filter((target) => target.explicit).length, 2);
+  assert.deepEqual(
+    result.targets
+      .filter((target) => target.kind === "chapter")
+      .map((target) => target.chapter),
+    ["a", "b"],
+  );
 });
 
 test("cache maintenance expires old diagrams and applies the capacity budget", async () => {

@@ -1,3 +1,5 @@
+import { chapterTitle } from "./chapter-title.js";
+
 export function chapterWorkspace({
   initial,
   view,
@@ -7,7 +9,9 @@ export function chapterWorkspace({
   warn,
 }) {
   const $ = (id) => document.getElementById(id);
-  let chapters = structuredClone(initial.chapters || []),
+  const named = (pages) =>
+    pages.map((p) => ({ ...p, title: chapterTitle(p.markdown) }));
+  let chapters = named(initial.chapters || []),
     bibliography = initial.bibliography || "";
   let active =
     chapters.find((p) => p.id === initial.chapter)?.id ||
@@ -17,10 +21,25 @@ export function chapterWorkspace({
     currentResults = [],
     dragged = null;
   const controls = $("chapter-panel");
-  if (initial.is_section) controls.hidden = true;
+  const toggle = $("toggle-chapters");
+  controls.hidden = initial.is_section || !chapters.length;
+  toggle.hidden = initial.is_section;
+  toggle.setAttribute("aria-expanded", String(!controls.hidden));
+  toggle.addEventListener("click", () => {
+    controls.hidden = !controls.hidden;
+    toggle.setAttribute("aria-expanded", String(!controls.hidden));
+    view.requestMeasure();
+  });
   function sync() {
     const page = chapters.find((p) => p.id === active);
-    if (page) page.markdown = view.state.doc.toString();
+    if (page) {
+      page.markdown = view.state.doc.toString();
+      const title = chapterTitle(page.markdown);
+      if (page.title !== title) {
+        page.title = title;
+        draw();
+      }
+    }
   }
   function switchTo(id) {
     if (id === active) return;
@@ -63,44 +82,32 @@ export function chapterWorkspace({
       });
       $("chapter-list").append(row);
     });
-    for (const id of [
-      "rename-chapter",
-      "delete-chapter",
-      "chapter-up",
-      "chapter-down",
-    ])
+    for (const id of ["delete-chapter", "chapter-up", "chapter-down"])
       $(id).disabled = !chapters.length;
     $("active-chapter").textContent =
       chapters.find((p) => p.id === active)?.title || "Your note";
   }
   $("add-chapter").addEventListener("click", () => {
-    const title = prompt("Chapter title");
-    if (!title?.trim()) return;
     sync();
     if (!chapters.length)
       chapters = [
         {
           id: "main",
-          title: initial.data.title || "Introduction",
+          title: chapterTitle(view.state.doc.toString()),
           markdown: view.state.doc.toString(),
         },
       ];
-    const page = { id: crypto.randomUUID(), title: title.trim(), markdown: "" };
+    const page = {
+      id: crypto.randomUUID(),
+      title: "New chapter",
+      markdown: "# New chapter\n\n",
+    };
     chapters.push(page);
     active = page.id;
-    replaceText("");
+    replaceText(page.markdown);
     draw();
     changed();
     view.focus();
-  });
-  $("rename-chapter").addEventListener("click", () => {
-    const page = chapters.find((p) => p.id === active);
-    if (!page) return;
-    const title = prompt("Chapter title", page.title);
-    if (!title?.trim()) return;
-    page.title = title.trim();
-    draw();
-    changed();
   });
   $("delete-chapter").addEventListener("click", () => {
     if (chapters.length <= 1) {
@@ -222,7 +229,9 @@ export function chapterWorkspace({
         insert(
           external
             ? `[${target.text || target.title}](${new URL(target.url, location.origin).href})`
-            : "@" + target.label,
+            : target.explicit === false
+              ? `[${target.text}](${target.url})`
+              : "@" + target.label,
         );
       });
       result.append(button);
@@ -326,7 +335,9 @@ export function chapterWorkspace({
   draw();
   return {
     labels: () =>
-      targets.map((t) => ({ name: t.label, text: t.text, page: t.chapter })),
+      targets
+        .filter((t) => t.explicit !== false)
+        .map((t) => ({ name: t.label, text: t.text, page: t.chapter })),
     initialText: () =>
       chapters.find((p) => p.id === active)?.markdown ?? initial.markdown,
     payload: () => {
@@ -349,7 +360,7 @@ export function chapterWorkspace({
       };
     },
     replace: (contents) => {
-      chapters = structuredClone(contents.chapters || []);
+      chapters = named(contents.chapters || []);
       bibliography = contents.bibliography || "";
       active = chapters.some((p) => p.id === active)
         ? active

@@ -3,6 +3,7 @@ import { declaredLabels } from "bananamark-codemirror";
 import { tikz } from "bananamark-tikz";
 import { JSDOM } from "jsdom";
 import { dialectOptions, numbering } from "./dialect.js";
+import { chapterTitle } from "./chapter-title.js";
 
 const dialect = defineDialect(dialectOptions);
 const dom = new JSDOM("");
@@ -74,6 +75,8 @@ function annotate(
     blocks = [],
     path = [],
     counts = new Map();
+  // Peerpedia supplies the shared link/reference controls next to headings.
+  root.querySelectorAll(".bm-heading-link").forEach((node) => node.remove());
   // Canonical references keep passage quotes stable when chapter numbers change.
   for (const link of root.querySelectorAll("a[href]")) {
     const href = link.getAttribute("href");
@@ -240,6 +243,8 @@ function annotate(
 }
 
 export async function renderDocument(input) {
+  if (input.action === "titles")
+    return { titles: input.pages.map((p) => chapterTitle(p.markdown)) };
   if (input.action === "scan") return scan(input.source || "");
   const pages = input.pages || [
     { id: "main", title: "", markdown: input.source || "" },
@@ -296,7 +301,7 @@ export async function renderDocument(input) {
     }
     return book.add(source, {
       key: page.id,
-      title: page.title || "",
+      title: chapterTitle(page.markdown),
       position: input.numberSections === false ? [] : [i + 1],
       file: page.id + ".md",
     });
@@ -364,7 +369,11 @@ export async function renderDocument(input) {
       offset += resultPage.blocks.length;
       for (const entry of result.bibliography)
         entries[entry.key] = { ...entry, author: entry.citationLabel };
-      rendered.push({ id: page.id, ...resultPage });
+      rendered.push({
+        id: page.id,
+        title: chapterTitle(page.markdown),
+        ...resultPage,
+      });
     }
   } finally {
     await diagrams?.close();
@@ -385,20 +394,52 @@ export async function renderDocument(input) {
       (h) => h.line >= section.line && h.line < section.end,
     );
   }
-  const targets = book
-    .labels()
-    .filter((l) => l.kind !== "page")
-    .map((label) => ({
-      id: prefix + label.anchor,
-      label: label.name,
-      chapter: label.page,
-      kind: label.kind === "bibliography" ? "citation" : label.kind,
-      text: label.text,
+  const targets = book.labels().map((label) => ({
+    id: prefix + label.anchor,
+    label: label.name,
+    chapter: label.page,
+    kind: label.kind === "bibliography" ? "citation" : label.kind,
+    text: label.text,
+    title: "",
+    line: label.line,
+    end_line: label.line,
+    explicit: true,
+    url:
+      url(label.page) +
+      (label.anchor ? "#" + encodeURIComponent(prefix + label.anchor) : ""),
+  }));
+  for (const page of pages) {
+    targets.push({
+      id: "",
+      label: page.id,
+      chapter: page.id,
+      kind: "chapter",
+      text: chapterTitle(page.markdown),
       title: "",
-      line: label.line,
-      end_line: label.line,
-      explicit: true,
-      url: url(label.page) + "#" + encodeURIComponent(prefix + label.anchor),
-    }));
+      explicit: false,
+      url: url(page.id),
+    });
+  }
+  for (const page of rendered) {
+    for (const heading of page.headings) {
+      if (
+        heading.title ||
+        targets.some((t) => t.chapter === page.id && t.id === heading.id)
+      )
+        continue;
+      targets.push({
+        id: heading.id,
+        label: heading.id,
+        chapter: page.id,
+        kind: "heading",
+        text: heading.label,
+        title: "",
+        explicit: false,
+        line: heading.line,
+        end_line: heading.line,
+        url: url(page.id) + "#" + encodeURIComponent(heading.id),
+      });
+    }
+  }
   return { pages: rendered, targets, entries, warnings: [] };
 }
