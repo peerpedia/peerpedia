@@ -167,6 +167,9 @@ def start(request, paper_id=None, pr_id=None):
         if source.chapters and chapter is None:
             messages.error(request, "Choose a section from an existing chapter.")
             return redirect(paper.read_url)
+        if scope == sections.CHAPTER_SCOPE and chapter is None:
+            messages.error(request, "Choose an existing chapter to edit.")
+            return redirect(paper.read_url)
         section = sections.find(chapter["markdown"] if chapter else source.markdown, scope)
         if chapter and section:
             section["chapter"] = chapter["id"]
@@ -498,7 +501,9 @@ def rebase(request, draft_id):
                     "draft": draft,
                     "latest": latest,
                     "target": target,
-                    "choices": sections.sections(latest_source),
+                    "choices": [sections.chapter(latest_source)]
+                    if draft.section.get("kind") == "chapter"
+                    else sections.sections(latest_source),
                     "original": sections.text(
                         section_source(draft.base, draft.section), draft.section
                     ),
@@ -704,7 +709,9 @@ def review(request, draft_id, *, consent_form=None):
         chapters = full_chapters(draft) or [
             {"id": "main", "title": draft.title, "markdown": source}
         ]
-        refs = ReferenceDocument(chapters, draft.bibliography, number_sections=bool(draft.chapters))
+        refs = ReferenceDocument(
+            chapters, draft.bibliography, number_sections=bool(full_chapters(draft))
+        )
         body = "".join(refs.render(p["id"])[0] for p in chapters)
         with transaction.atomic():
             locked = owned(request, draft_id, lock=True)
@@ -741,9 +748,7 @@ def review(request, draft_id, *, consent_form=None):
                 "body": body,
                 "reference_warnings": refs.warnings,
                 "refreshed": refreshed,
-                "diff": diff_lines(
-                    section_source(draft.base, draft.section) if draft.base else "", source
-                ),
+                "diff": diff_lines(draft.base.markdown if draft.base else "", source),
                 "metadata_changes": metadata_diff(draft.base, draft.data),
                 "subjects": form.cleaned_data,
                 "consent_form": consent_form

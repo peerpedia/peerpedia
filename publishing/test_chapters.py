@@ -67,7 +67,7 @@ class ChapterTests(TestCase):
         self.assertEqual([p["title"] for p in paper.current.chapters], ["Introduction", "A proof"])
         before = paper.current.hash
         response = self.client.get(paper.current.read_url + "?chapter=proof")
-        self.assertContains(response, 'class="button secondary chapter-edit"')
+        self.assertContains(response, 'class="section-edit chapter-edit ui-icon-button"')
         self.assertContains(response, "Copy reference to A proof")
         self.assertContains(response, "Paper details")
         paper.current.refresh_from_db()
@@ -82,6 +82,114 @@ class ChapterTests(TestCase):
             reverse("edit_paper", args=[self.paper.pk]),
             fetch_redirect_response=False,
         )
+
+    def chapter_draft(self):
+        response = self.client.post(
+            reverse("edit_paper", args=[self.paper.pk])
+            + f"?version={self.paper.current_id}&chapter=intro&scope=%40chapter"
+        )
+        return Draft.objects.get(pk=response.url.split("/")[2])
+
+    def test_chapter_draft_is_independent_and_preview_excludes_other_chapters(self):
+        whole = self.client.post(reverse("edit_paper", args=[self.paper.pk]))
+        draft = self.chapter_draft()
+        self.assertNotEqual(str(draft.pk), whole.url.split("/")[2])
+        self.assertEqual(draft.section["kind"], "chapter")
+        self.assertEqual(draft.scope_key, "intro:@chapter")
+        self.assertEqual(draft.markdown, CHAPTERS[0]["markdown"])
+        self.assertEqual(draft.chapters, [])
+        self.assertEqual(self.chapter_draft().pk, draft.pk)
+        response = self.client.post(
+            reverse("draft_preview", args=[draft.pk]),
+            json.dumps({"revision": draft.revision, "markdown": draft.markdown}),
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 200, response.content)
+        self.assertIn("A unique passage", response.json()["html"])
+        self.assertNotIn("Every example has a proof.", response.json()["html"])
+        self.assertIn("(2.1)", response.json()["html"])
+
+    def test_chapter_pr_renames_heading_preserves_other_chapters_and_resumes(self):
+        from .drafts import full_chapters
+
+        draft = self.chapter_draft()
+        draft.markdown = "# Renamed chapter\n\nNew introduction.\n\n## New section\n\nIts proof."
+        draft.data["explanation"] = "Improve the chapter"
+        draft.save()
+        response = self.client.post(
+            reverse("draft_review", args=[draft.pk]), {"revision": draft.revision}
+        )
+        self.assertEqual(response.status_code, 200, response.content)
+        self.client.post(
+            reverse("draft_submit", args=[draft.pk]),
+            {"token": response.context["token"], "rights_confirmed": True},
+        )
+        draft.refresh_from_db()
+        self.assertIsNotNone(draft.submitted_id)
+        submitted = draft.submitted
+        self.assertEqual(submitted.chapters[0]["title"], "Renamed chapter")
+        self.assertEqual(submitted.chapters[1], CHAPTERS[1])
+        self.assertEqual(submitted.bibliography, BIB)
+        pr = submitted.pr_commit.request
+        self.client.post(reverse("edit_pr", args=[pr.pk]))
+        resumed = Draft.objects.get(pull_request=pr, submitted__isnull=True)
+        self.assertEqual(resumed.markdown, submitted.chapters[0]["markdown"])
+        self.assertEqual(resumed.section["kind"], "chapter")
+        self.assertEqual(full_chapters(resumed)[1], CHAPTERS[1])
+
+    def test_chapter_refresh_preserves_unrelated_changes_and_blocks_same_chapter_changes(self):
+        from .drafts import refresh_section, full_chapters
+
+        draft = self.chapter_draft()
+        other = course()
+        other["chapters"][1]["markdown"] += "\nAnother author's improvement."
+        other["markdown"] = combined(other["chapters"])
+        updated = propose(self.user, self.paper.pk, self.paper.current_id, other)
+        decide(self.user, updated.pk, "accepted")
+        draft.refresh_from_db()
+        self.assertTrue(refresh_section(draft))
+        self.assertEqual(full_chapters(draft)[1], updated.chapters[1])
+        draft.save()
+        changed = course()
+        changed["chapters"][0]["markdown"] += "\nA competing edit."
+        changed["markdown"] = combined(changed["chapters"])
+        update = propose(self.user, self.paper.pk, updated.pk, changed)
+        decide(self.user, update.pk, "accepted")
+        draft.refresh_from_db()
+        with self.assertRaises(ValidationError):
+            refresh_section(draft)
+        response = self.client.get(reverse("draft_rebase", args=[draft.pk]))
+        self.assertContains(response, "Review the latest chapter")
+        self.assertEqual(len(response.context["choices"]), 1)
+        self.assertEqual(response.context["target"]["kind"], "chapter")
+        response = self.client.post(
+            reverse("draft_rebase", args=[draft.pk]),
+            json.dumps(
+                {"revision": draft.revision, "latest": str(update.pk), "target": "@chapter"}
+            ),
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 200, response.content)
+        draft.refresh_from_db()
+        self.assertEqual(draft.section["end"], len(update.chapters[0]["markdown"]))
+
+    def test_chapter_pr_rejects_tampering_with_other_content(self):
+        from . import sections
+
+        scope = {**sections.chapter(CHAPTERS[0]["markdown"]), "chapter": "intro"}
+        for change in ("other", "bibliography", "order", "metadata"):
+            value = course()
+            if change == "other":
+                value["chapters"][1]["markdown"] += "\nOutside edit."
+            if change == "bibliography":
+                value["bibliography"] = ""
+            if change == "order":
+                value["chapters"].reverse()
+            if change == "metadata":
+                value["title"] = "Changed title"
+            value["markdown"] = combined(value["chapters"])
+            with self.subTest(change=change), self.assertRaises(ValidationError):
+                propose(self.user, self.paper.pk, self.paper.current_id, value, section=scope)
 
     def test_old_client_cannot_drop_chapters(self):
         with self.assertRaisesMessage(ValidationError, "update the CLI"):

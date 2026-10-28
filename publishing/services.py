@@ -45,8 +45,7 @@ def prepare_proposal(data, base, section=None):
             raise ValidationError("The section does not form a complete document.")
         if section.get("chapter"):
             if (
-                [(p["id"], p["title"]) for p in data["chapters"]]
-                != [(p["id"], p["title"]) for p in base.chapters]
+                [p["id"] for p in data["chapters"]] != [p["id"] for p in base.chapters]
                 or any(
                     p != q
                     for p, q in zip(data["chapters"], base.chapters)

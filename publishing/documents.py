@@ -91,7 +91,12 @@ def prepare(data, base=None, section=None):
         diagrams=True,
     )
     titles = {page["id"]: page["title"] for page in result["pages"]}
-    data["chapters"] = [{**page, "title": titles[page["id"]]} for page in chapters]
+    data["chapters"] = [
+        {**page, "title": titles[page["id"]]}
+        if not section or page["id"] == section.get("chapter")
+        else page
+        for page in chapters
+    ]
     from .artifacts import renderer_version
 
     return PreparedDocument(

@@ -188,17 +188,23 @@ class BrowserJourneys(StaticLiveServerTestCase):
                 self.live_server_url + paper.current.read_url + suffix
             )
             self.page.get_by_role("button", name="Close reference tools", exact=True).click()
-        self.page.get_by_role("link", name="Edit chapter", exact=True).click()
-        expect(self.page.locator("#active-chapter")).to_have_text("Introduction")
+        pencil = self.page.get_by_role("link", name="Edit chapter", exact=True)
+        expect(pencil).to_have_class(re.compile("section-edit.*ui-icon-button"))
+        evidence = Path(os.environ["PEERPEDIA_BROWSER_ARTIFACTS"]) / "chapter-scope"
+        evidence.mkdir(parents=True, exist_ok=True)
+        self.page.screenshot(path=str(evidence / "reader-pencil.png"))
+        pencil.click()
+        expect(self.page.locator(".section-scope")).to_contain_text("Introduction · Chapter draft")
+        expect(self.page.locator("#chapter-panel")).not_to_be_visible()
+        expect(self.page.get_by_role("button", name="Chapters", exact=True)).not_to_be_visible()
+        expect(self.page.locator(".cm-content")).not_to_contain_text("Every example has a proof.")
         self.page.locator(".cm-content").fill(
             "# Clearer introduction\n\n## Motivation\n\nA clearer explanation."
         )
-        expect(self.page.locator("#chapter-list button").first).to_have_text(
-            "1. Clearer introduction"
-        )
+        expect(self.page.locator("#draft-preview")).to_contain_text("Clearer introduction")
         expect(self.page.locator("#save-status")).to_have_text("Saved")
         self.page.reload()
-        expect(self.page.locator("#active-chapter")).to_have_text("Clearer introduction")
+        expect(self.page.locator(".cm-content")).to_contain_text("# Clearer introduction")
         self.page.locator("#editor-files > summary").click()
         self.page.once("dialog", lambda dialog: dialog.accept())
         self.page.locator("#import-draft").set_input_files(
@@ -208,7 +214,7 @@ class BrowserJourneys(StaticLiveServerTestCase):
                 "buffer": b"# Imported introduction\n\n## Motivation\n\nNew text.",
             }
         )
-        expect(self.page.locator("#active-chapter")).to_have_text("Imported introduction")
+        expect(self.page.locator("#draft-preview")).to_contain_text("Imported introduction")
         expect(self.page.locator("#save-status")).to_have_text("Saved")
         self.page.locator("#editor-files > summary").click()
         for width in [1365, 900, 390]:
@@ -216,6 +222,7 @@ class BrowserJourneys(StaticLiveServerTestCase):
             self.assertGreater(self.page.locator("#workspace").bounding_box()["height"], 450)
             self.assert_no_page_overflow()
         self.page.set_viewport_size({"width": 1365, "height": 900})
+        self.page.screenshot(path=str(evidence / "chapter-only-editor.png"))
         self.page.locator("#paper-details > summary").click()
         self.page.get_by_label("What changed?", exact=True).fill("Improve the introduction")
         self.page.get_by_role("button", name="Review & submit PR", exact=True).click()
@@ -229,6 +236,10 @@ class BrowserJourneys(StaticLiveServerTestCase):
             lambda: Submission.objects.filter(paper=paper).latest("created_at").chapters
         )
         self.assertEqual(pages[0]["id"], "intro")
+        scope = self.database_call(
+            lambda: Submission.objects.filter(paper=paper).latest("created_at").pr_commit.section
+        )
+        self.assertEqual(scope["kind"], "chapter")
         self.assertEqual(pages[0]["title"], "Imported introduction")
         self.assertEqual(pages[1]["markdown"], course()["chapters"][1]["markdown"])
 
