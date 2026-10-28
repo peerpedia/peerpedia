@@ -38,6 +38,9 @@
   <p>Inside the dollar signs, use familiar LaTeX commands such as <code>\frac{a}{b}</code>, <code>\sum</code>, and <code>\mathbb{R}</code>. Do not add a document preamble or <code>\begin{document}</code>.</p>
   <p>Only <code>math</code> code blocks receive automatic equation numbers. Double-dollar and backslash-bracket displays are unnumbered. Theorems share one counter; equations have a separate counter. Both restart at each chapter.</p>
   {% help_example "unnumbered" %}
+  <h3>Align several lines</h3>
+  <p>Use <code>\begin{aligned}</code> and <code>\end{aligned}</code> inside a display formula or a <code>math</code> code block. Put <code>&amp;</code> before the symbols to align and <code>\\</code> between rows. A numbered block receives one number for the whole group.</p>
+  {% help_example "aligned" %}
   <p>The editor’s <strong>Insert block</strong> menu inserts these wrappers for you. The next sections show how blocks also create references, statements, and captions.</p>
 </section>
 <section id="chapters">
@@ -74,7 +77,7 @@
   <p>The example below has two parts. Put the YAML entry in <strong>Bibliography</strong> and the Markdown sentence in your chapter. Its citation key is <code>euclidElements</code>.</p>
   <p>Then write a citation in the chapter by putting the key after <code>@</code> inside square brackets.</p>
   {% help_example "citation" %}
-  <p>The reader sees a short citation linking to the full entry at the end of that chapter. A chapter lists the works cited in it.</p>
+  <p>The reader sees an author–year citation linking to the full entry. The shared bibliography appears at the end of the last chapter.</p>
   <p>To point to a particular page or part, add it after a comma. To cite several sources together, separate their keys with a semicolon inside the brackets. Each key must have an entry in your bibliography. This example includes the entries it needs.</p>
   {% help_example "citation_details" %}
   <p>Check that the source supports the statement you are making. A formatted citation is not a check of its contents.</p>
@@ -105,7 +108,7 @@
 <section id="check">
   <h2>Check before submitting</h2>
   <ul><li>Read the preview as a reader would. Check each chapter, equation, and diagram.</li><li>Open cross-references and check their destinations. Correct missing or repeated labels.</li><li>Check bibliography entries and make sure each citation supports its claim.</li><li>Use Review &amp; publish for a new paper, or Review &amp; submit PR for a revision. Check the title, authors, abstract, subject, and license as well as the text.</li></ul>
-  <p>A paper can have up to 64 chapters. The combined Markdown and bibliography must fit within 1 MB. Reference warnings do not prevent submission, but fixing them makes the paper easier to read.</p>
+  <p>A paper can have up to 64 chapters. The combined Markdown and bibliography must fit within 1 MB. Formula errors and missing or duplicate reference labels must be corrected before submission. You can still save an incomplete draft.</p>
 </section>
 {% include 'includes/reference_tools.html' %}
 {% endblock %}

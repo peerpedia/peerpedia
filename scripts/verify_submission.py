@@ -1,4 +1,4 @@
-"""Verify downloaded submission.json and submission.md using Python's standard library."""
+"""Verify submission.json against a downloaded Markdown file or complete source ZIP."""
 
 import argparse
 import hashlib
@@ -38,7 +38,7 @@ if manifest["format"] == "peerpedia-submission-v4":
             texts.append(text)
         source = b"\n\n".join(texts) if texts else archive.read("paper.md")
         if (
-            hashlib.sha256(archive.read("references.bib")).hexdigest()
+            hashlib.sha256(archive.read(info["bibliography"])).hexdigest()
             != manifest["bibliography_sha256"]
         ):
             raise SystemExit("FAIL: Bibliography does not match the manifest")

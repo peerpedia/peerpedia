@@ -1,6 +1,6 @@
 {
   "name": "peerpedia",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Find research, understand reader feedback, and propose improvements on Peerpedia.",
   "skills": "./skills/",
   "requires_local_executor": true,

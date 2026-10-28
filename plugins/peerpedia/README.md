@@ -13,7 +13,7 @@ python3 -m venv "$HOME/.local/share/peerpedia/venv"
 "$HOME/.local/share/peerpedia/venv/bin/python" -m pip install "peerpedia-cli"
 ```
 
-The CLI must report version 0.1.0 or newer.
+The CLI must report version 0.1.1 or newer.
 
 Register the repository marketplace with the Codex CLI:
 
@@ -32,8 +32,9 @@ codex plugin add peerpedia@peerpedia
 For local development, register the repository's absolute path instead of the
 GitHub shorthand. Plugin installation copies its folder into Codex's cache; it
 does not install Python or the CLI automatically. Check the installation using
-`scripts/check_setup.py` from the installed plugin folder. To update, update the
-CLI from a current official checkout and refresh/reinstall the marketplace plugin.
+`scripts/check_setup.py` from the installed plugin folder. To update, run the
+dedicated environment's Python with
+`-m pip install --upgrade peerpedia-cli` and refresh/reinstall the marketplace plugin.
 
 ## Try it
 

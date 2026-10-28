@@ -65,6 +65,19 @@ inherit it. Library draft folder names must be unique and not overwrite existing
 After publication retain that folder and its `.peerpedia` state; find it by the
 receipt's paper ID before creating another copy.
 
+For chaptered papers, `paper.json` lists ordered `chapters` with `id`, `title`,
+and `file` fields, plus a `bibliography` path, normally `references.yaml`.
+Edit those files; `clone`, `diff`, `push`, and `pull` include them together.
+`fetch` writes a chaptered incoming copy into `.peerpedia/incoming-<hash>/`.
+
+Use BananaMark syntax: `{@thm:main}` declares a label and `@thm:main` references
+it. Theorem blocks use `::: theorem [Title] {@thm:main}` with a closing `:::`.
+Only fenced `math` blocks are automatically numbered; `$$` displays are not.
+Bibliographies use BananaMark YAML entries and `[@key]` citations, not BibTeX.
+Keep explicit `\begin` and `\end` environments in `tikz` fences. Correct formula
+errors and missing or duplicate labels before pushing. The website writing guide
+contains complete examples: https://peerpedia.dev/help/writing/.
+
 After explicit submission authorization, from the working copy:
 
 ```sh

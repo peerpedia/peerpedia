@@ -249,6 +249,43 @@ class ChapterTests(TestCase):
             404,
         )
 
+    def test_download_verifier_reads_declared_bibliography_and_rejects_tampering(self):
+        import io
+        from pathlib import Path
+        import subprocess
+        import sys
+        import tempfile
+        import zipfile
+
+        response = self.client.get(reverse("download", args=[self.paper.current_id]))
+        with zipfile.ZipFile(io.BytesIO(response.content)) as archive:
+            files = {name: archive.read(name) for name in archive.namelist()}
+        bibliography = json.loads(files["paper.json"])["bibliography"]
+        verifier = Path(__file__).resolve().parents[1] / "scripts/verify_submission.py"
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            manifest = root / "submission.json"
+            manifest.write_bytes(files["submission.json"])
+            source = root / "source.zip"
+            for tampered in (False, True):
+                with zipfile.ZipFile(source, "w") as archive:
+                    for name, data in files.items():
+                        archive.writestr(
+                            name, data + b"\n" if tampered and name == bibliography else data
+                        )
+                result = subprocess.run(
+                    [sys.executable, str(verifier), str(manifest), str(source)],
+                    capture_output=True,
+                    text=True,
+                    timeout=10,
+                )
+                if tampered:
+                    self.assertNotEqual(result.returncode, 0)
+                    self.assertIn("Bibliography does not match", result.stderr)
+                else:
+                    self.assertEqual(result.returncode, 0, result.stderr)
+                    self.assertIn(self.paper.current.hash, result.stdout)
+
 
 class ReferenceTests(SimpleTestCase):
     def test_native_numbering_and_references(self):

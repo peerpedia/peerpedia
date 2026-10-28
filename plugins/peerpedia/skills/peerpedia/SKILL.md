@@ -14,7 +14,7 @@ Show readable diffs and result links, not raw command logs or full hashes by def
 
 Run `python3 <plugin-root>/scripts/check_setup.py`. This checks local availability
 without network calls or reading credentials. Use its absolute `executable` for
-subsequent commands. If missing or older than 0.1.0, follow
+subsequent commands. If missing or older than 0.1.1, follow
 [setup](references/setup.md). Public reading needs no account. Connect an account
 only when a submission requires it. Never ask users to paste tokens into chat.
 The plugin depends on the separately installed CLI, not files in a developer checkout.
