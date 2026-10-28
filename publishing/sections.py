@@ -5,6 +5,24 @@ from django.core.exceptions import ValidationError
 from .rendering import headings as document_headings
 
 
+CHAPTER_SCOPE = "@chapter"
+
+
+def chapter(source):
+    headings = [h for h in document_headings(source) if h.get("root")]
+    heading = next((h for h in headings if h.get("title")), headings[0] if headings else None)
+    label = heading["label"] if heading else "Untitled chapter"
+    return {
+        "kind": "chapter",
+        "anchor": CHAPTER_SCOPE,
+        "label": label,
+        "level": 0,
+        "path": [label],
+        "start": 0,
+        "end": len(source),
+    }
+
+
 def sections(source):
     offsets = [0]
     # Match Markdown's newline normalization; Unicode paragraph separators are text.
@@ -36,6 +54,8 @@ def sections(source):
 
 
 def find(source, anchor):
+    if anchor == CHAPTER_SCOPE:
+        return chapter(source)
     return next((s for s in sections(source) if s["anchor"] == anchor), None)
 
 
@@ -45,6 +65,8 @@ def text(source, section):
 
 def match(base, section, latest):
     """Prefer a unique structural path. Never guess among duplicate headings."""
+    if section.get("kind") == "chapter":
+        return chapter(latest)
     candidates = sections(latest)
     same_path = [
         s for s in candidates if s["path"] == section["path"] and s["level"] == section["level"]
@@ -58,6 +80,10 @@ def match(base, section, latest):
 
 
 def combine(base, section, replacement):
+    if section.get("kind") == "chapter":
+        if section["start"] != 0 or section["end"] != len(base):
+            raise ValidationError("The chapter boundary does not match its source.")
+        return replacement
     # Separate the following heading even when the editor removed trailing newlines.
     suffix = base[section["end"] :]
     if suffix and replacement and not replacement.endswith("\n\n"):

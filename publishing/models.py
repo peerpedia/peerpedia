@@ -418,6 +418,10 @@ class Draft(models.Model):
         ]
 
     @property
+    def scope_label(self):
+        return "chapter" if self.section.get("kind") == "chapter" else "section"
+
+    @property
     def title(self):
         return self.data.get("title") or "Untitled paper"
 

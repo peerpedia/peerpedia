@@ -242,7 +242,9 @@ def reader(request, submission):
             if submission.chapters
             else [],
             "chapter": page,
-            "chapter_edit_url": edit_url,
+            "chapter_edit_url": edit_url + "&" + urlencode({"scope": "@chapter"})
+            if edit_url
+            else None,
             "chapter_reference_url": reader_url + "?" + urlencode({"chapter": selected}),
             "chapter_number": index + 1,
             "chapter_has_title": any(
