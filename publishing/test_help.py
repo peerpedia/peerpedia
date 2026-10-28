@@ -30,11 +30,11 @@ class HelpExampleTests(SimpleTestCase):
         for name in EXAMPLES:
             self.assertIn(f'id="example-{name}"', body)
         self.assertIn("<strong>symmetry</strong>", body)
-        self.assertIn('class="numbered-equation"', body)
-        self.assertIn('class="scholarly-block theorem"', body)
-        self.assertIn('class="scholarly-block proof"', body)
-        self.assertIn("<table>", body)
-        self.assertEqual(body.count('class="tex-diagram"'), 2)
+        self.assertIn('id="help-references-eq:area"', body)
+        self.assertIn("bm-env-theorem", body)
+        self.assertIn("bm-env-proof", body)
+        self.assertIn("<table ", body)
+        self.assertEqual(body.count('class="bm-tikz-body"'), 2)
         self.assertNotIn('<svg viewBox="0 0 260 180"', body)
         self.assertNotIn('class="broken-reference"', body)
         anchors = Anchors()
@@ -45,12 +45,12 @@ class HelpExampleTests(SimpleTestCase):
         self.assertIn('href="#help-citation_details-bib-', body)
 
     def test_preview_prefix_preserves_source_labels_and_default_rendering(self):
-        source = "## Area {#sec:area}\n\nSee @sec:area.\n"
+        source = "## Area {@sec:area}\n\nSee @sec:area.\n"
         chapters = [{"id": "main", "title": "Example", "markdown": source}]
         plain = ReferenceDocument(chapters)
         prefixed = ReferenceDocument(chapters, anchor_prefix="demo-")
         self.assertEqual(prefixed.warnings, [])
         self.assertEqual(prefixed.targets[0]["label"], "sec:area")
-        self.assertIn('id="sec:area"', plain.render("main")[0])
-        self.assertIn('href="#demo-sec:area"', prefixed.render("main")[0])
-        self.assertIn('data-reference="@sec:area"', prefixed.render("main")[0])
+        self.assertIn('id="area"', plain.render("main")[0])
+        self.assertIn('href="#demo-area"', prefixed.render("main")[0])
+        self.assertIn('id="demo-area"', prefixed.render("main")[0])

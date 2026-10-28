@@ -3,7 +3,17 @@ import { chapterWorkspace } from "./chapters.js";
 import { EditorView, placeholder } from "@codemirror/view";
 import { EditorState } from "@codemirror/state";
 import { basicSetup } from "codemirror";
-import { markdown } from "@codemirror/lang-markdown";
+import {
+  bananamarkLanguage,
+  completionSources,
+  highlightClasses,
+} from "bananamark-codemirror";
+import { syntaxHighlighting } from "@codemirror/language";
+import { autocompletion } from "@codemirror/autocomplete";
+import { setDiagnostics } from "@codemirror/lint";
+import { defineDialect } from "bananamark";
+import { dialectOptions } from "./dialect.js";
+const dialect = defineDialect(dialectOptions);
 
 const initial = JSON.parse(document.getElementById("editor-data").textContent);
 const $ = (id) => document.getElementById(id);
@@ -52,7 +62,14 @@ const view = new EditorView({
     doc: initial.markdown,
     extensions: [
       basicSetup,
-      markdown(),
+      bananamarkLanguage({ dialect }),
+      syntaxHighlighting(highlightClasses),
+      autocompletion({
+        override: completionSources({
+          dialect,
+          otherLabels: () => chapters?.labels() || [],
+        }),
+      }),
       placeholder(
         "# Your note title\n\nStart writing in Markdown…\n\nUse ## for sections, $x^2$ for inline math, and $$ for display equations.",
       ),
@@ -185,9 +202,11 @@ async function post(url, body, options = {}) {
   if (!response.ok) {
     if (response.status === 409 && result.draft) showConflict(result.draft);
     const fields = result.fields ? guide?.serverErrors(result.fields) : "";
-    throw new Error(
+    const error = new Error(
       fields || result.error || "The request could not be completed.",
     );
+    error.diagnostics = result.diagnostics;
+    throw error;
   }
   return result;
 }
@@ -477,22 +496,9 @@ async function updatePreview() {
       .catch(() => {})
       .then(async () => {
         if (generation !== previewGeneration) return;
-        if (window.MathJax?.startup?.promise)
-          await window.MathJax.startup.promise;
-        if (generation !== previewGeneration) return;
-        window.MathJax?.typesetClear?.([preview]);
         preview.innerHTML = result.html;
-        chapters.rendered(result, previewCopy);
-        window.PeerpediaDiagrams?.render(preview);
-        preview.querySelectorAll(".math.inline,.math.block").forEach((node) => {
-          const block = node.classList.contains("block");
-          node.textContent =
-            (block ? "\\[" : "\\(") +
-            node.textContent +
-            (block ? "\\]" : "\\)");
-        });
-        if (window.MathJax?.typesetPromise)
-          await window.MathJax.typesetPromise([preview]);
+        chapters.rendered(result);
+        view.dispatch(setDiagnostics(view.state, []));
         headings = Array.from(preview.querySelectorAll("[data-source-line]"));
         $("preview-status").textContent = source.trim()
           ? "Preview · same renderer as the published paper"
@@ -509,6 +515,25 @@ async function updatePreview() {
     await renderQueue;
   } catch (error) {
     $("preview-status").textContent = "Preview unavailable · " + error.message;
+    const diagnostics = (error.diagnostics || [])
+      .filter(
+        (d) =>
+          d.line &&
+          (!d.file ||
+            d.file === (chapters.preview().chapter || "main") + ".md"),
+      )
+      .map((d) => {
+        const line = view.state.doc.line(
+          Math.min(view.state.doc.lines, d.line),
+        );
+        return {
+          from: line.from,
+          to: line.to,
+          severity: "error",
+          message: d.message,
+        };
+      });
+    view.dispatch(setDiagnostics(view.state, diagnostics));
   }
 }
 function goToLine(line, focus = true) {

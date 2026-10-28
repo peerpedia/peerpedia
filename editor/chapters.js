@@ -13,7 +13,6 @@ export function chapterWorkspace({
     chapters.find((p) => p.id === initial.chapter)?.id ||
     chapters[0]?.id ||
     "main";
-  let previewCopy = "";
   let targets = [],
     currentResults = [],
     dragged = null;
@@ -145,8 +144,8 @@ export function chapterWorkspace({
     const file = event.target.files[0];
     event.target.value = "";
     if (!file) return;
-    if (file.size > 1024 * 1024 || !file.name.endsWith(".bib")) {
-      warn("Choose a .bib file up to 1 MB.");
+    if (file.size > 1024 * 1024 || !/\.ya?ml$/i.test(file.name)) {
+      warn("Choose a YAML file up to 1 MB.");
       return;
     }
     if (
@@ -166,21 +165,21 @@ export function chapterWorkspace({
       warn("Use a UTF-8 bibliography.");
     }
   });
-  function bibEscape(value) {
-    return value
-      .replace(/[{}]/g, "")
-      .replaceAll("\\", "\\textbackslash{} ")
-      .replaceAll("\n", " ");
-  }
   function addEntry({ key, title, authors, year, url, snapshot_identifier }) {
     if (!/^[A-Za-z][A-Za-z0-9_:-]*$/.test(key))
       throw new Error(
         "Use a citation key starting with a letter, without spaces.",
       );
-    const snapshotNote = snapshot_identifier
-      ? `  note = {Peerpedia snapshot ${bibEscape(snapshot_identifier)}},\n`
-      : "";
-    bibliography += `\n@misc{${key},\n  title = {${bibEscape(title)}},\n  author = {${bibEscape(authors)}},\n  year = {${bibEscape(String(year || ""))}},\n${snapshotNote}  url = {${bibEscape(url)}}\n}\n`;
+    const quote = (text) => JSON.stringify(String(text || ""));
+    const names = String(authors || "")
+      .split(/\n| and /)
+      .filter(Boolean);
+    bibliography += `\n${quote(key)}:\n  type: book\n  title: ${quote(title)}\n`;
+    if (names.length) bibliography += `  author: ${JSON.stringify(names)}\n`;
+    if (year) bibliography += `  year: ${quote(year)}\n`;
+    if (url) bibliography += `  url: ${quote(url)}\n`;
+    if (snapshot_identifier)
+      bibliography += `  note: ${quote("Peerpedia snapshot " + snapshot_identifier)}\n`;
     $("bib-source").value = bibliography;
     changed();
     return key;
@@ -194,7 +193,7 @@ export function chapterWorkspace({
         authors: fields.get("bib_authors") || "",
       });
       event.target.reset();
-      $("bib-entry-status").textContent = "Added to references.bib.";
+      $("bib-entry-status").textContent = "Added to the bibliography.";
     } catch (error) {
       $("bib-entry-status").textContent = error.message;
     }
@@ -208,52 +207,6 @@ export function chapterWorkspace({
     $("link-dialog").close();
     view.focus();
   }
-  function makePersistent(target) {
-    if (target.explicit) return true;
-    sync();
-    if (
-      previewCopy !==
-      JSON.stringify({
-        chapters,
-        bibliography,
-        chapter: active,
-        markdown: view.state.doc.toString(),
-      })
-    ) {
-      warn(
-        "The text changed. Wait for the preview to update, then choose the reference again.",
-      );
-      return false;
-    }
-    const page = chapters.find((p) => p.id === target.chapter);
-    const source = page?.markdown ?? view.state.doc.toString();
-    const lines = source.split("\n");
-    const start = lines
-      .slice(0, target.line - 1)
-      .reduce((n, line) => n + line.length + 1, 0);
-    let change;
-    if (target.kind === "equation") {
-      const end = lines
-        .slice(0, target.end_line)
-        .reduce((n, line) => n + line.length + 1, 0);
-      const text = source.slice(start, Math.min(end, source.length));
-      change = {
-        from: start,
-        to: Math.min(end, source.length),
-        insert: `::: equation {#${target.label}}\n${text}\n:::\n`,
-      };
-    } else {
-      const end = start + lines[target.line - 1].length;
-      change = { from: end, to: end, insert: ` {#${target.label}}` };
-    }
-    if (target.chapter === active) view.dispatch({ changes: change });
-    else if (page)
-      page.markdown =
-        source.slice(0, change.from) + change.insert + source.slice(change.to);
-    target.explicit = true;
-    changed();
-    return true;
-  }
   function showTargets(items, external = false) {
     const result = $("link-results");
     result.replaceChildren();
@@ -266,7 +219,6 @@ export function chapterWorkspace({
           insert("[@" + target.label + "]");
           return;
         }
-        if (!external && !makePersistent(target)) return;
         insert(
           external
             ? `[${target.text || target.title}](${new URL(target.url, location.origin).href})`
@@ -316,7 +268,7 @@ export function chapterWorkspace({
             return;
           }
           const key = "pp" + paper.submission.replaceAll("-", "");
-          if (!bibliography.includes("{" + key + ","))
+          if (!bibliography.includes(key))
             addEntry({
               key,
               ...paper,
@@ -349,29 +301,32 @@ export function chapterWorkspace({
     event.target.value = "";
     if (!kind) return;
     const id = kind + ":" + crypto.randomUUID().slice(0, 8);
-    const body =
-      kind === "figure"
-        ? "```tikzpicture\n\\begin{tikzpicture}\n\\draw (0,0) -- (1,1);\n\\end{tikzpicture}\n```"
-        : kind === "table"
-          ? "| A | B |\n|---|---|\n| 1 | 2 |"
-          : kind === "equation" || kind === "unnumbered"
-            ? "$$\nx = 1\n$$"
-            : "Write here.";
-    const suffix = ["proof", "unnumbered"].includes(kind)
-      ? ""
-      : " {#" + id + "}";
+    const snippets = {
+      figure:
+        "```tikz\n\\begin{tikzpicture}\n\\draw (0,0) -- (1,1);\n\\end{tikzpicture}\n```",
+      table: "| A | B |\n|---|---|\n| 1 | 2 |",
+      equation: "```math {@" + id + "}\nx = 1\n```",
+      unnumbered: "$$\nx = 1\n$$",
+      bibliography:
+        "```bibliography\nexample:\n  type: book\n  title: Example title\n  author: Last, First\n  year: 2026\n```",
+    };
+    const snippet =
+      snippets[kind] ||
+      `::: ${kind}${kind === "proof" ? "" : " {@" + id + "}"}\nWrite here.\n:::`;
     const selection = view.state.selection.main;
     view.dispatch({
       changes: {
         from: selection.from,
         to: selection.to,
-        insert: `\n::: ${kind}${suffix}\n${body}\n:::\n`,
+        insert: `\n${snippet}\n`,
       },
     });
     view.focus();
   });
   draw();
   return {
+    labels: () =>
+      targets.map((t) => ({ name: t.label, text: t.text, page: t.chapter })),
     initialText: () =>
       chapters.find((p) => p.id === active)?.markdown ?? initial.markdown,
     payload: () => {
@@ -404,8 +359,7 @@ export function chapterWorkspace({
         chapters.find((p) => p.id === active)?.markdown ?? contents.markdown
       );
     },
-    rendered: (result, copy) => {
-      previewCopy = JSON.stringify(copy);
+    rendered: (result) => {
       targets = result.targets || [];
       $("reference-warnings").textContent = (result.warnings || []).join(" ");
     },

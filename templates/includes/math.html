@@ -1,6 +1,4 @@
 {% load static %}
-<link rel="stylesheet" href="{% static 'diagrams.css' %}">
-<link rel="stylesheet" href="{% static 'vendor/tikzjax/fonts.css' %}">
-<script defer src="{% static 'math.js' %}" data-amscd="{% static 'vendor/mathjax/amscd.js' %}"></script>
-<script defer src="{% static 'vendor/mathjax/tex-svg.js' %}"></script>
-<script defer src="{% static 'vendor/editor/diagrams.js' %}" data-diagram-worker="{% url 'diagram_worker' %}"></script>
+<link rel="stylesheet" href="{% static 'vendor/bananamark/katex.min.css' %}">
+<link rel="stylesheet" href="{% static 'vendor/bananamark/style.css' %}">
+<link rel="stylesheet" href="{% static 'bananamark.css' %}">

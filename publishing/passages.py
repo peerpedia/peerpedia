@@ -3,136 +3,18 @@
 import hashlib
 import json
 from difflib import SequenceMatcher
-from html import escape
-from .rendering import parser, heading_tokens
-
-
-def inline_text(token):
-    return "".join(
-        (
-            "\n"
-            if c.type in {"softbreak", "hardbreak"}
-            else "$" + c.content + "$"
-            if c.type.startswith("math_inline")
-            else "[@" + c.content + "]"
-            if c.type == "citation"
-            else "@" + c.content
-            if c.type == "cross_reference"
-            else c.content
-            if c.type in {"text", "code_inline"}
-            else ""
-        )
-        for c in token.children or []
-    )
-
-
-def annotate(md, tokens, decorate=False, offset=0):
-    headings = {h["index"]: h for h in heading_tokens(tokens)}
-    result, path, ordinals = [], [], {}
-    table_end = -1
-    for i, token in enumerate(tokens):
-        if i in headings:
-            h = headings[i]
-            while path and path[-1]["level"] >= h["level"]:
-                path.pop()
-            path.append(h)
-        if i <= table_end:
-            continue
-        kind, value = None, ""
-        if token.type in {"paragraph_open", "heading_open"}:
-            kind, value = "text", inline_text(tokens[i + 1])
-            if decorate:
-                token.hidden = False
-                tokens[i + 2].hidden = False
-        elif token.type.startswith("math_block"):
-            kind, value = "equation", token.content
-        elif token.type in {"fence", "code_block"}:
-            kind, value = "code", token.content
-        elif token.type == "table_open":
-            table_end = next(
-                j for j in range(i + 1, len(tokens)) if tokens[j].type == "table_close"
-            )
-            kind = "table"
-            value = "\n".join(inline_text(t) for t in tokens[i:table_end] if t.type == "inline")
-        if not kind or not value.strip():
-            continue
-        section_path = [h["label"] for h in path]
-        key = json.dumps([section_path, kind])
-        ordinal = ordinals.get(key, 0)
-        ordinals[key] = ordinal + 1
-        block = {
-            "id": f"b{offset + len(result)}",
-            "kind": kind,
-            "text": value,
-            "path": section_path,
-            "ordinal": ordinal,
-        }
-        result.append(block)
-        if decorate:
-            token.attrSet("data-passage", block["id"])
-            token.attrSet("data-passage-kind", kind)
-            token.attrSet("data-passage-text", value)
-    if decorate:
-        # Avoid a second layout-only newline after <br>, so DOM and quote offsets agree.
-        md.renderer.rules["hardbreak"] = lambda *args: "<br>"
-        # Atomic rendered blocks keep a stable canonical TeX/code representation.
-        for name in ("math_block", "math_block_eqno", "math_block_label", "fence", "code_block"):
-            original = md.renderer.rules.get(name)
-            if not original:
-                continue
-
-            def render(tokens, idx, options, env, original=original):
-                token = tokens[idx]
-                attrs = " ".join(
-                    f'{k}="{escape(str(v), quote=True)}"'
-                    for k, v in token.attrs.items()
-                    if k.startswith("data-passage")
-                )
-                saved = token.attrs
-                token.attrs = {k: v for k, v in saved.items() if not k.startswith("data-passage")}
-                try:
-                    rendered = original(tokens, idx, options, env)
-                finally:
-                    token.attrs = saved
-                return "<div " + attrs + ">" + rendered + "</div>\n"
-
-            md.renderer.rules[name] = render
-        for token in tokens:
-            for child in token.children or []:
-                if child.type.startswith("math_inline"):
-                    child.attrSet("data-passage-math", "$" + child.content + "$")
-        for name in ("math_inline",):
-            original = md.renderer.rules.get(name)
-            if original:
-
-                def render_math(tokens, idx, options, env, original=original):
-                    value = "$" + tokens[idx].content + "$"
-                    return (
-                        '<span data-passage-math="'
-                        + escape(value, quote=True)
-                        + '">'
-                        + original(tokens, idx, options, env)
-                        + "</span>"
-                    )
-
-                md.renderer.rules[name] = render_math
-    return result
+from .bananamark import request, structure
 
 
 def blocks(source):
-    if not isinstance(source, str):
-        if source.chapters:
-            result = []
-            for page in source.chapters:
-                md = parser()
-                items = annotate(md, md.parse(page["markdown"]), offset=len(result))
-                for item in items:
-                    item["chapter"] = page["id"]
-                result.extend(items)
-            return result
-        source = source.markdown
-    md = parser()
-    return annotate(md, md.parse(source))
+    if isinstance(source, str):
+        return structure(source)["blocks"]
+    from .documents import pages
+
+    result = request(
+        pages=pages(source), bibliography=source.bibliography, numberSections=bool(source.chapters)
+    )
+    return [block for page in result["pages"] for block in page["blocks"]]
 
 
 def validate(source, spans):

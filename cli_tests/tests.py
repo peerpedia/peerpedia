@@ -507,7 +507,7 @@ cli.main(["push", "-m", "Correct proof", "--json"])
         self.assertEqual(client.read_json(root / "paper.json")["chapters"][0]["file"], "opening.md")
         self.command("fetch", folder=root)
         self.assertTrue(
-            (root / ".peerpedia" / ("incoming-" + proposal["hash"]) / "references.bib").exists()
+            (root / ".peerpedia" / ("incoming-" + proposal["hash"]) / "references.yaml").exists()
         )
 
 
@@ -520,10 +520,10 @@ class ChapterClientTests(SimpleTestCase):
                 "authors": "Ada",
                 "abstract": "Notes",
                 "chapters": [{"id": "one", "title": "One", "file": "one.md"}],
-                "bibliography": "references.bib",
+                "bibliography": "references.yaml",
             }
             (root / "one.md").write_bytes(b"# One\r\n")
-            (root / "references.bib").write_bytes(b"@misc{one,title={One}}\r\n")
+            (root / "references.yaml").write_bytes(b"one:\r\n  type: book\r\n  title: One\r\n")
             client.write_json(root / "paper.json", info)
             first = client.local_document(root)
             self.assertEqual(first["chapters"][0]["markdown"], "# One\r\n")

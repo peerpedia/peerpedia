@@ -85,11 +85,8 @@ class PublishingTests(TestCase):
 
     def test_reader_has_no_platform_chrome(self):
         response = self.client.get(reverse("read_paper", args=[self.paper.pk]))
-        self.assertContains(
-            response,
-            '<h1 id="section-a-test-paper" data-passage="b0" data-passage-kind="text" data-passage-text="A test paper">A test paper</h1>',
-            html=True,
-        )
+        self.assertContains(response, 'id="a-test-paper"')
+        self.assertContains(response, 'data-passage-text="A test paper"')
         for forbidden in ["site-header", "site-footer", "Go back", "Sign in"]:
             self.assertNotContains(response, forbidden)
 
@@ -397,24 +394,24 @@ class PublishingTests(TestCase):
         self.assertFalse(form.is_valid())
 
     def test_rendering_does_not_execute_html_or_javascript_links(self):
-        rendered = render_markdown(
-            '<script>alert(1)</script>\n\n<img src="http://bad">\n\n[bad](javascript:alert(1))\n\n![image](http://bad)'
-        )
-        self.assertNotIn("<script>", rendered)
-        self.assertNotIn("<img", rendered)
-        self.assertNotIn('href="javascript:', rendered)
-        self.assertIn("&lt;script&gt;", rendered)
+        for source in [
+            "<script>alert(1)</script>",
+            "[bad](javascript:alert(1))",
+            "![image](http://bad)",
+        ]:
+            with self.assertRaises(ValidationError):
+                render_markdown(source)
 
     def test_reader_outline_unique_anchors_and_safe_labels(self):
-        source = "# Title\n\n## A *proof*\n\n### Detail\n\n## A proof\n\n## A proof-2\n\n## <script>bad()</script>\n\n```md\n## Not a section\n```"
+        source = "# Title\n\n## A *proof*\n\n### Detail\n\n## A proof\n\n## A proof-2\n\n## &lt;script&gt;bad()&lt;/script&gt;\n\n```md\n## Not a section\n```"
         body, contents = render_reader(source)
         self.assertEqual(
             [item["id"] for item in contents[:4]],
             [
-                "section-a-proof",
-                "section-detail",
-                "section-a-proof-2",
-                "section-a-proof-2-2",
+                "a-proof",
+                "detail",
+                "a-proof-1",
+                "a-proof-2",
             ],
         )
         self.assertEqual([item["depth"] for item in contents[:3]], [0, 1, 0])
@@ -425,7 +422,7 @@ class PublishingTests(TestCase):
         self.assertContains(response, 'aria-label="Table of contents"')
         self.assertNotContains(response, "<script>bad()")
         self.assertContains(response, "&lt;script&gt;bad()&lt;/script&gt;")
-        self.assertContains(response, 'href="#section-a-proof-2-2"')
+        self.assertContains(response, 'href="#a-proof-2"')
         paper.current.refresh_from_db()
         self.assertEqual(paper.current.markdown, source)
         self.assertEqual(paper.current.hash, paper.current.calculate_hash())
@@ -441,8 +438,8 @@ class PublishingTests(TestCase):
         result = render_markdown(
             "Inline $x^2$.\n\n$$\nx=1\n$$\n\n```python\nx = '$notmath$'\n```\n"
         )
-        self.assertIn('class="math inline"', result)
-        self.assertIn('class="math block"', result)
+        self.assertIn('class="bm-math-rendered"', result)
+        self.assertIn('class="bm-math-rendered bm-math-display"', result)
         self.assertIn("$notmath$", result)
 
     def test_diff_includes_missing_newline_change(self):
@@ -453,8 +450,8 @@ class PublishingTests(TestCase):
 
     def test_bracket_equations_are_supported_and_escaped(self):
         rendered = render_markdown(r"Inline \(x^2\)." + "\n\n\\[\nx^2\n\\]\n")
-        self.assertIn('class="math inline"', rendered)
-        self.assertIn('class="math block"', rendered)
+        self.assertIn('class="bm-math-rendered"', rendered)
+        self.assertIn('class="bm-math-rendered bm-math-display"', rendered)
         unsafe = render_markdown(r"\(<script>alert(1)</script>\)")
         self.assertNotIn("<script>", unsafe)
         self.assertIn("&lt;script&gt;", unsafe)
@@ -464,7 +461,7 @@ class PublishingTests(TestCase):
             self.other,
             self.paper.pk,
             self.paper.current_id,
-            document(markdown="<script>evil()</script>\n"),
+            document(markdown="```html\n<script>evil()</script>\n```\n"),
         )
         response = self.client.get(reverse("submission", args=[s.pk]))
         self.assertContains(response, "&lt;script&gt;")

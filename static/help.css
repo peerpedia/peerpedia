@@ -34,9 +34,6 @@
 .help-sample-result .markdown-body > :first-child { margin-top:0; }
 .help-sample-source h4 { font:600 12px/1.5 system-ui; margin:20px 0 8px; color:var(--muted); }
 .help-sample figcaption { grid-column:1 / -1; padding:14px 20px; background:var(--ground); border-top:1px solid var(--line); }
-.help-sample .diagram-source { display:none; }
-.help-sample .tex-diagram { margin:0; }
-.help-sample .diagram-output { overflow:auto; max-width:100%; }
 .help-sample .markdown-body section { scroll-margin-top:24px; }
 .help-disclosure { margin:20px 0; border:1px solid var(--line); border-radius:6px; }
 .help-disclosure summary { padding:14px 18px; color:var(--accent); font-weight:500; }

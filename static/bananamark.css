@@ -1,0 +1,49 @@
+/* Peerpedia's presentation of BananaMark's native article structure. */
+:root {
+  --bm-link: var(--accent, #23514b);
+  --bm-accent-theorem: var(--accent, #23514b);
+  --bm-accent-definition: var(--accent, #23514b);
+  --bm-accent-example: var(--muted, #697078);
+  --bm-accent-remark: var(--muted, #697078);
+  --bm-muted: var(--muted, #697078);
+  --bm-faint: #8a918e;
+  --bm-border: var(--line, #dedfdc);
+  --bm-surface: var(--ground, #fafbf9);
+  --bm-missing: var(--red, #9a3535);
+  --bm-target: var(--soft, #edf3ef);
+  --bm-target-border: #b4c9bf;
+  --bm-hl-mark: #8a918e;
+  --bm-hl-command: #23514b;
+  --bm-hl-command-mark: #5b8576;
+  --bm-hl-reference: #655181;
+  --bm-hl-structure: #98712c;
+  --bm-hl-string: #697078;
+}
+.markdown-body .bm-env {
+  margin-block: 1.4em;
+  border-radius: 0;
+  background: transparent;
+}
+.markdown-body .bm-envtitle {
+  font-family: inherit;
+}
+.markdown-body .bm-math-display {
+  overflow-x: auto;
+  max-width: 100%;
+}
+.markdown-body .bm-tikz-rendered {
+  max-width: 100%;
+}
+.markdown-body .bm-bibliography {
+  font-size: 0.95em;
+}
+.markdown-body .bm-heading-link {
+  color: inherit;
+  opacity: 0.35;
+}
+.markdown-body .bm-heading-link:hover {
+  opacity: 1;
+}
+.cm-tooltip-autocomplete {
+  max-width: min(36rem, 90vw);
+}

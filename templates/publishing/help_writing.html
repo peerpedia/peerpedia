@@ -36,7 +36,7 @@
   <p>Put mathematics inside single dollar signs to keep it in a sentence. Use double dollar signs on separate lines for an equation on its own.</p>
   {% help_example "math" %}
   <p>Inside the dollar signs, use familiar LaTeX commands such as <code>\frac{a}{b}</code>, <code>\sum</code>, and <code>\mathbb{R}</code>. Do not add a document preamble or <code>\begin{document}</code>.</p>
-  <p>Display equations receive numbers automatically. In a work with chapters, the numbers include the chapter number. To leave one equation unnumbered, wrap it in an <strong>unnumbered block</strong>. A block begins with three colons and its type, and ends with three colons on a line of their own.</p>
+  <p>Only <code>math</code> code blocks receive automatic equation numbers. Double-dollar and backslash-bracket displays are unnumbered. Theorems share one counter; equations have a separate counter. Both restart at each chapter.</p>
   {% help_example "unnumbered" %}
   <p>The editor’s <strong>Insert block</strong> menu inserts these wrappers for you. The next sections show how blocks also create references, statements, and captions.</p>
 </section>
@@ -51,9 +51,9 @@
   <h2>Link to sections and equations</h2>
   <p>A cross-reference is a link to a particular part of a paper. Rather than writing “see the equation above,” give the equation a label and refer to that label. Peerpedia fills in the displayed number and makes it clickable.</p>
   <h3>Let the editor insert the link</h3>
-  <p>Place the cursor where you want the reference. Choose <strong>Insert reference</strong>, then <strong>In this paper</strong>. Select the section, equation, or statement you need. The editor adds the reference and can give the target a label.</p>
+  <p>Place the cursor where you want the reference. Choose <strong>Insert reference</strong>, then <strong>In this paper</strong>. Select the section, equation, or statement you need. The editor lists declared labels. Type <code>@</code> for completion, or add a label to a heading, theorem fence, or math fence first.</p>
   <h3>Write a label yourself</h3>
-  <p>A label is a name you choose, such as <code>eq:area</code>. Put it inside <code>{#…}</code> on the item you want to link to. Write <code>@</code> followed by the same name wherever you want to refer to it.</p>
+  <p>A label is a name you choose, such as <code>eq:area</code>. Put it inside <code>{@…}</code> on the item you want to link to. Write <code>@</code> followed by the same name wherever you want to refer to it.</p>
   {% help_example "references" %}
   <p>The last sentence becomes links to the section and the numbered equation. The same syntax works across chapters. Use each label only once in the paper and keep it when moving or revising the text, so existing references continue to work.</p>
   <h3>Link to another Peerpedia paper</h3>
@@ -68,10 +68,10 @@
 </section>
 <section id="citations">
   <h2>Cite another work</h2>
-  <p>A bibliography collects the books, papers, and other sources you cite. Open <strong>References.bib</strong> in the editor sidebar to edit the bibliography shared by all chapters.</p>
-  <p>Expand <strong>Add a reference</strong> to enter a title, authors, year, and link. Choose a short <strong>citation key</strong>, a name you will use to refer to that source. You can also import a <code>.bib</code> file or paste standard BibTeX entries.</p>
+  <p>A bibliography collects the books, papers, and other sources you cite. Open <strong>Bibliography</strong> in the editor sidebar to edit the bibliography shared by all chapters.</p>
+  <p>Expand <strong>Add a reference</strong> to enter a title, authors, year, and link. Choose a short <strong>citation key</strong>, a name you will use to refer to that source. You can also import a YAML file or paste BananaMark bibliography entries. A <code>bibliography</code> code block in an article uses the same format.</p>
   <h3>A complete example</h3>
-  <p>The example below has two parts. Put the BibTeX entry in <strong>References.bib</strong> and the Markdown sentence in your chapter. Its citation key is <code>euclidElements</code>.</p>
+  <p>The example below has two parts. Put the YAML entry in <strong>Bibliography</strong> and the Markdown sentence in your chapter. Its citation key is <code>euclidElements</code>.</p>
   <p>Then write a citation in the chapter by putting the key after <code>@</code> inside square brackets.</p>
   {% help_example "citation" %}
   <p>The reader sees a short citation linking to the full entry at the end of that chapter. A chapter lists the works cited in it.</p>
@@ -83,7 +83,7 @@
   <h2>Make a table</h2>
   <p>Separate columns with vertical bars. The row of dashes separates the headings from the body.</p>
   {% help_example "table" %}
-  <p>Use a <strong>table</strong> block from <strong>Insert block</strong> when you want a numbered table you can refer to. Add a label using the same pattern as the equation example.</p>
+  <p>Use Markdown tables directly. To give a table a numbered caption, put it inside a named environment such as <code>::: example (Table) {@table:results}</code>.</p>
 </section>
 <section id="diagrams">
   <h2>Draw diagrams</h2>
@@ -92,13 +92,13 @@
   <p>For a simple commutative diagram, use uppercase <code>CD</code> inside display mathematics.</p>
   {% help_example "cd" %}
   <h3>More control over arrows</h3>
-  <p>Use a <code>tikzcd</code> code block for diagonal arrows or more elaborate labels. Include the environment inside the backticks.</p>
+  <p>Use a <code>tikz</code> code block for diagonal arrows or more elaborate labels. Include the environment inside the backticks.</p>
   {% help_example "tikzcd" %}
   <h3>A general drawing</h3>
   <p>Use <code>tikzpicture</code> for shapes and paths. This example draws a circle and marks its radius.</p>
   {% help_example "tikzpicture" %}
   <h3>If a drawing does not appear</h3>
-  <p>The editor needs an initial download to prepare TikZ previews, so the first drawing can take longer. Submitted drawings are prepared in the background and saved as images. A new submission may briefly show <strong>Preparing diagram</strong>.</p>
+  <p>Preview and publication use the same server compiler and cache. A new drawing may take a moment; an unchanged drawing reuses the cached result. Compilation errors must be corrected before publication.</p>
   <p>Read the error beside the source if compilation fails. Start with the example above, then add your changes gradually. Basic TikZ commands and bundled libraries are supported. External files, image uploads, and arbitrary LaTeX packages are not supported.</p>
   <p>Keep each drawing under 32 KB and the paper under 32 distinct drawings. Very slow drawings can time out. To show LaTeX code as text without drawing it, use a <code>latex</code> code block instead.</p>
 </section>

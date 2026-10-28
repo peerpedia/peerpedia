@@ -1,0 +1,13 @@
+euclidElements:
+  type: book
+  author: Euclid
+  title: The Elements
+  year: 1956
+  publisher: Dover
+
+hatcher2002:
+  type: book
+  author: Hatcher, Allen
+  title: Algebraic Topology
+  year: 2002
+  publisher: Cambridge University Press

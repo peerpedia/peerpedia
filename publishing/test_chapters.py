@@ -16,15 +16,15 @@ CHAPTERS = [
     {
         "id": "intro",
         "title": "Introduction",
-        "markdown": "# Introduction\n\n## Motivation {#sec:motivation}\n\nA unique passage about topology. See @eq:one and [@wen].\n",
+        "markdown": "# Introduction\n\n## Motivation {@sec:motivation}\n\nA unique passage about topology. See @eq:one and [@wen].\n",
     },
     {
         "id": "proof",
         "title": "A proof",
-        "markdown": "# A proof\n\n::: theorem {#thm:one}\nEvery example has a proof.\n:::\n\n::: equation {#eq:one}\n$$\nx=1\n$$\n:::\n",
+        "markdown": "# A proof\n\n::: theorem {@thm:one}\nEvery example has a proof.\n:::\n\n```math {@eq:one}\nx=1\n```\n",
     },
 ]
-BIB = "@book{wen, title={Quantum Field Theory}, author={Wen, Xiao-Gang}, year={2004}, url={https://example.org/book}, customfield={Keep this}}"
+BIB = "wen:\n  type: book\n  title: Quantum Field Theory\n  author: Wen, Xiao-Gang\n  year: 2004\n  url: https://example.org/book\n"
 
 
 def course(**changes):
@@ -79,12 +79,12 @@ class ChapterTests(TestCase):
         response = self.client.get(reverse("read_paper", args=[self.paper.pk]))
         self.assertContains(response, "A unique passage")
         self.assertNotContains(response, "Every example has a proof.")
-        self.assertContains(response, self.paper.current.read_url + "?chapter=proof#eq%3Aone")
-        self.assertContains(response, "Quantum Field Theory (Wen, 2004)")
+        self.assertContains(response, self.paper.current.read_url + "?chapter=proof#eq:one")
+        self.assertContains(response, "Wen 2004")
         response = self.client.get(
             reverse("read_submission", args=[self.paper.current_id]) + "?chapter=proof"
         )
-        self.assertContains(response, "Equation (2.1)")
+        self.assertContains(response, "(2.1)")
         self.assertContains(response, "Theorem 2.1")
         self.assertEqual(
             self.client.get(
@@ -96,7 +96,7 @@ class ChapterTests(TestCase):
     def test_draft_roundtrip_and_section_preserves_other_chapter(self):
         url = (
             reverse("edit_paper", args=[self.paper.pk])
-            + f"?version={self.paper.current_id}&chapter=intro&scope=sec:motivation"
+            + f"?version={self.paper.current_id}&chapter=intro&scope=motivation"
         )
         response = self.client.post(url)
         draft = Draft.objects.get(pk=response.url.split("/")[2])
@@ -130,7 +130,7 @@ class ChapterTests(TestCase):
     def test_section_preview_resolves_whole_document_and_deleted_chapter_rebase(self):
         url = (
             reverse("edit_paper", args=[self.paper.pk])
-            + f"?version={self.paper.current_id}&chapter=intro&scope=sec:motivation"
+            + f"?version={self.paper.current_id}&chapter=intro&scope=motivation"
         )
         response = self.client.post(url)
         draft = Draft.objects.get(pk=response.url.split("/")[2])
@@ -140,8 +140,8 @@ class ChapterTests(TestCase):
             content_type="application/json",
         )
         self.assertEqual(response.status_code, 200, response.content)
-        self.assertIn("Equation (2.1)", response.json()["html"])
-        self.assertIn("Quantum Field Theory (Wen, 2004)", response.json()["html"])
+        self.assertIn("(2.1)", response.json()["html"])
+        self.assertIn("Wen 2004", response.json()["html"])
         self.assertEqual(response.json()["warnings"], [])
         target = next(t for t in response.json()["targets"] if t["label"] == "sec:motivation")
         self.assertEqual(target["line"], 1)
@@ -155,7 +155,7 @@ class ChapterTests(TestCase):
         response = self.client.post(
             reverse("draft_rebase", args=[draft.pk]),
             json.dumps(
-                {"revision": draft.revision, "latest": str(proposed.pk), "target": "sec:motivation"}
+                {"revision": draft.revision, "latest": str(proposed.pk), "target": "motivation"}
             ),
             content_type="application/json",
         )
@@ -167,11 +167,11 @@ class ChapterTests(TestCase):
 
         response = self.client.post(
             reverse("edit_paper", args=[self.paper.pk])
-            + f"?version={self.paper.current_id}&chapter=intro&scope=sec:motivation"
+            + f"?version={self.paper.current_id}&chapter=intro&scope=motivation"
         )
         draft = Draft.objects.get(pk=response.url.split("/")[2])
         data = course()
-        data["bibliography"] += "\n@book{new, title={A new book}}"
+        data["bibliography"] += "\nnew:\n  type: book\n  title: A new book\n"
         proposed = propose(self.user, self.paper.pk, self.paper.current_id, data)
         decide(self.user, proposed.pk, "accepted")
         draft.paper.refresh_from_db()
@@ -238,7 +238,7 @@ class ChapterTests(TestCase):
 
         response = self.client.get(reverse("download", args=[self.paper.current_id]))
         with zipfile.ZipFile(io.BytesIO(response.content)) as archive:
-            self.assertEqual(archive.read("references.bib").decode(), BIB)
+            self.assertEqual(archive.read("references.yaml").decode(), BIB)
             self.assertEqual(json.loads(archive.read("paper.json"))["chapters"][0]["id"], "intro")
         self.paper.is_hidden = True
         self.paper.save()
@@ -251,42 +251,20 @@ class ChapterTests(TestCase):
 
 
 class ReferenceTests(SimpleTestCase):
-    def test_reference_safety_and_unnumbered_equations(self):
-        source = """# One
-
-$$
-a=1
-$$
-
-::: unnumbered
-$$
-b=2
-$$
-:::
-
-::: theorem Named {#thm:one}
-A claim.
-:::
-
-See @thm:one, @missing, [@evil, p. 5].
-
-`@thm:one`
-"""
-        r = ReferenceDocument(
-            [{"id": "main", "title": "One", "markdown": source}],
-            "@misc{evil,title={<script>alert(1)</script>},url={javascript:alert(1)}}",
-        )
-        body, _ = r.render("main", passage_annotations=True)
+    def test_native_numbering_and_references(self):
+        source = "$$a=1$$\n\n```math {@eq:one}\nb=2\n```\n\n::: theorem [Named] {@thm:one}\nA claim.\n:::\n\nSee @thm:one and @eq:one."
+        r = ReferenceDocument([{"id": "main", "title": "One", "markdown": source}])
+        body, _ = r.render("main")
         self.assertEqual(sum(t["kind"] == "equation" for t in r.targets), 1)
         self.assertIn('href="#thm:one"', body)
-        self.assertNotIn('href="javascript:', body)
-        self.assertNotIn("<script>", body)
-        self.assertIn("<code>@thm:one</code>", body)
-        self.assertIn("Unresolved reference @missing.", r.warnings)
+        self.assertIn("Theorem 1.1", body)
 
-    def test_bibtex_unknown_fields_and_types_remain(self):
-        from .references import bibliography_entries
-
-        entries, warnings = bibliography_entries("@dataset{data,title={Data},myfield={custom}}")
-        self.assertEqual(entries["data"]["myfield"], "custom")
-        self.assertEqual(warnings, [])
+    def test_missing_labels_and_unsupported_bibliography_fields_block_rendering(self):
+        for source, bibliography in [
+            ("See @missing.", ""),
+            ("Text.", "book:\n  type: book\n  title: Book\n  unknown: value"),
+        ]:
+            with self.assertRaises(ValidationError):
+                ReferenceDocument(
+                    [{"id": "main", "title": "One", "markdown": source}], bibliography
+                )

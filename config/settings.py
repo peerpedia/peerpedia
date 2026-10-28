@@ -172,5 +172,5 @@ ACCOUNT_SIGNUP_FIELDS = ["username*", "email*"]
 ACCOUNT_LOGIN_METHODS = {"username", "email"}
 ACCOUNT_EMAIL_NOTIFICATIONS = False
 
-# Internal-only, credential-free renderer. Reading never runs TeX in a web request.
-DIAGRAM_RENDERER_URL = os.environ.get("DIAGRAM_RENDERER_URL", "http://diagrams:8765")
+# Empty in development: a persistent Node renderer per Python process.
+BANANAMARK_URL = os.environ.get("BANANAMARK_URL", "")

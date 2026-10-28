@@ -134,10 +134,10 @@ class BrowserJourneys(StaticLiveServerTestCase):
         self.page.get_by_role("button", name=re.compile("Preview (submission|paper)")).click()
 
     def assert_math(self):
-        expect(self.page.locator("mjx-container svg")).to_have_count(2)
+        expect(self.page.locator(".katex-mathml")).to_have_count(2)
         expect(self.page.locator("mjx-merror, [data-mml-node='merror']")).to_have_count(0)
         expect(self.page.locator("pre code")).to_have_text("value = '$notmath$'\n")
-        expect(self.page.locator("pre code mjx-container")).to_have_count(0)
+        expect(self.page.locator("pre code .katex")).to_have_count(0)
 
     def assert_no_page_overflow(self):
         # Search results can already match while the next page's styles are
@@ -791,10 +791,10 @@ class BrowserJourneys(StaticLiveServerTestCase):
         navigation = self.page.get_by_role("navigation", name="Table of contents")
         expect(navigation).to_be_visible()
         expect(navigation.get_by_role("link")).to_have_count(3)
-        first = navigation.get_by_role("link", name="First section", exact=True)
+        first = navigation.get_by_role("link", name="1 First section", exact=True)
         first.click()
         expect(first).to_have_attribute("aria-current", "location")
-        self.page.locator("#section-a-proof").evaluate("element => element.scrollIntoView()")
+        self.page.locator("#a-proof").evaluate("element => element.scrollIntoView()")
         expect(navigation.get_by_role("link", name="A proof", exact=True)).to_have_attribute(
             "aria-current", "location"
         )
@@ -821,14 +821,14 @@ class BrowserJourneys(StaticLiveServerTestCase):
         self.page.keyboard.press("Escape")
         expect(navigation).not_to_be_visible()
         self.page.keyboard.press("Enter")
-        last = navigation.get_by_role("link", name="Last section", exact=True)
+        last = navigation.get_by_role("link", name="2 Last section", exact=True)
         last.click()
         expect(navigation).not_to_be_visible()
-        expect(self.page.locator('[data-section="section-last-section"]')).to_have_attribute(
+        expect(self.page.locator('[data-section="last-section"]')).to_have_attribute(
             "aria-current", "location"
         )
-        expect(self.page.locator("#section-last-section")).to_be_focused()
-        self.assertGreaterEqual(self.page.locator("#section-last-section").bounding_box()["y"], 60)
+        expect(self.page.locator("#last-section")).to_be_focused()
+        self.assertGreaterEqual(self.page.locator("#last-section").bounding_box()["y"], 60)
         self.assert_no_page_overflow()
         self.page.set_viewport_size({"width": 320, "height": 740})
         self.assert_no_page_overflow()
@@ -839,59 +839,22 @@ class BrowserJourneys(StaticLiveServerTestCase):
         try:
             page = no_script.new_page()
             page.goto(reader_url)
-            page.get_by_role("link", name="Last section", exact=True).click()
-            expect(page).to_have_url(reader_url + "#section-last-section")
-            expect(page.locator("#section-last-section")).to_be_in_viewport()
+            page.get_by_role("link", name="2 Last section", exact=True).click()
+            expect(page).to_have_url(reader_url + "#last-section")
+            expect(page.locator("#last-section")).to_be_in_viewport()
         finally:
             no_script.close()
 
-    def render_saved_diagrams(self):
-        import socket
-        import subprocess
-        from urllib.request import build_opener, ProxyHandler
-        from publishing.management.commands.process_diagrams import process_one
-
-        with socket.socket() as listener:
-            listener.bind(("127.0.0.1", 0))
-            port = listener.getsockname()[1]
-        root = Path(__file__).resolve().parent.parent
-        server = subprocess.Popen(
-            ["node", "diagram_renderer/server.mjs"],
-            cwd=root,
-            env={"PATH": os.environ["PATH"], "PORT": str(port)},
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-        )
-        try:
-            origin = f"http://127.0.0.1:{port}"
-            opener = build_opener(ProxyHandler({}))
-            for _ in range(50):
-                try:
-                    with opener.open(origin + "/health", timeout=1):
-                        break
-                except OSError:
-                    time.sleep(0.1)
-
-            def drain():
-                with override_settings(DIAGRAM_RENDERER_URL=origin):
-                    while process_one():
-                        pass
-
-            self.database_call(drain)
-        finally:
-            server.terminate()
-            server.wait(timeout=5)
-
     def test_help_examples_render_and_link_without_publishing(self):
         self.page.goto(self.live_server_url + "/help/writing/")
-        expect(self.page.locator("#example-math mjx-container svg")).to_have_count(2)
-        expect(self.page.locator("#example-cd mjx-container > svg")).to_have_count(1)
-        expect(self.page.locator("#example-unnumbered .equation-number")).to_have_count(0)
-        expect(self.page.locator(".help-sample-source mjx-container")).to_have_count(0)
+        expect(self.page.locator("#example-math .katex-mathml")).to_have_count(2)
+        expect(self.page.locator("#example-cd .katex-mathml")).to_have_count(1)
+        expect(self.page.locator("#example-unnumbered .katex-tag")).to_have_count(0)
+        expect(self.page.locator(".help-sample-source .katex")).to_have_count(0)
         expect(self.page.locator("#example-code .markdown-body pre code")).to_have_text(
             "print(2 + 2)\n"
         )
-        reference = self.page.locator("#example-references .markdown-body a.cross-reference").last
+        reference = self.page.locator("#example-references .markdown-body p a").last
         reference.click()
         self.assertIn("#help-references-eq:area", self.page.url)
         expect(self.page.locator('[id="help-references-eq:area"]')).to_be_in_viewport()
@@ -900,14 +863,13 @@ class BrowserJourneys(StaticLiveServerTestCase):
         )
         citation.click()
         expect(
-            self.page.locator('#example-citation li[id^="help-citation-bib-"]')
+            self.page.locator('#example-citation div[id^="help-citation-bib-"]')
         ).to_be_in_viewport()
         for name in ("tikzcd", "tikzpicture"):
-            diagram = self.page.locator(f"#example-{name} [data-diagram]")
+            diagram = self.page.locator(f"#example-{name} .bm-tikz-rendered")
             diagram.scroll_into_view_if_needed()
-            expect(diagram).to_have_attribute("data-diagram-state", "ready", timeout=60000)
-            expect(diagram.locator(".diagram-output svg")).to_have_count(1)
-            self.assertGreater(diagram.locator(".diagram-output").bounding_box()["height"], 20)
+            expect(diagram.locator("svg")).to_have_count(1)
+            self.assertGreater(diagram.locator("svg").bounding_box()["height"], 20)
         expect(self.page.locator("mjx-merror, [data-mml-node='merror']")).to_have_count(0)
         self.assert_no_page_overflow()
         self.page.set_viewport_size({"width": 390, "height": 844})
@@ -927,21 +889,20 @@ C @>k>> D
 \end{CD}
 $$
 
-```tikzcd
+```tikz
 \begin{tikzcd}
 A \arrow[r, "f"] \arrow[d, "g"'] & B \arrow[d, "h"] \\
 C \arrow[r, "k"'] & D
 \end{tikzcd}
 ```
 
-```tikzpicture
+```tikz
 \begin{tikzpicture}
 \draw[blue, thick] (0,0) circle (1);
 \end{tikzpicture}
 ```
 """
         paper = self.fixture_paper(source)
-        self.render_saved_diagrams()
         compiler_requests = []
         self.context.on(
             "request",
@@ -952,19 +913,11 @@ C \arrow[r, "k"'] & D
             ),
         )
         self.page.goto(f"{self.live_server_url}/papers/{paper.pk}/read/")
-        diagrams = self.page.locator("[data-diagram]")
-        expect(self.page.locator("mjx-container")).to_have_count(1)
-        expect(self.page.locator("[data-mml-node='merror']")).to_have_count(0)
-        for diagram in diagrams.all():
-            diagram.scroll_into_view_if_needed()
-            expect(diagram).to_have_attribute("data-diagram-state", "ready", timeout=60000)
-        expect(self.page.locator(".diagram-output img")).to_have_count(2)
-        self.page.wait_for_function(
-            "Array.from(document.querySelectorAll('.diagram-output img')).every(i => i.complete && i.naturalWidth > 0)"
-        )
+        expect(self.page.locator(".katex-mathml")).to_have_count(1)
+        expect(self.page.locator(".bm-tikz-rendered svg")).to_have_count(2)
         self.assertEqual(compiler_requests, [])
         self.page.reload()
-        expect(self.page.locator(".diagram-output img")).to_have_count(2)
+        expect(self.page.locator(".bm-tikz-rendered svg")).to_have_count(2)
         self.assertEqual(compiler_requests, [])
         folder = Path(os.environ["PEERPEDIA_BROWSER_ARTIFACTS"])
         folder.mkdir(parents=True, exist_ok=True)
@@ -975,76 +928,47 @@ C \arrow[r, "k"'] & D
         self.login()
         self.page.goto(f"{self.live_server_url}/papers/{paper.pk}/edit/")
         expect(self.page.locator(".cm-content")).to_be_visible()
-        expect(self.page.locator("[data-diagram-state='ready']")).to_have_count(2, timeout=60000)
+        expect(self.page.locator(".bm-tikz-rendered svg")).to_have_count(2, timeout=60000)
         self.page.locator(".cm-content").fill(
-            "```tikzpicture\n\\begin{tikzpicture}\\notARealCommand\\end{tikzpicture}\n```"
+            "```tikz\n\\begin{tikzpicture}\\notARealCommand\\end{tikzpicture}\n```"
         )
-        expect(self.page.locator("[data-diagram-state='error']")).to_have_count(1, timeout=60000)
-        expect(self.page.locator(".diagram-status")).to_contain_text("could not compile")
+        expect(self.page.locator("#preview-status")).to_contain_text(
+            "TikZ compilation failed", timeout=60000
+        )
+        expect(self.page.locator("#save-status")).to_have_text("Saved")
         self.page.locator(".cm-content").fill(source)
-        expect(self.page.locator("[data-diagram-state='ready']")).to_have_count(2, timeout=60000)
+        expect(self.page.locator(".bm-tikz-rendered svg")).to_have_count(2, timeout=60000)
 
     def test_diagram_output_removes_active_content(self):
-        # Treat compiler output as hostile, independently of TeX's own behavior.
-        payload = {
-            "type": "result",
-            "result": {
-                "width": 100,
-                "height": 100,
-                "html": '<svg onload="window.pwned=1"><script>window.pwned=1</script>'
-                '<foreignObject><iframe src="https://bad.test/"></iframe></foreignObject>'
-                '<image href="https://bad.test/image" />'
-                '<a href="javascript:alert(1)"><text>unsafe link</text></a>'
-                '<path id="pgf1" d="M0 0L10 10" style="fill:url(https://bad.test/style)" />'
-                r'<path d="M0 0L1 1" fill="u\72l(https://bad.test/escaped)"/>'
-                '<use href="#pgf1"/><use href="https://bad.test/#shape"/>'
-                '<text style="font-family: cmmi10;">A</text></svg>',
-            },
-        }
-        self.context.route(
-            "**/diagram-worker.js",
-            lambda route: route.fulfill(
-                content_type="application/javascript",
-                body="self.onmessage=()=>self.postMessage(" + json.dumps(payload) + ");",
-            ),
-        )
-        paper = self.fixture_paper("```tikzpicture\nignored\n```")
-        self.login()
-        self.page.goto(f"{self.live_server_url}/papers/{paper.pk}/edit/")
-        expect(self.page.locator("[data-diagram]")).to_have_attribute("data-diagram-state", "ready")
-        output = self.page.locator(".diagram-output")
-        expect(
-            output.locator("script,foreignObject,iframe,image,a,[onload],[style]")
-        ).to_have_count(0)
+        source = r"""```tikz
+\begin{tikzpicture}
+\draw (0,0)--(1,1);
+\special{dvisvgm:raw <script>window.pwned=1</script>}
+\end{tikzpicture}
+```"""
+        paper = self.fixture_paper(source)
+        self.page.goto(f"{self.live_server_url}/papers/{paper.pk}/read/")
+        output = self.page.locator(".bm-tikz-rendered")
+        expect(output.locator("svg")).to_have_count(1)
+        expect(output.locator("script,foreignObject,iframe,image,[onload]")).to_have_count(0)
         self.assertIsNone(self.page.evaluate("window.pwned"))
-        expect(output.locator("text[font-family=cmmi10]")).to_have_count(1)
-        local_id = output.locator("path").first.get_attribute("id")
-        self.assertIsNone(output.locator("path").last.get_attribute("fill"))
-        self.assertTrue(local_id.startswith("diagram-"))
-        expect(output.locator("use").first).to_have_attribute("href", "#" + local_id)
-        self.assertIsNone(output.locator("use").last.get_attribute("href"))
 
     def test_diagram_timeout_does_not_block_editor(self):
-        source = r"""# Timeout
-```tikzpicture
-\def\forever{\forever}\forever
-```
-
-```tikzpicture
-\begin{tikzpicture}\draw (0,0) -- (1,1);\end{tikzpicture}
-```
-"""
-        paper = self.fixture_paper(source)
+        good = r"""```tikz
+\begin{tikzpicture}\draw (0,0)--(1,1);\end{tikzpicture}
+```"""
+        paper = self.fixture_paper(good)
         self.login()
         self.page.goto(f"{self.live_server_url}/papers/{paper.pk}/edit/")
-        expect(self.page.locator(".cm-content")).to_be_visible()
-        expect(self.page.locator("[data-diagram]").first).to_have_attribute(
-            "data-diagram-state", "error", timeout=60000
+        expect(self.page.locator(".bm-tikz-rendered svg")).to_have_count(1)
+        self.page.locator(".cm-content").fill("```tikz\n\\def\\forever{\\forever}\\forever\n```")
+        expect(self.page.locator("#save-status")).to_have_text("Saved")
+        expect(self.page.locator("#preview-status")).to_contain_text(
+            "took more than", timeout=60000
         )
-        expect(self.page.locator(".diagram-status").first).to_contain_text("timed out")
-        expect(self.page.locator("[data-diagram]").last).to_have_attribute(
-            "data-diagram-state", "ready", timeout=60000
-        )
+        self.page.locator(".cm-content").fill(good)
+        expect(self.page.locator("#preview-status")).to_contain_text("same renderer", timeout=60000)
+        expect(self.page.locator(".bm-tikz-rendered svg")).to_have_count(1)
 
     def test_access_token_creation_one_time_display_and_revocation(self):
         self.login()
@@ -1229,7 +1153,7 @@ C \arrow[r, "k"'] & D
         self.page.get_by_role("button", name="Search Peerpedia", exact=True).click()
         expect(self.page.locator("#link-results")).to_contain_text(revised.public_id)
         self.page.get_by_role("button", name="Cite frozen version", exact=True).click()
-        self.page.get_by_role("button", name="References.bib", exact=True).click()
+        self.page.get_by_role("button", name="Bibliography", exact=True).click()
         expect(self.page.locator("#bib-source")).to_have_value(
             re.compile(re.escape("Peerpedia snapshot " + revised.public_id))
         )
@@ -1253,16 +1177,14 @@ C \arrow[r, "k"'] & D
         self.page.once("dialog", lambda dialog: dialog.accept("Exercises"))
         self.page.get_by_role("button", name="Add chapter", exact=True).click()
         self.page.locator(".cm-content").fill(
-            "# Exercises\n\nExplain the result in your own words.\n\n$$\ny = 2\n$$\n\nSee "
+            "# Exercises\n\nExplain the result in your own words.\n\n```math {@eq:warmup}\ny = 2\n```\n\nSee "
         )
         expect(self.page.locator("#save-status")).to_have_text("Saved")
-        expect(self.page.locator("#draft-preview .equation-number")).to_have_text("(3.1)")
+        expect(self.page.locator("#draft-preview .katex-tag")).to_have_text("(3.1)")
         self.page.get_by_role("button", name="Insert reference", exact=True).click()
-        self.page.locator("#link-results").get_by_role(
-            "button", name="Equation (3.1)", exact=True
-        ).click()
-        expect(self.page.locator(".cm-content")).to_contain_text("{#equation-")
-        expect(self.page.locator("#draft-preview .cross-reference")).to_have_text("Equation (3.1)")
+        self.page.locator("#link-results").get_by_role("button", name="(3.1)", exact=True).click()
+        expect(self.page.locator(".cm-content")).to_contain_text("@eq:warmup")
+        expect(self.page.locator('#draft-preview a[href="#eq:warmup"]')).to_have_text("(3.1)")
         expect(self.page.locator("#save-status")).to_have_text("Saved")
         self.page.locator("#editor-files > summary").click()
         with self.page.expect_download() as download:
@@ -1271,10 +1193,10 @@ C \arrow[r, "k"'] & D
 
         with zipfile.ZipFile(download.value.path()) as archive:
             self.assertEqual(len(json.loads(archive.read("paper.json"))["chapters"]), 3)
-            self.assertIn("Quantum Field Theory", archive.read("references.bib").decode())
+            self.assertIn("Quantum Field Theory", archive.read("references.yaml").decode())
         self.page.reload()
         expect(self.page.locator("#chapter-list button")).to_have_count(3)
-        self.page.get_by_role("button", name="References.bib", exact=True).click()
+        self.page.get_by_role("button", name="Bibliography", exact=True).click()
         expect(self.page.locator("#bib-source")).to_have_value(re.compile("Quantum Field Theory"))
         self.page.locator("#bib-dialog").get_by_role("button", name="Done", exact=True).click()
         self.page.locator("#paper-details > summary").click()
@@ -1289,8 +1211,8 @@ C \arrow[r, "k"'] & D
         self.page.get_by_role("button", name="Submit PR", exact=True).click()
         expect(self.page.locator(".chapter-diffs")).to_contain_text("Exercises")
         self.page.goto(self.live_server_url + f"/papers/{paper.pk}/read/?chapter=intro")
-        self.page.get_by_role("link", name="Equation (2.1)", exact=True).click()
-        expect(self.page).to_have_url(re.compile(r"chapter=proof#eq%3Aone"))
+        self.page.get_by_role("link", name="(2.1)", exact=True).click()
+        expect(self.page).to_have_url(re.compile(r"chapter=proof#eq(?::|%3A)one"))
         expect(self.page.get_by_role("button", name="Back to where you were")).to_be_visible()
         pending_progress = []
         progress_url = self.live_server_url + f"/papers/{paper.pk}/progress/"
