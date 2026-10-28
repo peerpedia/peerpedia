@@ -38,6 +38,7 @@ let headings = [],
   followLocked = false,
   openedSection = false;
 let renderQueue = Promise.resolve();
+let previewRunning = false;
 const recoveryPrefix = `peerpedia:draft:${initial.user_id}:${initial.id}:`;
 let clientId;
 try {
@@ -170,6 +171,7 @@ function changed() {
   backup();
   clearTimeout(saveTimer);
   saveTimer = setTimeout(() => save().catch(() => {}), 850);
+  previewGeneration++;
   clearTimeout(previewTimer);
   previewTimer = setTimeout(updatePreview, 500);
 }
@@ -482,8 +484,10 @@ $("discard-draft").addEventListener("click", async () => {
 
 async function updatePreview() {
   clearTimeout(previewTimer);
-  const generation = ++previewGeneration,
-    source = view.state.doc.toString();
+  const generation = ++previewGeneration;
+  if (previewRunning) return;
+  previewRunning = true;
+  const source = view.state.doc.toString();
   $("preview-status").textContent = "Updating preview…";
   try {
     const previewCopy = chapters.preview();
@@ -514,6 +518,7 @@ async function updatePreview() {
       });
     await renderQueue;
   } catch (error) {
+    if (generation !== previewGeneration) return;
     $("preview-status").textContent = "Preview unavailable · " + error.message;
     const diagnostics = (error.diagnostics || [])
       .filter(
@@ -534,6 +539,12 @@ async function updatePreview() {
         };
       });
     view.dispatch(setDiagnostics(view.state, diagnostics));
+  } finally {
+    previewRunning = false;
+    if (generation !== previewGeneration) {
+      clearTimeout(previewTimer);
+      previewTimer = setTimeout(updatePreview, 0);
+    }
   }
 }
 function goToLine(line, focus = true) {

@@ -37,6 +37,21 @@ class Paper(models.Model):
         return self.current.title if self.current_id else str(self.pk)
 
 
+class RenderedSubmission(models.Model):
+    submission = models.ForeignKey("Submission", on_delete=models.CASCADE, related_name="renders")
+    source_hash = models.CharField(max_length=64)
+    renderer_version = models.CharField(max_length=64)
+    result = models.JSONField()
+    created_at = models.DateTimeField(default=timezone.now, editable=False)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["submission", "renderer_version"], name="unique_submission_renderer"
+            )
+        ]
+
+
 class FrozenRecord(models.Model):
     class Meta:
         abstract = True

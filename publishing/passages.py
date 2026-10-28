@@ -3,17 +3,15 @@
 import hashlib
 import json
 from difflib import SequenceMatcher
-from .bananamark import request, structure
+from .bananamark import structure
 
 
 def blocks(source):
     if isinstance(source, str):
         return structure(source)["blocks"]
-    from .documents import pages
+    from .artifacts import load
 
-    result = request(
-        pages=pages(source), bibliography=source.bibliography, numberSections=bool(source.chapters)
-    )
+    result = load(source)
     return [block for page in result["pages"] for block in page["blocks"]]
 
 

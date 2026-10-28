@@ -144,11 +144,25 @@ def reader(request, submission):
         else None
     )
     from .documents import pages, digest
-    from .references import ReferenceDocument
-    from . import passages
     from urllib.parse import urlencode
 
     chapters = pages(submission)
+    from .artifacts import references
+
+    try:
+        refs = references(submission)
+    except ValidationError:
+        response = render(
+            request,
+            "error.html",
+            {
+                "heading": "This article is temporarily unavailable",
+                "detail": "Its reading copy could not be prepared. Please try again shortly.",
+            },
+            status=503,
+        )
+        response["Retry-After"] = "30"
+        return response
     selected = request.GET.get("chapter")
     if not selected and request.GET.get("discussion"):
         from .feedback_queries import anchors_for, mapping
@@ -159,7 +173,7 @@ def reader(request, submission):
             raise Http404()
         anchor = anchors_for(submission).filter(pk=discussion_id).first()
         if anchor:
-            all_blocks = passages.blocks(submission)
+            all_blocks = [block for page in refs.result["pages"] for block in page["blocks"]]
             _, spans = mapping(anchor, submission, all_blocks)
             if spans:
                 selected = next(
@@ -171,9 +185,6 @@ def reader(request, submission):
         raise Http404("This chapter is not in this version.")
     index = chapters.index(page)
     reader_url = submission.read_url
-    refs = ReferenceDocument(
-        chapters, submission.bibliography, reader_url, number_sections=bool(submission.chapters)
-    )
     if edit_url and submission.chapters:
         edit_url += "&" + urlencode({"chapter": selected})
     body, contents = refs.render(

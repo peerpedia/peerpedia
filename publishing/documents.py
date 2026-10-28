@@ -1,6 +1,8 @@
 """Canonical multi-page payloads. Legacy snapshots are never rewritten."""
 
 import hashlib
+from copy import deepcopy
+from dataclasses import dataclass
 import re
 from django.conf import settings
 from django.core.exceptions import ValidationError
@@ -22,8 +24,6 @@ def combined(chapters):
 
 
 def validate(chapters, bibliography="", *, allow_empty=False):
-    from .rendering import has_images
-
     if not isinstance(chapters, list) or len(chapters) > MAX_CHAPTERS:
         raise ValidationError("Use up to 64 chapters.")
     if not isinstance(bibliography, str):
@@ -43,8 +43,6 @@ def validate(chapters, bibliography="", *, allow_empty=False):
             raise ValidationError("Give each chapter a title of up to 250 characters.")
         if not allow_empty and not chapter["markdown"].strip():
             raise ValidationError(f"Write some text in {chapter['title']} before submitting.")
-        if not allow_empty and has_images(chapter["markdown"]):
-            raise ValidationError("Images are not supported. Use a diagram block instead.")
     text = combined(chapters) + bibliography
     try:
         size = len(text.encode("utf-8"))
@@ -57,9 +55,18 @@ def validate(chapters, bibliography="", *, allow_empty=False):
     return chapters
 
 
-def prepare(data, base=None):
+@dataclass(frozen=True)
+class PreparedDocument:
+    data: dict
+    result: dict
+    renderer_version: str
+    base_id: object = None
+    section: object = None
+
+
+def prepare(data, base=None, section=None):
     """Reject old-client replacement of a multi-page document instead of losing pages."""
-    data = dict(data)
+    data = deepcopy(data)
     if base and (base.chapters or base.bibliography) and "chapters" not in data:
         raise ValidationError(
             "This paper has chapters or a bibliography. Use the online editor or update the CLI before revising it."
@@ -73,14 +80,18 @@ def prepare(data, base=None):
     # book and compiles its diagrams before any snapshot is written.
     from .bananamark import request
 
-    request(
+    result = request(
         pages=chapters
         or [{"id": "main", "title": data.get("title", ""), "markdown": data.get("markdown", "")}],
         bibliography=bib,
         numberSections=bool(chapters),
         diagrams=True,
     )
-    return data
+    from .artifacts import renderer_version
+
+    return PreparedDocument(
+        data, result, renderer_version(), base.pk if base else None, deepcopy(section)
+    )
 
 
 def chapter_diff(before, after):

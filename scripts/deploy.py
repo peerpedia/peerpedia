@@ -105,6 +105,7 @@ sudo docker compose up -d --no-deps --remove-orphans renderer web
 for attempt in $(seq 1 30); do
   if sudo docker inspect --format '{{{{.State.Health.Status}}}}' peerpedia-web-1 | grep -qx healthy &&
      sudo docker inspect --format '{{{{.State.Health.Status}}}}' peerpedia-renderer-1 | grep -qx healthy; then
+    sudo docker compose exec -T web python manage.py build_reading_copies
     sudo docker compose exec -T web python manage.py verify_history
     sudo docker compose exec -T caddy caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile
     printf '%s\n' {args.sha} | sudo tee /opt/peerpedia/.release >/dev/null

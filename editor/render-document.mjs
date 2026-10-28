@@ -322,6 +322,7 @@ export async function renderDocument(input) {
     : null;
   try {
     for (const [i, page] of pages.entries()) {
+      if (input.renderChapter && input.renderChapter !== page.id) continue;
       const result = book.render(handles[i]);
       if (
         input.diagrams &&

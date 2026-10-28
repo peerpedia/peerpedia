@@ -826,3 +826,30 @@ in their browser. Completion retains the hash of the chapter read, allowing the
 sidebar to indicate later changes without erasing the reader's achievement.
 Cross-chapter passage mapping uses the existing exact, unambiguous quote rule;
 uncertain matches remain historical.
+
+### Browser rendering and durable reading copies
+
+BananaMark parses and renders each review once. Editor previews render the selected
+chapter with the book's shared labels and numbering; the browser permits one
+preview request at a time and coalesces pending edits to the latest text.
+
+Publication compiles and validates content before taking database row locks. The
+short commit transaction rechecks the draft revision, accepted base and PR head,
+and stores both the immutable submission and a separate `RenderedSubmission`.
+The derived record contains HTML (including diagram SVG), headings, references
+and passage indexes. Reading and discussion indexes use it without contacting BM.
+Database backups include these reading copies.
+
+Deployments run `python manage.py build_reading_copies` to backfill missing copies.
+This command is idempotent and does not alter source snapshots or their hashes.
+Renderer upgrades retain existing copies until an explicit
+`python manage.py build_reading_copies --refresh`; the renderer fingerprint covers
+the locked dependencies, dialect and rendering adapter. Retain the existing font
+assets when upgrading packages until the copies using them have been refreshed.
+
+The renderer checks its disposable TikZ cache while idle, at most hourly. It uses
+BM's native `prune()` to expire entries unused for seven days, shortening retention
+when the cache exceeds its soft capacity budget (1 GiB by default; configure
+`BANANAMARK_CACHE_BYTES` in the renderer environment). Usage and cleanup failures
+are written to the renderer log. Persisted reading copies contain their SVG, so
+pruning the compilation cache does not affect published articles.

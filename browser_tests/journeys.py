@@ -506,6 +506,51 @@ class BrowserJourneys(StaticLiveServerTestCase):
             self.database_call(lambda: Draft.objects.get(pk=draft.pk).submitted.markdown), revised
         )
 
+    def test_preview_coalesces_edits_and_ignores_obsolete_errors(self):
+        paper = self.fixture_paper()
+        self.login()
+        self.page.goto(self.live_server_url + f"/papers/{paper.pk}/edit/")
+        expect(self.page.locator("#preview-status")).to_contain_text("same renderer")
+        requests = []
+
+        def preview(route):
+            requests.append(route)
+            if len(requests) > 1:
+                route.continue_()
+
+        self.page.route("**/preview/", preview)
+        self.page.evaluate("""() => {
+            window.previewStatuses = [];
+            new MutationObserver(() => window.previewStatuses.push(document.querySelector('#preview-status').textContent))
+                .observe(document.querySelector('#preview-status'), { childList: true, subtree: true });
+        }""")
+        source = self.page.locator(".cm-content")
+        source.fill("# Old request\n\nOld text.")
+        self.page.wait_for_timeout(700)
+        self.assertEqual(len(requests), 1)
+        source.fill("# Latest request\n\nOnly the latest text should appear.")
+        self.page.wait_for_timeout(700)
+        self.assertEqual(len(requests), 1, "Only one preview request may be in flight")
+        requests[0].fulfill(
+            status=400,
+            content_type="application/json",
+            body=json.dumps(
+                {
+                    "error": "Obsolete formula error",
+                    "diagnostics": [{"line": 1, "message": "Obsolete formula error"}],
+                }
+            ),
+        )
+        expect(self.page.locator("#draft-preview")).to_contain_text(
+            "Only the latest text should appear."
+        )
+        expect(self.page.locator("#preview-status")).to_contain_text("same renderer")
+        self.assertEqual(len(requests), 2)
+        self.assertFalse(
+            any("Obsolete" in text for text in self.page.evaluate("window.previewStatuses"))
+        )
+        expect(self.page.locator(".cm-lintRange-error")).to_have_count(0)
+
     def test_section_edit_creates_pending_entry_in_submissions(self):
         self.assert_section_submission(chaptered=False)
 
