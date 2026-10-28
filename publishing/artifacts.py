@@ -15,6 +15,7 @@ def renderer_version():
     for name in (
         "editor/package-lock.json",
         "editor/dialect.js",
+        "editor/chapter-title.js",
         "editor/render-document.mjs",
         "publishing/artifacts.py",
     ):
@@ -95,4 +96,6 @@ def references(submission):
     from .documents import pages
     from .references import ReferenceDocument
 
-    return ReferenceDocument(pages(submission), result=load(submission))
+    return ReferenceDocument(
+        pages(submission), reader_url=submission.read_url, result=load(submission)
+    )

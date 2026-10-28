@@ -7,18 +7,18 @@
   <link rel="stylesheet" href="{% static 'reader.css' %}">
   <script defer src="{% static 'reader.js' %}"></script>
   <script defer src="{% static 'reading.js' %}"></script>
-  <link rel="stylesheet" href="{% static 'discussions.css' %}">
-  <script defer src="{% static 'discussions.js' %}"></script>
+  {% if not desktop %}<link rel="stylesheet" href="{% static 'discussions.css' %}">
+  <script defer src="{% static 'discussions.js' %}"></script>{% endif %}
   {% include "includes/math.html" %}
-<link rel="stylesheet" href="{% static 'controls.css' %}"></head>
+<link rel="stylesheet" href="{% static 'controls.css' %}">{% if desktop %}<link rel="stylesheet" href="{% static 'desktop.css' %}"><script defer src="{% static 'desktop.js' %}"></script>{% endif %}</head>
 <body class="reader{% if contents or chapters %} has-contents{% endif %}">
   <a class="reader-skip" href="#paper-text">Skip to paper</a>
   <aside class="reader-sidebar" aria-label="Paper navigation">
     <a class="reader-home" href="{% url 'browse' %}" aria-label="Peerpedia home" title="Peerpedia home"><img src="{% static 'favicon.svg' %}" width="32" height="32" alt=""><span>Peerpedia</span></a>
     {% if submission.paper.public_id %}<a class="reader-paper-number" href="{{ submission.paper.get_absolute_url }}">{{ submission.paper.public_id }}</a>{% endif %}
     <div class="reader-snapshot"><div class="reader-snapshot-heading"><a href="{{ submission.get_absolute_url }}">Snapshot {{ submission.public_id }}</a><button type="button" class="copy-reference reader-copy-reference ui-icon-button" data-reference-url="{{ submission.read_url }}" data-reference="" aria-label="Copy reference to {{ submission.title }}" title="Copy citation or link">{% include "includes/ui_icon.html" with name="link" %}</button></div><span>{{ submission.status|title }}{% if submission.pk == submission.paper.current_id %} · Latest accepted{% endif %}</span><time datetime="{{ submission.created_at|date:'c' }}">Submitted {{ submission.created_at|date:'j M Y, H:i' }} UTC</time></div>
-    <a class="reader-edit ui-icon-button" href="{% url 'edit_paper' submission.paper_id %}?chapter={{ chapter.id }}" aria-label="{% if submission.pk != submission.paper.current_id %}Edit latest accepted version{% else %}Edit paper{% endif %}" title="{% if submission.pk != submission.paper.current_id %}Edit latest accepted version{% else %}Edit paper{% endif %}">{% include "includes/ui_icon.html" with name="edit" %}</a>
-    <button type="button" class="reader-discussions" id="discussions-open" aria-controls="discussion-panel" aria-expanded="false">{% include "includes/ui_icon.html" with name="chat" %}Discussions <span id="discussion-count"></span></button>
+    <div class="reader-actions"><a class="button secondary reader-paper-details" href="{{ submission.paper.get_absolute_url }}">{% include "includes/ui_icon.html" with name="file" %}Paper details</a><a class="reader-edit ui-icon-button" href="{% url 'edit_paper' submission.paper_id %}" aria-label="{% if submission.pk != submission.paper.current_id %}Edit latest accepted version{% else %}Edit paper{% endif %}" title="{% if submission.pk != submission.paper.current_id %}Edit latest accepted version{% else %}Edit paper{% endif %}">{% include "includes/ui_icon.html" with name="edit" %}</a></div>
+    {% if desktop %}<a class="reader-discussions" href="{{ remote }}" target="_blank" rel="noopener noreferrer" title="Open discussions on the website">{% include "includes/ui_icon.html" with name="chat" %}Discussions <span aria-hidden="true">↗</span></a>{% else %}<button type="button" class="reader-discussions" id="discussions-open" aria-controls="discussion-panel" aria-expanded="false">{% include "includes/ui_icon.html" with name="chat" %}Discussions <span id="discussion-count"></span></button>{% endif %}
     <button type="button" id="reading-return" hidden>Back to where you were</button>
     {% if chapters %}<nav class="chapter-navigation" aria-label="Chapters"><h2>Chapters</h2><ol>{% for page in chapters %}<li><a href="{{ page.url }}" {% if page.selected %}aria-current="page"{% endif %}>{{ forloop.counter }}. {{ page.title }} <small data-chapter-state="{{ page.id }}"></small></a></li>{% endfor %}</ol></nav>{% endif %}
     {% if contents %}
@@ -32,14 +32,14 @@
     </details>
     {% endif %}
   </aside>
-  <main id="paper-text" class="markdown-body" tabindex="-1">{% if chapters %}<div class="chapter-heading"><p>Chapter {{ chapter_number }} of {{ chapters|length }}</p>{% if not chapter_has_title %}<h1>{{ chapter.title }}</h1>{% endif %}</div>{% endif %}{{ body }}{% if chapters %}<nav class="chapter-footer" aria-label="Chapter navigation">{% if previous_chapter %}<a href="{{ previous_chapter }}">← Previous chapter</a>{% endif %}<button type="button" id="chapter-complete" disabled>Mark complete and continue</button>{% if next_chapter %}<a href="{{ next_chapter }}" id="next-chapter">Next chapter →</a>{% endif %}<span id="reading-status" role="status"></span></nav>{% endif %}{% include 'includes/license.html' %}</main>
-  <button type="button" id="passage-selection" hidden>Comment &amp; rate</button>
+  <main id="paper-text" class="markdown-body" tabindex="-1">{% if chapters %}<div class="chapter-heading"><div class="chapter-heading-actions"><p>Chapter {{ chapter_number }} of {{ chapters|length }}</p><button type="button" class="copy-reference ui-icon-button" data-reference-url="{{ chapter_reference_url }}" data-reference="[{{ chapter.title }}](?chapter={{ chapter.id }})" aria-label="Copy reference to {{ chapter.title }}" title="Copy chapter citation or link">{% include "includes/ui_icon.html" with name="link" %}</button>{% if chapter_edit_url %}<a class="button secondary chapter-edit" href="{{ chapter_edit_url }}" title="Open this chapter in the paper editor">{% include "includes/ui_icon.html" with name="edit" %}Edit chapter</a>{% endif %}</div>{% if not chapter_has_title %}<h1>{{ chapter.title }}</h1>{% endif %}</div>{% endif %}{{ body }}{% if chapters %}<nav class="chapter-footer" aria-label="Chapter navigation">{% if previous_chapter %}<a href="{{ previous_chapter }}">← Previous chapter</a>{% endif %}<button type="button" id="chapter-complete" disabled>Mark complete and continue</button>{% if next_chapter %}<a href="{{ next_chapter }}" id="next-chapter">Next chapter →</a>{% endif %}<span id="reading-status" role="status"></span></nav>{% endif %}{% include 'includes/license.html' %}</main>
+  {% if not desktop %}<button type="button" id="passage-selection" hidden>Comment &amp; rate</button>
   <aside id="discussion-panel" class="discussion-panel" aria-label="Passage discussions" hidden>
     <header class="discussion-header"><div><h2>Discussions</h2><p>{{ submission.public_id }} · {{ submission.status }}</p></div><button type="button" id="discussions-close" aria-label="Close discussions">✕</button></header>
     <p id="discussion-message" role="status" aria-live="polite"></p>
     <div id="discussion-body"></div>
   </aside>
-  <div hidden>{% csrf_token %}</div>
+  {% endif %}<div hidden>{% csrf_token %}</div>
   {% include "includes/reference_tools.html" %}
   {{ citation_config|json_script:"citation-config" }}
   {{ reading_config|json_script:"reading-config" }}

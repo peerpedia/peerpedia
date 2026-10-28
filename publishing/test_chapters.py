@@ -59,6 +59,30 @@ class ChapterTests(TestCase):
         s.refresh_from_db()
         self.assertEqual(s.calculate_hash(), original)
 
+    def test_published_titles_are_derived_and_old_snapshots_are_not_rewritten(self):
+        value = course()
+        value["chapters"][0].pop("title")
+        value["chapters"][1]["title"] = "Wrong manually supplied title"
+        paper = publish(self.user, value)
+        self.assertEqual([p["title"] for p in paper.current.chapters], ["Introduction", "A proof"])
+        before = paper.current.hash
+        response = self.client.get(paper.current.read_url + "?chapter=proof")
+        self.assertContains(response, 'class="button secondary chapter-edit"')
+        self.assertContains(response, "Copy reference to A proof")
+        self.assertContains(response, "Paper details")
+        paper.current.refresh_from_db()
+        self.assertEqual(paper.current.hash, before)
+
+    def test_upload_entry_points_use_the_same_editor(self):
+        self.assertRedirects(
+            self.client.get(reverse("publish")), reverse("write"), fetch_redirect_response=False
+        )
+        self.assertRedirects(
+            self.client.get(reverse("propose", args=[self.paper.pk])),
+            reverse("edit_paper", args=[self.paper.pk]),
+            fetch_redirect_response=False,
+        )
+
     def test_old_client_cannot_drop_chapters(self):
         with self.assertRaisesMessage(ValidationError, "update the CLI"):
             propose(self.user, self.paper.pk, self.paper.current_id, document())

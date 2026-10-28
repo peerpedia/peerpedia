@@ -157,3 +157,60 @@
 .reference-copy-row input { flex:1; min-width:0; }
 .reference-dialog .reference-copy-row .ui-icon-button { width:36px; height:36px; flex:0 0 36px; }
 #reference-copy-status { min-height:1.6em; margin:12px 0 0; color:var(--control-ink); font-size:13px; }
+
+/* Shared reading actions keep the same position and meaning on every page. */
+.reader-actions { display:flex; gap:6px; align-items:center; margin:0 24px 12px; }
+.reader .reader-actions .reader-edit { position:static; margin:0; }
+.reader-actions .reader-paper-details { flex:1; }
+.chapter-heading-actions { display:flex; align-items:center; flex-wrap:wrap; gap:8px; margin-bottom:12px; }
+.chapter-heading-actions p { margin:0; font:13px/1.5 system-ui; color:var(--control-muted); }
+.chapter-heading-actions .chapter-edit { margin-left:auto; }
+.markdown-body .bm-heading-link { display:none; }
+.paper-details-link { margin:8px 0 18px; }
+
+/* Keep guidance available without spending the editor's height on banners. */
+.editor-page .editor-header { min-height:54px; padding:8px 16px; gap:12px; }
+.editor-page .editor-controls { min-height:46px; padding:5px 16px; gap:8px; }
+.editor-page .chapter-tools { min-height:44px; padding:4px 16px; gap:8px; }
+.editor-page .chapter-panel { width:184px; padding:14px 12px; box-sizing:border-box; }
+.chapter-title-help { font:12px/1.5 system-ui; color:var(--control-muted); margin:0 0 12px; }
+.chapter-panel h2 { margin-bottom:8px; }
+.editor-page .chapter-actions { grid-template-columns:repeat(3,1fr); }
+.editor-page .section-scope { padding:0; font:12px/1.5 system-ui; background:none; color:var(--control-muted); }
+.editor-page .editor-intro { padding:0; background:none; margin:12px 0; }
+.editor-page .publication-readiness { position:relative; padding:0; margin:0 0 0 auto; border:0; overflow:visible; background:none; max-height:none; }
+.editor-page .publication-readiness>summary { margin:0; list-style:none; }
+.publication-readiness>summary::-webkit-details-marker { display:none; }
+.readiness-panel { position:absolute; right:0; top:calc(100% + 8px); width:min(350px,calc(100vw - 32px)); box-sizing:border-box; padding:16px; background:#fff; border:1px solid var(--control-border); border-radius:var(--control-radius); box-shadow:0 8px 28px #24372f18; z-index:30; max-height:65dvh; overflow:auto; }
+.editor-page .publication-checklist button { padding:4px 8px; min-height:30px; font-size:12px; }
+.checklist-count { min-width:18px; font-size:12px; color:var(--control-muted); }
+.checklist-count.needs-attention { color:#a32d2d; }
+.editor-page #paper-details { margin-left:0; }
+.editor-page .sync-choice { margin:0; }
+.editor-page .details-panel { top:calc(100% + 8px); }
+.editor-page .details-panel .pending-notice { padding:0; margin:0 0 12px; background:none; border:0; }
+.editor-page .details-panel .pending-notice>summary { white-space:normal; }
+.editor-page #preview-pane { padding:20px 28px; }
+@media(max-width:1150px) {
+  .editor-page .sync-choice { display:none; }
+  .editor-page .editor-controls { gap:6px; }
+  .editor-page .editor-discard span { display:none; }
+}
+@media(max-width:1049px) {
+  .reader-actions { grid-column:1/-1; margin:0 18px 10px; }
+  .reader-actions .reader-paper-details { flex:none; }
+}
+@media(max-width:760px) {
+  .editor-page .editor-header { display:flex; flex-wrap:wrap; gap:6px 10px; }
+  .editor-header .editor-heading { flex:1; flex-basis:45%; }
+  .editor-header form { margin-left:auto; }
+  .editor-page .editor-controls { padding:5px 10px; flex-wrap:wrap; }
+  .editor-page #toggle-chapters span,.editor-page .publication-readiness>summary>span:not(.checklist-count) { display:none; }
+  .editor-page .chapter-panel { width:auto; max-height:135px; padding:8px 10px; }
+  .chapter-title-help { display:none; }
+  .editor-page .chapter-tools { padding:4px 10px; flex-wrap:wrap; }
+  .editor-page .details-panel { position:fixed; top:110px; }
+  .editor-page .readiness-panel { position:fixed; top:110px; right:10px; }
+  .editor-page #preview-pane { padding:16px 20px; }
+}
+@media print { .chapter-heading-actions { display:none; } }

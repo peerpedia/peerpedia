@@ -8,6 +8,7 @@ export function publicationGuide({ initial, data, details, focusSource }) {
   const dialog = $("publication-problems");
   function focus(field) {
     if (dialog.open) dialog.close();
+    $("publication-readiness").open = false;
     if (field === "markdown") {
       $("paper-details").open = false;
       focusSource();
@@ -19,6 +20,7 @@ export function publicationGuide({ initial, data, details, focusSource }) {
       target.focus();
       target.scrollIntoView({ block: "nearest" });
     } else if ($("section-metadata-help")) {
+      $("publication-readiness").open = true;
       $("section-metadata-help").hidden = false;
       $("section-metadata-help").focus();
     }
@@ -75,6 +77,11 @@ export function publicationGuide({ initial, data, details, focusSource }) {
         ),
     );
     const items = problems();
+    $("publication-count").textContent = items.length || "✓";
+    $("publication-count").classList.toggle(
+      "needs-attention",
+      items.length > 0,
+    );
     $("publication-status").textContent = items.length
       ? `${items.length} ${items.length === 1 ? "item needs" : "items need"} attention before review`
       : "Ready to review";

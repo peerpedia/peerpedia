@@ -1,7 +1,8 @@
-<section class="publication-readiness" aria-label="Publication checklist">
-  <div class="publication-readiness-heading"><strong id="publication-status" role="status">Before you submit</strong><span>Complete your draft, review it, then confirm submission.</span></div>
+<details class="publication-readiness" id="publication-readiness">
+  <summary>{% include "includes/ui_icon.html" with name="check" %}<span>Checklist</span><span id="publication-count" class="checklist-count"></span></summary>
+  <div class="readiness-panel"><strong id="publication-status" role="status">Before you submit</strong>
   <div id="publication-checklist" class="publication-checklist"></div>
   <p id="publication-next">{% if draft.paper_id or draft.workingcopy.mirror_id %}Describe what changed so the author can review your PR. The paper’s license stays the same.{% else %}You will choose a license and confirm permission on the next page.{% endif %}</p>
-  {% if draft.section %}<p id="section-metadata-help" hidden tabindex="-1">This section inherits the paper’s details. If a required detail is missing, <a href="{% url 'edit_paper' draft.paper_id %}">open the full-paper editor</a> to propose that correction first. Your section draft stays saved here.</p>{% endif %}
-</section>
-{% include 'includes/publication_problems.html' %}
+  {% if draft.section %}<p id="section-metadata-help" hidden tabindex="-1">This section inherits the paper’s details. If a required detail is missing, <a href="{% if desktop %}{% url 'edit_paper' draft.workingcopy.mirror_id %}{% else %}{% url 'edit_paper' draft.paper_id %}{% endif %}">open the full-paper editor</a> to propose that correction first. Your section draft stays saved here.</p>{% endif %}
+  </div>
+</details>

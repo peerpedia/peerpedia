@@ -1,0 +1,10 @@
+<article class="paper-metadata">
+  <div class="eyebrow">RESEARCH PAPER / NOTE</div>
+  <h1>{{ paper.current.title }}</h1>
+  <p class="author-list">{{ paper.current.authors|linebreaksbr }}</p>
+  {% if desktop %}<div class="meta-line">{% if paper.public_id %}<span>Peerpedia <strong>{{ paper.public_id }}</strong></span>{% endif %}<span>Saved on this computer · {{ mirror.updated_at|date:'j M Y, H:i' }} UTC</span></div>{% else %}<div class="meta-line">{% if paper.public_id %}<span>Peerpedia <strong>{{ paper.public_id }}</strong></span>{% endif %}<span>Corresponding author: <strong>{{ paper.owner.username }}</strong></span><span>Latest acceptance: {{ paper.accepted_at|date:'j M Y, H:i' }} UTC</span></div>{% endif %}
+  {% include 'includes/subjects.html' with subjects=paper.current.subjects %}
+  {% include 'includes/license.html' with submission=paper.current %}
+  <section class="abstract"><h2>Abstract</h2><p>{{ paper.current.abstract|linebreaksbr }}</p></section>
+  <div class="actions"><a class="button" href="{{ paper.read_url }}">Read paper <span aria-hidden="true">↗</span></a><a class="button secondary" href="{{ paper.current.download_url }}">Download Markdown</a><a class="button secondary" href="{% url 'edit_paper' paper.pk %}">Edit paper</a>{% if desktop %}<form class="inline-form" method="post" action="{% url 'local_add' %}">{% csrf_token %}<input type="hidden" name="url" value="{{ remote }}"><button type="submit" class="button secondary">Refresh download</button></form>{% endif %}</div>
+</article>
