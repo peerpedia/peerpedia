@@ -291,7 +291,7 @@ class BrowserJourneys(StaticLiveServerTestCase):
         self.page.goto(self.live_server_url + "/licenses/")
         self.assert_no_page_overflow()
 
-    def test_upload_preview_publish_reader_and_download(self):
+    def test_upload_preview_publish_reader_and_download(self: "BrowserJourneys") -> None:
         self.login()
         self.page.get_by_role("link", name="My drafts", exact=True).click()
         self.page.get_by_role("link", name="Write a new note", exact=True).click()
@@ -318,7 +318,7 @@ class BrowserJourneys(StaticLiveServerTestCase):
         expect(self.page.locator(".site-header, .site-footer")).to_have_count(0)
         expect(self.page.get_by_role("link", name="Peerpedia home")).to_be_visible()
         expect(self.page.get_by_role("link", name=public_id, exact=True)).to_be_visible()
-        expect(self.page.get_by_role("button", name="Discussions", exact=True)).to_be_visible()
+        expect(self.page.get_by_role("button", name="Discussions", exact=True)).to_have_count(0)
         self.page.go_back()
         expect(self.page.get_by_role("heading", name="Abstract", exact=True)).to_be_visible()
         self.page.get_by_role("link", name="History", exact=True).click()
@@ -641,7 +641,7 @@ class BrowserJourneys(StaticLiveServerTestCase):
     def test_chapter_section_edit_creates_pending_entry_in_submissions(self):
         self.assert_section_submission(chaptered=True)
 
-    def assert_section_submission(self, chaptered):
+    def assert_section_submission(self: "BrowserJourneys", chaptered: bool) -> None:
         source = (
             "# Browser paper\n\nIntroduction stays unchanged.\n\n"
             "## Argument\n\nOriginal argument.\n\n"
@@ -672,6 +672,10 @@ class BrowserJourneys(StaticLiveServerTestCase):
         section = self.page.locator(".cm-content")
         expect(section).to_contain_text("Original argument.")
         expect(section).not_to_contain_text("Conclusion stays unchanged.")
+        detail = self.page.locator("#draft-preview h3#detail")
+        expect(detail).to_have_attribute("data-source-line", "5")
+        detail.click()
+        expect(section.locator(".cm-activeLine")).to_have_text("### Detail")
         section.fill("## Argument\n\nRevised argument.\n\n### Detail\n\nSupporting detail.\n\n")
         self.page.locator("#paper-details > summary").click()
         self.page.get_by_label("What changed?", exact=True).fill(explanation)
@@ -754,7 +758,8 @@ class BrowserJourneys(StaticLiveServerTestCase):
         )
         second.close()
 
-    def test_selected_sentence_discussion_reply_vote_and_history(self):
+    @override_settings(PASSAGE_COMMENTS_ENABLED=True)
+    def test_selected_sentence_discussion_reply_vote_and_history(self: "BrowserJourneys") -> None:
         paper = self.fixture_paper()
         self.login()
         self.page.goto(self.live_server_url + f"/papers/{paper.pk}/read/")
@@ -895,7 +900,7 @@ class BrowserJourneys(StaticLiveServerTestCase):
         self.page.get_by_role("button", name="Search", exact=True).click()
         expect(self.page.get_by_role("heading", name="No papers found")).to_be_visible()
 
-    def test_reader_contents_scroll_mobile_keyboard_and_icons(self):
+    def test_reader_contents_scroll_mobile_keyboard_and_icons(self: "BrowserJourneys") -> None:
         paragraph = "A paragraph long enough to give each section a real reading position.\n\n"
         source = "# Reading test\n\nIntroduction.\n\n## First section\n\n" + paragraph * 18
         source += "### A proof\n\n" + paragraph * 18 + "## Last section\n\n"
@@ -969,7 +974,9 @@ class BrowserJourneys(StaticLiveServerTestCase):
             page = no_script.new_page()
             page.goto(reader_url)
             page.get_by_role("link", name="2 Last section", exact=True).click()
-            expect(page).to_have_url(reader_url + "#last-section")
+            expect(page).to_have_url(
+                self.live_server_url + paper.current.read_url + "#last-section"
+            )
             expect(page.locator("#last-section")).to_be_in_viewport()
         finally:
             no_script.close()

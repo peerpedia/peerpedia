@@ -62,7 +62,7 @@ class PublishingTests(TestCase):
         self.assertEqual(self.paper.current.contributor, self.owner)
         self.assertEqual(self.paper.current.hash, self.paper.current.calculate_hash())
 
-    def test_anonymous_can_read_every_public_view(self):
+    def test_anonymous_can_read_every_public_view(self: "PublishingTests") -> None:
         s = self.proposal()
         for url in [
             reverse("browse"),
@@ -75,7 +75,7 @@ class PublishingTests(TestCase):
             reverse("compare", args=[self.paper.pk]),
         ]:
             with self.subTest(url=url):
-                self.assertEqual(self.client.get(url).status_code, 200)
+                self.assertEqual(self.client.get(url, follow=True).status_code, 200)
 
     def test_browse_has_no_abstract_and_separate_read_link(self):
         response = self.client.get(reverse("browse"))
@@ -83,10 +83,20 @@ class PublishingTests(TestCase):
         self.assertContains(response, self.paper.get_absolute_url())
         self.assertContains(response, self.paper.read_url)
 
-    def test_reader_has_no_platform_chrome(self):
-        response = self.client.get(reverse("read_paper", args=[self.paper.pk]))
+    def test_reader_has_no_platform_chrome(self: "PublishingTests") -> None:
+        response = self.client.get(reverse("read_paper", args=[self.paper.pk]), follow=True)
         self.assertContains(response, 'id="a-test-paper"')
-        self.assertContains(response, 'data-passage-text="A test paper"')
+        self.assertContains(response, "A test paper")
+        for marker in (
+            "data-passage-text",
+            "passage-selection",
+            "discussions-open",
+            "discussion-panel",
+            "discussion-config",
+            "discussions.css",
+            "discussions.js",
+        ):
+            self.assertNotContains(response, marker)
         for forbidden in ["site-header", "site-footer", "Go back", "Sign in"]:
             self.assertNotContains(response, forbidden)
 
@@ -402,7 +412,7 @@ class PublishingTests(TestCase):
             with self.assertRaises(ValidationError):
                 render_markdown(source)
 
-    def test_reader_outline_unique_anchors_and_safe_labels(self):
+    def test_reader_outline_unique_anchors_and_safe_labels(self: "PublishingTests") -> None:
         source = "# Title\n\n## A *proof*\n\n### Detail\n\n## A proof\n\n## A proof-2\n\n## &lt;script&gt;bad()&lt;/script&gt;\n\n```md\n## Not a section\n```"
         body, contents = render_reader(source)
         self.assertEqual(
@@ -418,7 +428,7 @@ class PublishingTests(TestCase):
         self.assertEqual(len(contents), 5)
         self.assertNotIn("<script>", body)
         paper = publish(self.owner, document(markdown=source))
-        response = self.client.get(reverse("read_paper", args=[paper.pk]))
+        response = self.client.get(paper.current.read_url)
         self.assertContains(response, 'aria-label="Table of contents"')
         self.assertNotContains(response, "<script>bad()")
         self.assertContains(response, "&lt;script&gt;bad()&lt;/script&gt;")

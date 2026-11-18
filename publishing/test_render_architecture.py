@@ -6,7 +6,7 @@ from django.db import connection
 from django.test import SimpleTestCase, TestCase, TransactionTestCase, override_settings
 from django.urls import reverse
 from . import bananamark
-from .artifacts import reader_links, snapshot_page
+from .artifacts import load
 from .models import RenderedSubmission, Draft
 from .references import ReferenceDocument
 from .services import publish, propose
@@ -27,32 +27,19 @@ class DocumentRenderTests(SimpleTestCase):
             self.assertEqual(render.call_count, 1)
             self.assertEqual(len(book.result["pages"]), 7)
 
-    def test_snapshot_offsets_match_parser_for_unicode_and_literal_links(
+    def test_preview_source_lines_are_relative_to_the_selected_section(
         self: "DocumentRenderTests",
     ) -> None:
-        source = (
-            "# 标题 🌱\n\n## A\n\n"
-            + '`href="?chapter=b"` [一](?chapter=b&arg=a\'b) and [二](?chapter=b).'
-            + "\n\n## B\n\n[三](?chapter=b#anchor)"
+        source = "# 标题 🌱\n\n## A\n\nText.\n\n### Detail\n\nMore.\n\n## B\n\nLast."
+        book = ReferenceDocument([{"id": "main", "markdown": source}])
+        section = "\n".join(source.splitlines()[2:10])
+        body, contents = book.render(
+            "main", source=section, source_lines=True, reference_line_offset=2
         )
-        reader = "/paper/o'hare&co/"
-        for section in (None, {"chapter": "main", "line": 3, "end": 7}):
-            options = {"source": source, "section": section}
-            original = bananamark.request(**options)["pages"][0]
-            page = bananamark.request(**options, snapshotLinks=True)["pages"][0]
-            self.assertEqual(page["html"], original["html"])
-            self.assertEqual(len(page["snapshot_links"]), 2 if section else 3)
-            expected = reader_links(original["html"], reader)
-            with patch("publishing.artifacts.reader_links", side_effect=AssertionError):
-                bound = snapshot_page(page, reader)
-            self.assertEqual(bound, {**original, "html": expected})
-
-    def test_link_binding_does_not_rewrite_code(self):
-        html = '<code>href="?chapter=b"</code><a href="?chapter=b#thm:a">Theorem</a>'
-        self.assertEqual(
-            reader_links(html, "/snapshot/read/"),
-            '<code>href="?chapter=b"</code><a href="/snapshot/read/?chapter=b#thm:a">Theorem</a>',
-        )
+        self.assertEqual([(h["id"], h["line"]) for h in contents], [("a", 1), ("detail", 5)])
+        self.assertIs(body, book.result["pages"][0]["html"])
+        self.assertNotIn("data-source-line", body)
+        self.assertNotIn("Last.", body)
 
 
 @override_settings(PASSWORD_HASHERS=["django.contrib.auth.hashers.MD5PasswordHasher"])
@@ -61,30 +48,65 @@ class ReadingCopyTests(TestCase):
         self.user = consenting_user("writer", "writer@example.org", "test", email_verified=True)
         self.paper = publish(self.user, course())
 
-    def test_reading_references_and_passages_work_without_renderer(self):
-        self.assertEqual(RenderedSubmission.objects.count(), 1)
-        bananamark._request.cache_clear()
+    def test_native_reading_copy_and_reference_search_work_without_renderer(
+        self: "ReadingCopyTests",
+    ) -> None:
+        snapshot = self.paper.current
+        page = load(snapshot)["pages"][0]
+        self.assertEqual(page["blocks"], [])
+        self.assertNotIn("snapshot_links", page)
         with patch(
-            "publishing.bananamark._request",
-            side_effect=AssertionError("Renderer must not be called"),
+            "publishing.bananamark.request", side_effect=AssertionError("Unexpected render")
         ):
-            response = self.client.get(self.paper.current.read_url)
-            self.assertContains(response, self.paper.current.read_url + "?chapter=proof#eq:one")
+            response = self.client.get(snapshot.read_url)
+            self.assertEqual(response.context["body"], page["html"])
+            self.assertContains(response, 'href="?chapter=proof#eq:one"')
             self.assertContains(response, 'aria-label="Copy reference to Motivation"')
             self.assertContains(response, 'data-reference="@sec:motivation"')
-            self.assertEqual(
-                self.client.get(reverse("passage_index", args=[self.paper.current_id])).status_code,
-                200,
-            )
-            refs = self.client.get(
-                reverse("reference_search"), {"submission": self.paper.current_id}
-            )
+            refs = self.client.get(reverse("reference_search"), {"submission": snapshot.pk})
             self.assertEqual(refs.status_code, 200)
             self.assertTrue(
-                all(
-                    t["url"].startswith(self.paper.current.read_url) for t in refs.json()["targets"]
-                )
+                all(t["url"].startswith(snapshot.read_url) for t in refs.json()["targets"])
             )
+
+    def test_explicit_refresh_selects_the_requested_format_and_reuses_cached_copies(
+        self: "ReadingCopyTests",
+    ) -> None:
+        snapshot = self.paper.current
+        native = load(snapshot)
+        with override_settings(PASSAGE_COMMENTS_ENABLED=True):
+            self.assertEqual(load(snapshot), native)
+            annotated = load(snapshot, refresh=True)
+            self.assertTrue(annotated["pages"][0]["blocks"])
+            self.assertEqual(load(snapshot), annotated)
+        with patch(
+            "publishing.bananamark.request", side_effect=AssertionError("Unexpected render")
+        ):
+            self.assertEqual(load(snapshot, refresh=True), native)
+            self.assertEqual(load(snapshot), native)
+            with override_settings(PASSAGE_COMMENTS_ENABLED=True):
+                self.assertEqual(load(snapshot, refresh=True), annotated)
+                self.assertEqual(load(snapshot), annotated)
+        self.assertEqual(RenderedSubmission.objects.filter(submission=snapshot).count(), 2)
+
+    def test_existing_snapshot_with_bound_links_keeps_its_frozen_body(
+        self: "ReadingCopyTests",
+    ) -> None:
+        snapshot = self.paper.current
+        artifact = RenderedSubmission.objects.get(submission=snapshot)
+        page = artifact.result["pages"][0]
+        page.pop("nativeHtml", None)
+        page["html"] = (
+            f'<p data-passage="b0"><a href="{snapshot.read_url}?chapter=proof#eq:one">Old proof</a></p>'
+        )
+        page["blocks"] = [{"id": "b0", "text": "Old proof", "chapter": "intro"}]
+        artifact.save(update_fields=["result"])
+        with patch(
+            "publishing.bananamark.request", side_effect=AssertionError("Unexpected render")
+        ):
+            response = self.client.get(reverse("read_submission", args=[snapshot.pk]))
+            self.assertContains(response, page["html"])
+            self.assertEqual(response.context["body"], page["html"])
 
     def test_missing_copy_gets_retryable_response_during_outage(self):
         RenderedSubmission.objects.all().delete()

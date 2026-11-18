@@ -10,9 +10,12 @@ from .feedback_queries import (
     FeedbackError,
 )
 import json
+from collections.abc import Callable
 from functools import wraps
+from typing import Any, Concatenate, ParamSpec
+from django.conf import settings
 from django.core.exceptions import ValidationError
-from django.http import JsonResponse
+from django.http import HttpRequest, HttpResponse, JsonResponse
 from django.views.decorators.http import require_GET, require_POST
 from accounts.security import limited
 
@@ -28,9 +31,16 @@ def private_response(view):
     return wrapper
 
 
-def browser_write(view):
+P = ParamSpec("P")
+
+
+def browser_write(
+    view: Callable[Concatenate[HttpRequest, dict[str, Any], P], JsonResponse],
+) -> Callable[Concatenate[HttpRequest, P], HttpResponse]:
     @wraps(view)
-    def wrapper(request, *args, **kwargs):
+    def wrapper(request: HttpRequest, /, *args: P.args, **kwargs: P.kwargs) -> JsonResponse:
+        if not settings.PASSAGE_COMMENTS_ENABLED:
+            return JsonResponse({"error": "Passage comments are paused."}, status=403)
         if request.headers.get("Authorization") or not request.user.is_authenticated:
             return JsonResponse(
                 {

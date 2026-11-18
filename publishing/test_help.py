@@ -23,6 +23,13 @@ class Anchors(HTMLParser):
 
 
 class HelpExampleTests(SimpleTestCase):
+    def test_passage_guide_matches_feature_availability(self: "HelpExampleTests") -> None:
+        page = self.client.get(reverse("help"))
+        self.assertContains(page, "Passage comments and ratings are paused")
+        self.assertNotContains(page, "Comment &amp; rate")
+        with self.settings(PASSAGE_COMMENTS_ENABLED=True):
+            self.assertContains(self.client.get(reverse("help")), "Comment &amp; rate")
+
     def test_writing_guide_has_real_outputs_and_unambiguous_links(self):
         response = self.client.get(reverse("help_writing"))
         self.assertEqual(response.status_code, 200)

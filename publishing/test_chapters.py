@@ -207,11 +207,18 @@ class ChapterTests(TestCase):
             with self.assertRaises(ValidationError):
                 publish(self.user, data)
 
-    def test_reader_is_one_chapter_and_links_are_frozen(self):
-        response = self.client.get(reverse("read_paper", args=[self.paper.pk]))
+    def test_reader_is_one_chapter_and_links_are_frozen(self: "ChapterTests") -> None:
+        for name, key in [
+            ("read_paper", self.paper.pk),
+            ("read_paper_permalink", self.paper.public_id),
+        ]:
+            response = self.client.get(reverse(name, args=[key]), {"chapter": "intro"}, follow=True)
+            self.assertEqual(
+                response.redirect_chain, [(self.paper.current.read_url + "?chapter=intro", 302)]
+            )
         self.assertContains(response, "A unique passage")
         self.assertNotContains(response, "Every example has a proof.")
-        self.assertContains(response, self.paper.current.read_url + "?chapter=proof#eq:one")
+        self.assertContains(response, 'href="?chapter=proof#eq:one"')
         self.assertContains(response, "Wen 2004")
         response = self.client.get(
             reverse("read_submission", args=[self.paper.current_id]) + "?chapter=proof"
@@ -220,7 +227,7 @@ class ChapterTests(TestCase):
         self.assertContains(response, "Theorem 2.1")
         self.assertEqual(
             self.client.get(
-                reverse("read_paper", args=[self.paper.pk]) + "?chapter=deleted"
+                reverse("read_paper", args=[self.paper.pk]) + "?chapter=deleted", follow=True
             ).status_code,
             404,
         )
@@ -338,18 +345,20 @@ class ChapterTests(TestCase):
         self.client.logout()
         self.assertEqual(self.client.get(url).status_code, 403)
 
-    def test_reordered_chapters_move_comments_unambiguously(self):
-        available = passages.blocks(self.paper.current)
+    @override_settings(PASSAGE_COMMENTS_ENABLED=True)
+    def test_reordered_chapters_move_comments_unambiguously(self: "ChapterTests") -> None:
+        paper = publish(self.user, course())
+        available = passages.blocks(paper.current)
         block = next(b for b in available if "unique passage" in b["text"])
         selected, quote, key = passages.validate(
-            self.paper.current, [{"block": block["id"], "start": 0, "end": len(block["text"])}]
+            paper.current, [{"block": block["id"], "start": 0, "end": len(block["text"])}]
         )
         from types import SimpleNamespace
 
         revised = course()
         revised["chapters"].reverse()
         revised["markdown"] = combined(revised["chapters"])
-        s = propose(self.user, self.paper.pk, self.paper.current_id, revised)
+        s = propose(self.user, paper.pk, paper.current_id, revised)
         state, spans = passages.locate(SimpleNamespace(spans=selected), passages.blocks(s))
         self.assertEqual(state, "current")
         target = next(b for b in passages.blocks(s) if b["id"] == spans[0]["block"])

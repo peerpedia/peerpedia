@@ -101,6 +101,7 @@ def _request(payload, endpoint):
 
 def request(**data: Any) -> dict[str, Any]:
     data.setdefault("staticUrl", settings.STATIC_URL)
+    data.setdefault("passageComments", settings.PASSAGE_COMMENTS_ENABLED)
     return deepcopy(_request(json.dumps(data), settings.BANANAMARK_URL))
 
 

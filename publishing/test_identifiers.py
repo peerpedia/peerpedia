@@ -42,7 +42,7 @@ class PaperIdentifierTests(TestCase):
         self.assertEqual(self.client.get(self.paper.read_url).context["submission"].pk, proposal.pk)
         self.assertNotIn("public_id", first.manifest())
 
-    def test_public_and_legacy_urls_and_visibility(self):
+    def test_public_and_legacy_urls_and_visibility(self: "PaperIdentifierTests") -> None:
         for url in [
             self.paper.get_absolute_url(),
             self.paper.read_url,
@@ -51,7 +51,7 @@ class PaperIdentifierTests(TestCase):
             reverse("read_paper", args=[self.paper.pk]),
             reverse("read_submission", args=[self.paper.current_id]),
         ]:
-            self.assertEqual(self.client.get(url).status_code, 200, url)
+            self.assertEqual(self.client.get(url, follow=True).status_code, 200, url)
         other = publish(self.user, document(title="Other"))
         mismatch = reverse("read_version", args=[other.public_id, self.paper.current_id])
         self.assertEqual(self.client.get(mismatch).status_code, 404)

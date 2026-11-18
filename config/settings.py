@@ -174,3 +174,4 @@ ACCOUNT_EMAIL_NOTIFICATIONS = False
 
 # Empty in development: a persistent Node renderer per Python process.
 BANANAMARK_URL = os.environ.get("BANANAMARK_URL", "")
+PASSAGE_COMMENTS_ENABLED = os.environ.get("PASSAGE_COMMENTS_ENABLED", "0") == "1"

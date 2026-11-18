@@ -5,7 +5,7 @@ from publishing.test_support import consenting_user
 import json
 from django.contrib.auth.models import AnonymousUser
 from django.db import connection
-from django.test import TestCase, RequestFactory
+from django.test import TestCase, RequestFactory, override_settings
 from django.test.utils import CaptureQueriesContext
 from . import api, passages
 from .feedback_queries import passage_index, passage_detail, comment_replies
@@ -14,6 +14,7 @@ from .services import publish, propose
 from .tests import document
 
 
+@override_settings(PASSAGE_COMMENTS_ENABLED=True)
 class FeedbackQueryTests(TestCase):
     @classmethod
     def setUpTestData(cls):

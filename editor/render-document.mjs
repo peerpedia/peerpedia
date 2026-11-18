@@ -2,16 +2,17 @@ import { createBook, createRenderer, defineDialect } from "bananamark";
 import { declaredLabels } from "bananamark-codemirror";
 import { tikz } from "bananamark-tikz";
 import { load } from "cheerio";
+import { decodeHTMLAttribute } from "entities";
 import { createHash } from "node:crypto";
 import { LRUCache } from "lru-cache";
 import { annotate } from "./passage-html.mjs";
 import { dialectOptions, numbering } from "./dialect.js";
-import { chapterTitle } from "./chapter-title.js";
+import { headingText } from "./chapter-title.js";
 
 const dialect = defineDialect(dialectOptions);
 /** @typedef {{id: string, title?: string, markdown: string}} Page */
 /** @typedef {{pages?: Page[], source?: string, action?: string, bibliography?: string, reader?: string, prefix?: string,
- * snapshotLinks?: boolean, diagrams?: boolean, staticUrl?: string, renderChapter?: string, diagramChapter?: string, numberSections?: boolean,
+ * passageComments?: boolean, diagrams?: boolean, staticUrl?: string, renderChapter?: string, diagramChapter?: string, numberSections?: boolean,
  * section?: {chapter:string, line:number, end:number}}} DocumentInput */
 /** @typedef {ReturnType<typeof annotate>} AnnotatedChapter */
 /** @typedef {ReturnType<typeof createBook>} Book */
@@ -21,17 +22,33 @@ const dialect = defineDialect(dialectOptions);
 /** @typedef {import("./passage-html.mjs").Reference} Reference */
 /** @typedef {import("./passage-html.mjs").Heading & {title:boolean,number:string}} PageHeading */
 /** @typedef {AnnotatedChapter & {headings: PageHeading[], diagramCount:number}} CompiledChapter */
-/** @typedef {{id:string, title:string, html:string, snapshot_links?: Array<[number,number,string]>, headings:PageHeading[], blocks:Array<AnnotatedChapter["blocks"][number] & {id:string}>}} RenderedPage */
+/** @typedef {{nativeHtml:true, html:string, headings: PageHeading[], diagramCount:number}} NativeChapter */
+/** @typedef {{id:string, title:string, html:string, nativeHtml?:boolean, headings:PageHeading[], blocks:Array<AnnotatedChapter["blocks"][number] & {id:string}>}} RenderedPage */
 /** @typedef {{pages:RenderedPage[],targets:object[],entries:Record<string, object>,warnings:string[]}} RenderedDocument */
 
-/** @type {LRUCache<string, CompiledChapter>} */
+/** @type {LRUCache<string, CompiledChapter|NativeChapter>} */
 const chapters = new LRUCache({ max: 256, maxSize: 16 * 1024 * 1024 });
+
+/** @type {LRUCache<string, ReturnType<typeof sourceInfo>>} */
+const sources = new LRUCache({ max: 256, maxSize: 4 * 1024 * 1024 });
+
+/** Only fingerprints of source that passed BananaMark's own math checks. */
+/** @type {LRUCache<string,boolean>} */
+const validated = new LRUCache({ max: 256 });
 
 // Source ranges come from BananaMark's own editor grammar. UTF-16 offsets are
 // converted to Unicode code points before crossing the Python boundary.
-/** @typedef {{line:number,start:number,end:number,root:boolean}} SourceHeading */
+/** @typedef {{line:number,start:number,end:number,root:boolean, label:string,level:number}} SourceHeading */
 /** @param {string} source @returns {{headings:SourceHeading[], references:string[], images:boolean, numberedMath:string[]}} */
 export function scan(source) {
+  return structuredClone(sourceInfo(source).scan);
+}
+
+/** @param {string} source @returns {{title:string,scan:{headings:SourceHeading[],references:string[],images:boolean,numberedMath:string[]}}} */
+function sourceInfo(source) {
+  const cached = sources.get(source);
+  if (cached) return cached;
+  const tree = dialect.language.language.parser.parse(source);
   const headings = [],
     numberedMath = [],
     references = new Set();
@@ -40,7 +57,7 @@ export function scan(source) {
   let previousFrom = 0,
     line = 1,
     start = 0;
-  dialect.language.language.parser.parse(source).iterate({
+  tree.iterate({
     /** @param {import("@lezer/common").SyntaxNodeRef} node @returns {void} */
     enter(node) {
       if (node.name === "FencedCode") {
@@ -72,6 +89,8 @@ export function scan(source) {
         previousFrom = node.from;
         headings.push({
           line,
+          level: Number(node.name.at(-1)),
+          label: headingText(source, node.node),
           start,
           end: start + [...source.slice(node.from, node.to)].length,
           root: node.node.parent?.name === "Document" && depth === 0,
@@ -79,7 +98,27 @@ export function scan(source) {
       }
     },
   });
-  return { headings, references: [...references], images, numberedMath };
+  let title = "Untitled chapter";
+  let firstRoot = true;
+  for (const heading of headings) {
+    if (!heading.root) continue;
+    const level = heading.level;
+    if (firstRoot || level === 1)
+      title = heading.label.slice(0, 250) || "Untitled chapter";
+    firstRoot = false;
+    if (level === 1) break;
+  }
+  const info = {
+    title,
+    scan: { headings, references: [...references], images, numberedMath },
+  };
+  sources.set(source, info, {
+    size: Math.max(
+      1,
+      Buffer.byteLength(source) + Buffer.byteLength(JSON.stringify(info)),
+    ),
+  });
+  return info;
 }
 
 /** @param {string} html @returns {string} */
@@ -98,33 +137,23 @@ function sameLinks(previous, lookup) {
 }
 
 /** @param {CompiledChapter} compiled @param {number} offset @param {string} id @param {string} title
- * @param {DocumentInput["section"]} section @param {boolean} snapshotLinks @returns {RenderedPage} */
-function assemble(compiled, offset, id, title, section, snapshotLinks) {
+ * @param {DocumentInput["section"]} section @returns {RenderedPage} */
+function assemble(compiled, offset, id, title, section) {
   const blocks = [];
   for (const [i, block] of compiled.blocks.entries())
     blocks.push({ id: "b" + (offset + i), ...block, path: [...block.path] });
 
   const chunks = [];
-  /** @type {Array<[number,number,string]>} */
-  const bindings = [];
-  let visible = !section,
-    bytes = 0;
-  /** @param {string} fragment @returns {void} */
-  function append(fragment) {
-    chunks.push(fragment);
-    if (snapshotLinks) bytes += Buffer.byteLength(fragment);
-  }
+  let visible = !section;
   for (const [i, marker] of compiled.markers.entries()) {
-    if (visible) append(compiled.parts[i]);
+    if (visible) chunks.push(compiled.parts[i]);
     if (marker.kind === "section" && section) {
       if (marker.line === section.line) visible = true;
       if (marker.line >= section.end) visible = false;
     } else if (visible && marker.kind === "passage")
-      append(blocks[marker.index].id);
-    else if (visible && snapshotLinks && marker.kind === "link")
-      bindings.push([bytes, marker.width, marker.href]);
+      chunks.push(blocks[marker.index].id);
   }
-  if (visible) append(compiled.parts.at(-1));
+  if (visible) chunks.push(compiled.parts.at(-1));
   const headings = [];
   for (const heading of compiled.headings)
     if (
@@ -138,13 +167,58 @@ function assemble(compiled, offset, id, title, section, snapshotLinks) {
     html: chunks.join(""),
     headings,
     blocks,
-    ...(snapshotLinks ? { snapshot_links: bindings } : {}),
   };
+}
+
+/** Select a section in BananaMark's resolved Markdown, before HTML generation.
+ * A root heading ends in a reserved node marker even when the source used Setext syntax.
+ * @param {ResolvedDocument} doc @param {SourceHeading[]} headings
+ * @param {NonNullable<DocumentInput["section"]>} section @returns {{doc:ResolvedDocument, first:number}} */
+function selectSection(doc, headings, section) {
+  let first = -1,
+    start = doc.markdown.length,
+    end = start;
+  let n = 0;
+  for (const match of doc.markdown.matchAll(/@@node:(\d+):node@@/g)) {
+    if (doc.nodes[Number(match[1])]?.type !== "heading") continue;
+    const heading = headings[n++];
+    if (!heading?.root) continue;
+    const from = doc.markdown.lastIndexOf("\n", match.index - 1) + 1;
+    if (heading.line === section.line) {
+      first = n - 1;
+      start = from;
+    }
+    if (heading.line >= section.end) {
+      end = from;
+      break;
+    }
+  }
+  let markdown = doc.markdown.slice(start, end);
+  // Definitions can live in another section. Let the editor grammar locate
+  // their whole source ranges, including multiline URLs and footnotes.
+  if (markdown && doc.markdown.includes("]:")) {
+    const before = [],
+      after = [];
+    dialect.language.language.parser.parse(doc.markdown).iterate({
+      /** @param {import("@lezer/common").SyntaxNodeRef} node @returns {false|void} */
+      enter(node) {
+        if (node.name !== "LinkReference" && node.name !== "Footnote") return;
+        if (node.to <= start)
+          before.push(doc.markdown.slice(node.from, node.to));
+        if (node.from >= end)
+          after.push(doc.markdown.slice(node.from, node.to));
+        return false;
+      },
+    });
+    markdown = [...before, markdown, ...after].join("\n\n");
+  }
+  return { doc: { ...doc, markdown }, first: Math.max(first, 0) };
 }
 
 /** @param {Page} page @param {ResolvedDocument} resolved @param {Renderer} renderer
  * @param {DiagramCompiler|null} diagrams @param {number} previousDiagrams @param {string} prefix
- * @param {(href:string)=>Reference|undefined} lookup @returns {Promise<CompiledChapter>} */
+ * @param {((href:string)=>Reference|undefined)|undefined} lookup
+ * @param {DocumentInput["section"]} section @returns {Promise<CompiledChapter|NativeChapter>} */
 async function compileChapter(
   page,
   resolved,
@@ -153,38 +227,56 @@ async function compileChapter(
   previousDiagrams,
   prefix,
   lookup,
+  section,
 ) {
   const info = { key: page.id, file: page.id + ".md", lang: "en" };
-  const result = renderer.renderDocument(resolved, info);
+  const source = sourceInfo(page.markdown).scan;
+  if (source.images)
+    throw new Error("Images are not supported. Use a TikZ diagram instead.");
+  const selected =
+    section && !lookup
+      ? selectSection(resolved, source.headings, section)
+      : { doc: resolved, first: 0 };
+  const result = renderer.renderDocument(selected.doc, info);
   let diagramCount = 0;
   if (diagrams && result.html.includes("bm-tikz-source")) {
-    const $ = load(result.html, {}, false);
-    for (const el of $(".bm-tikz-source")) {
-      diagramCount++;
-      if (previousDiagrams + diagramCount > 32)
+    // Inspect only the renderer's diagram placeholders. The library replaces them
+    // with SVG; ordinary chapters pass through as a single immutable string.
+    for (const match of result.html.matchAll(
+      /<span(?: id="[^"]*")? class="bm-math-rendered(?: bm-math-display)? bm-tikz-source" data-tex="([^"]*)"/g,
+    )) {
+      if (previousDiagrams + ++diagramCount > 32)
         throw new Error("Keep each paper below 32 diagrams.");
-      if (Buffer.byteLength(el.attribs["data-tex"]) > 32768)
+      if (
+        Buffer.byteLength(match[1]) > 32768 &&
+        Buffer.byteLength(decodeHTMLAttribute(match[1])) > 32768
+      )
         throw new Error("Keep each diagram below 32 KB.");
     }
     result.html = await diagrams.render(result.html, info);
   }
-  const source = scan(page.markdown);
-  if (source.images)
-    throw new Error("Images are not supported. Use a TikZ diagram instead.");
   const headings = [];
   for (const [n, heading] of result.headings.entries()) {
     const { id, level } = heading,
       title = resolved.meta.headingTitles[id];
     headings.push({
+      ...source.headings[selected.first + n],
       level,
       id: prefix + id,
       number: resolved.meta.sectionNumbers[id] ?? "",
-      title: n === 0 && level === 1,
-      ...source.headings[n],
+      title: selected.first + n === 0 && level === 1,
+      // Rich labels are rendered as standalone title fragments. A chapter's HTML
+      // is never reopened to recover its table of contents.
       label:
-        title === undefined ? "" : plain(renderer.renderFragment(title, info)),
+        title === undefined
+          ? ""
+          : !title.nodes.length && /^[\p{L}\p{N} .,-]+$/u.test(title.markdown)
+            ? title.markdown
+            : plain(renderer.renderFragment(title, info)),
     });
   }
+  if (!lookup)
+    return { nativeHtml: true, html: result.html, headings, diagramCount };
   return {
     ...annotate(
       result.html,
@@ -203,7 +295,8 @@ async function compileChapter(
 export async function renderDocument(input) {
   if (input.action === "titles") {
     const titles = [];
-    for (const page of input.pages) titles.push(chapterTitle(page.markdown));
+    for (const page of input.pages)
+      titles.push(sourceInfo(page.markdown).title);
     return { titles };
   }
   if (input.action === "scan") return scan(input.source || "");
@@ -227,7 +320,8 @@ export async function renderDocument(input) {
     return { url: url(key) };
   }
   const renderer = createRenderer({ dialect, resolvePageLink });
-  const book = createBook({ dialect, checkMath: true, numbering });
+  const annotations = Boolean(input.passageComments || prefix);
+  const book = createBook({ dialect, numbering });
   // Metadata-only requests may describe one chapter of a larger book. They must
   // not reject references whose declarations are in the other chapters.
   if (input.action === "structure") {
@@ -244,7 +338,8 @@ export async function renderDocument(input) {
     }
   }
   const handles = [],
-    titles = [];
+    titles = [],
+    sourceKeys = [];
   for (const [i, page] of pages.entries()) {
     let source = page.markdown;
     if (i === pages.length - 1 && input.bibliography?.trim()) {
@@ -265,11 +360,16 @@ export async function renderDocument(input) {
         fence +
         "\n";
     }
-    const title = chapterTitle(page.markdown);
+    const title = sourceInfo(page.markdown).title;
     titles.push(title);
+    const sourceKey = createHash("sha256").update(source).digest("hex");
+    sourceKeys.push(sourceKey);
     handles.push(
       book.add(source, {
         key: page.id,
+        // Let BananaMark catch errors even in unused source (e.g. a footnote)
+        // on the first build. Identical source already passed the same dialect.
+        checkMath: !validated.has(sourceKey),
         title,
         position: input.numberSections === false ? [] : [i + 1],
         file: page.id + ".md",
@@ -306,7 +406,7 @@ export async function renderDocument(input) {
       // Transform resolves all cross-chapter captions, numbering and bibliography
       // before a cache lookup. An invalid chapter cannot reuse a previous success.
       const resolved = book.transform(handles[i]);
-      if (!labelIndex) {
+      if (annotations && !labelIndex) {
         labelIndex = new Map();
         for (const label of book.labels()) {
           const address = url(label.page) + "#" + label.anchor;
@@ -324,12 +424,16 @@ export async function renderDocument(input) {
         diagrams && (!input.diagramChapter || input.diagramChapter === page.id)
           ? diagrams
           : null;
+      const section =
+        input.section?.chapter === page.id ? input.section : undefined;
       const key = createHash("sha256")
         .update(
           JSON.stringify([
             page.id,
             page.markdown,
             resolved,
+            annotations,
+            annotations ? null : section,
             reader,
             prefix,
             Boolean(compileDiagrams),
@@ -338,7 +442,10 @@ export async function renderDocument(input) {
         )
         .digest("hex");
       let compiled = chapters.get(key);
-      if (!compiled || !sameLinks(compiled.links, lookup)) {
+      if (
+        !compiled ||
+        ("links" in compiled && !sameLinks(compiled.links, lookup))
+      ) {
         compiled = await compileChapter(
           page,
           resolved,
@@ -346,33 +453,40 @@ export async function renderDocument(input) {
           compileDiagrams,
           diagramCount,
           prefix,
-          lookup,
+          annotations ? lookup : undefined,
+          section,
         );
-        let size = Buffer.byteLength(
-          JSON.stringify([
-            compiled.headings,
-            compiled.blocks,
-            compiled.markers,
-            [...compiled.links],
-          ]),
-        );
-        for (const part of compiled.parts) size += Buffer.byteLength(part);
+        let size = Buffer.byteLength(JSON.stringify(compiled.headings));
+        if ("nativeHtml" in compiled) size += Buffer.byteLength(compiled.html);
+        else {
+          size += Buffer.byteLength(
+            JSON.stringify([
+              compiled.blocks,
+              compiled.markers,
+              [...compiled.links],
+            ]),
+          );
+          for (const part of compiled.parts) size += Buffer.byteLength(part);
+        }
         chapters.set(key, compiled, { size });
       }
+      validated.set(sourceKeys[i], true);
       diagramCount += compiled.diagramCount;
       if (diagramCount > 32)
         throw new Error("Keep each paper below 32 diagrams.");
-      rendered.push(
-        assemble(
-          compiled,
-          offset,
-          page.id,
-          titles[i],
-          input.section?.chapter === page.id ? input.section : undefined,
-          Boolean(input.snapshotLinks),
-        ),
-      );
-      offset += compiled.blocks.length;
+      if ("nativeHtml" in compiled) {
+        rendered.push({
+          id: page.id,
+          title: titles[i],
+          html: compiled.html,
+          headings: structuredClone(compiled.headings),
+          blocks: [],
+          nativeHtml: true,
+        });
+      } else {
+        rendered.push(assemble(compiled, offset, page.id, titles[i], section));
+        offset += compiled.blocks.length;
+      }
       for (const entry of resolved.meta.bibliography)
         entries[entry.key] = { ...entry, author: entry.citationLabel };
     }

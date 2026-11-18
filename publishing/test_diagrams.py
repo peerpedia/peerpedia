@@ -1,11 +1,14 @@
-from django.test import SimpleTestCase
+from django.test import SimpleTestCase, override_settings
 from django.core.exceptions import ValidationError
 from .rendering import render_markdown
 from .passages import blocks
 
 
 class DiagramRenderingTests(SimpleTestCase):
-    def test_native_tikz_is_compiled_and_preserves_passage_source(self):
+    @override_settings(PASSAGE_COMMENTS_ENABLED=True)
+    def test_native_tikz_is_compiled_and_preserves_passage_source(
+        self: "DiagramRenderingTests",
+    ) -> None:
         source = "```tikz\n\\begin{tikzpicture}\\draw (0,0)--(1,1);\\end{tikzpicture}\n```"
         html = render_markdown(source)
         self.assertIn("<svg", html)

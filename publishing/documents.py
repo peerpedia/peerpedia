@@ -97,7 +97,6 @@ def prepare(
         bibliography=bib,
         numberSections=bool(chapters),
         diagrams=True,
-        snapshotLinks=True,
     )
     titles = {page["id"]: page["title"] for page in result["pages"]}
     data["chapters"] = [

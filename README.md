@@ -2,7 +2,7 @@
 
 To a better academia
 
-A small, public research-publishing application built with Django and PostgreSQL. Researchers write or upload Markdown, organize chapters, propose frozen changes, discuss passages, and preserve their publication history.
+A small, public research-publishing application built with Django and PostgreSQL. Researchers write or upload Markdown, organize chapters, propose frozen changes, review papers, and preserve their publication history.
 
 [Website](https://peerpedia.dev) · [Usage guide](https://peerpedia.dev/help/) · [Source](https://github.com/peerpedia/peerpedia)
 
@@ -21,7 +21,7 @@ The software uses the [MIT license](LICENSE). Papers have their own author-selec
 - Whole-submission acceptance by the corresponding author only. Stale proposals require a new submission.
 - Public accepted/rejected/withdrawn history, Markdown and metadata diffs, arbitrary accepted-version comparisons, and separate contribution credit.
 - One editable rating-and-written-review per user per paper, including the paper's own author. Reviews sort by original posting time.
-- PR conversations plus passage discussions with ratings, threaded replies, thumbs, preserved edits, and links to proposed fixes.
+- PR conversations and paper reviews. Existing passage discussions are available through the read-only feedback API and CLI.
 - Administrator content hiding/restoration and account disabling.
 - Public usage guide with website workflows, local CLI/AI instructions, and links to the source and developer.
 
@@ -232,7 +232,7 @@ The application has three interfaces:
 
 - Django templates and forms for browsing, accounts, publication, and administration.
 - CodeMirror and browser JavaScript for autosave, preview, recovery, section editing,
-  reader navigation, and passage discussions. Preview and publication use the same
+  reader navigation, and optional passage discussions. Preview and publication use the same
   safe Markdown renderer and server-rendered KaTeX.
 - A versioned JSON API for public reading and scoped CLI submissions. API tokens
   cannot accept proposals or write comments, ratings, votes, or inbox state.
@@ -447,7 +447,19 @@ Tests: `python manage.py test publishing.test_sections publishing.test_drafts`; 
 
 ### Passage discussions (local stage 2)
 
-The reader supports text-range discussions, whole-equation/table/code discussions,
+Passage comments and ratings are paused by default. The reader omits the selection
+controls and discussion panel, and the website rejects passage-comment writes.
+Existing threads, quotes, and edit histories remain accessible through the
+read-only feedback API and CLI. Paper reviews and PR conversations remain available.
+
+To enable passage comments, set `PASSAGE_COMMENTS_ENABLED=1` in the web
+environment (or in `.env` for Compose) and restart the web processes with the
+updated environment. New reading copies then include passage anchors. Run
+`python manage.py build_reading_copies --refresh` in that environment to add
+anchors to previously built reading copies. Restoring the default value `0`
+pauses interaction immediately after the web processes restart.
+
+When enabled, the reader supports text-range discussions, whole-equation/table/code discussions,
 1–5 passage ratings, nested replies, reversible helpfulness votes, and comment edit
 history. These ratings are separate from overall paper reviews. Browser writes
 require a verified session and CSRF; bearer credentials cannot write feedback.
@@ -759,8 +771,8 @@ The renderer returns native HTML/MathML/SVG; the browser retains its existing CS
 Build with `docker compose build web renderer`, run migrations, then start
 `renderer` and `web`. The old diagram queue and browser compiler are removed.
 `static/bananamark.css` supplies Peerpedia's article theme; it does not redefine the
-Markdown grammar. Passage annotations and source positions are added using the
-rendered document and BananaMark's editor grammar. No old syntax compatibility
+Markdown grammar. With passage comments enabled, the renderer adds passage
+annotations. BananaMark's editor grammar supplies source positions. No old syntax compatibility
 renderer is retained. Desktop packaging is a separate follow-up.
 
 ### Chapters, references, and reading progress
@@ -835,7 +847,7 @@ The chapter migration refuses a rollback once v4 snapshots exist.
 Reading completion and position are private account data. Visitors keep progress
 in their browser. Completion retains the hash of the chapter read, allowing the
 sidebar to indicate later changes without erasing the reader's achievement.
-Cross-chapter passage mapping uses the existing exact, unambiguous quote rule;
+For snapshots with passage anchors, cross-chapter mapping uses the exact, unambiguous quote rule;
 uncertain matches remain historical.
 
 ### Browser rendering and durable reading copies
@@ -847,9 +859,16 @@ preview request at a time and coalesces pending edits to the latest text.
 Publication compiles and validates content before taking database row locks. The
 short commit transaction rechecks the draft revision, accepted base and PR head,
 and stores both the immutable submission and a separate `RenderedSubmission`.
-The derived record contains HTML (including diagram SVG), headings, references
-and passage indexes. Reading and discussion indexes use it without contacting BM.
+The derived record contains HTML (including diagram SVG), headings, references,
+and passage indexes when enabled. Reading and discussion indexes use it without contacting BM.
 Database backups include these reading copies.
+
+The renderer resolves numbering and references for the book before reusing
+unchanged chapter HTML. To measure a downloaded paper, start a fresh renderer,
+wait for `/health`, and run
+`python scripts/benchmark_render.py PATH_TO_PAPER --url http://127.0.0.1:8765/render`
+from a host that can reach it. The script times the complete HTTP response and
+JSON decoding, with a configurable two-second performance target.
 
 Deployments run `python manage.py build_reading_copies` to backfill missing copies.
 This command is idempotent and does not alter source snapshots or their hashes.

@@ -1,6 +1,7 @@
 from .queries import public_papers, submission_queryset, search_papers
 from .comparisons import diff_lines, metadata_diff
 import uuid
+from django.conf import settings
 from django import forms
 from django.contrib import messages
 from django.core import signing
@@ -8,7 +9,7 @@ from django.core.exceptions import ValidationError
 from django.core.paginator import Paginator
 from django.db import connection, IntegrityError
 from django.db.models import Avg, Count
-from django.http import HttpResponse, JsonResponse, Http404
+from django.http import HttpRequest, HttpResponse, JsonResponse, Http404
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils.safestring import mark_safe
@@ -95,14 +96,14 @@ def paper_detail(request, paper_id=None, public_id=None):
     )
 
 
-def read_paper(request, paper_id):
+def read_paper(request: HttpRequest, paper_id: uuid.UUID) -> HttpResponse:
     paper = get_object_or_404(public_papers(), pk=paper_id)
-    return reader(request, paper.current)
+    return redirect(reverse("read_snapshot", args=[paper.current.public_id], query=request.GET))
 
 
-def read_permalink(request, public_id):
+def read_permalink(request: HttpRequest, public_id: str) -> HttpResponse:
     paper = get_object_or_404(public_papers(), public_id=public_id)
-    return reader(request, paper.current)
+    return redirect(reverse("read_snapshot", args=[paper.current.public_id], query=request.GET))
 
 
 def read_version(request, public_id, submission_id):
@@ -137,7 +138,7 @@ def read_submission(request, submission_id):
     return reader(request, submission)
 
 
-def reader(request, submission):
+def reader(request: HttpRequest, submission: Submission) -> HttpResponse:
     edit_url = (
         reverse("edit_paper", args=[submission.paper_id]) + "?version=" + str(submission.pk)
         if submission.pk == submission.paper.current_id
@@ -192,32 +193,31 @@ def reader(request, submission):
     body, contents = refs.render(
         selected,
         edit_url=edit_url,
-        passage_annotations=True,
     )
-    from urllib.parse import urlencode
+    config = None
+    if settings.PASSAGE_COMMENTS_ENABLED:
+        config = {
+            "index": reverse("passage_index", args=[submission.pk]),
+            "create": reverse("passage_create", args=[submission.pk]),
+            "participate": request.user.is_authenticated
+            and request.user.is_active
+            and request.user.email_verified,
+            "login": reverse("login") + "?" + urlencode({"next": request.get_full_path()}),
+            "version": submission.public_id,
+            "status": submission.status,
+        }
+        from .licensing import acceptance
 
-    config = {
-        "index": reverse("passage_index", args=[submission.pk]),
-        "create": reverse("passage_create", args=[submission.pk]),
-        "participate": request.user.is_authenticated
-        and request.user.is_active
-        and request.user.email_verified,
-        "login": reverse("login") + "?" + urlencode({"next": request.get_full_path()}),
-        "version": submission.public_id,
-        "status": submission.status,
-    }
-    from .licensing import acceptance
-
-    if (
-        request.user.is_authenticated
-        and request.user.email_verified
-        and not acceptance(request.user)
-    ):
-        config.update(
-            participate=False,
-            login=reverse("agreements") + "?" + urlencode({"next": request.get_full_path()}),
-            agreement_required=True,
-        )
+        if (
+            request.user.is_authenticated
+            and request.user.email_verified
+            and not acceptance(request.user)
+        ):
+            config.update(
+                participate=False,
+                login=reverse("agreements") + "?" + urlencode({"next": request.get_full_path()}),
+                agreement_required=True,
+            )
     response = render(
         request,
         "publishing/reader.html",

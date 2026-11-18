@@ -14,7 +14,10 @@ from .tests import document
 SOURCE = '# Notes\n\n## Claim\n\nA unique claim with 🌱 and $x^2$.\n\n## Proof\n\nThe proof is short.\n\n$$y=2$$\n\n| A | B |\n|---|---|\n| 1 | 2 |\n\n~~~python\nprint("ok")\n~~~\n'
 
 
-@override_settings(PASSWORD_HASHERS=["django.contrib.auth.hashers.MD5PasswordHasher"])
+@override_settings(
+    PASSAGE_COMMENTS_ENABLED=True,
+    PASSWORD_HASHERS=["django.contrib.auth.hashers.MD5PasswordHasher"],
+)
 class DiscussionTests(TestCase):
     def setUp(self):
         self.owner = consenting_user("author", email="author@example.org", email_verified=True)
@@ -77,6 +80,37 @@ class DiscussionTests(TestCase):
         ]:
             with self.assertRaises(ValidationError):
                 passages.validate(SOURCE, spans)
+
+    def test_pause_preserves_existing_feedback_and_blocks_browser_writes(
+        self: "DiscussionTests",
+    ) -> None:
+        comment = self.create()
+        with self.settings(PASSAGE_COMMENTS_ENABLED=False):
+            page = self.client.get(self.base.read_url, {"discussion": str(comment.passage_id)})
+            self.assertContains(page, "A unique claim")
+            for marker in (
+                "discussions-open",
+                "discussion-panel",
+                "passage-selection",
+                "discussion-config",
+                "discussions.js",
+                "discussions.css",
+            ):
+                self.assertNotContains(page, marker)
+            for action in ("create", "reply", "edit", "vote", "resolve", "report", "link_pr"):
+                with self.subTest(action=action):
+                    target = self.base.pk if action == "create" else comment.pk
+                    response = self.post(action, target, {})
+                    self.assertEqual(response.status_code, 403)
+                    self.assertEqual(response.json()["error"], "Passage comments are paused.")
+            index = self.client.get(reverse("passage_index", args=[self.base.pk])).json()
+            self.assertEqual(index["passages"][0]["quote"], comment.passage.quote)
+            self.assertEqual(self.detail(comment)["threads"][0]["text"], comment.text)
+            history = self.client.get(reverse("passage_history", args=[comment.pk])).json()
+            self.assertEqual(history["revisions"][0]["text"], comment.text)
+            public = self.client.get(f"/api/v1/passages/{comment.passage_id}/").json()
+            self.assertEqual(public["threads"][0]["text"], comment.text)
+            self.assertFalse(public["threads"][0]["can_edit"])
 
     def test_rating_requires_written_text_and_valid_score(self):
         for data in [

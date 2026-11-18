@@ -227,7 +227,8 @@ class LicensingTests(TestCase):
         )
         self.assertEqual(Paper.objects.get().current.license_code, "CC0-1.0")
 
-    def test_comments_require_agreement_but_are_not_cc_licensed(self):
+    @override_settings(PASSAGE_COMMENTS_ENABLED=True)
+    def test_comments_require_agreement_but_are_not_cc_licensed(self: "LicensingTests") -> None:
         from .discussion_actions import create
         from .passages import blocks
 

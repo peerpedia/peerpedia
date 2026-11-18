@@ -37,7 +37,6 @@ let resolving = null,
 let headings = [],
   followLocked = false,
   openedSection = false;
-let renderQueue = Promise.resolve();
 let previewRunning = false;
 const recoveryPrefix = `peerpedia:draft:${initial.user_id}:${initial.id}:`;
 let clientId;
@@ -492,6 +491,26 @@ $("discard-draft").addEventListener("click", async () => {
   }
 });
 
+/** @param {HTMLElement} preview @param {Array<{id:string, line:number|null}>} contents @returns {HTMLElement[]} */
+function previewHeadings(preview, contents) {
+  const lines = new Map();
+  for (const item of contents) {
+    if (item.line > 0) lines.set(item.id, item.line);
+  }
+  const headings = [];
+  for (const heading of preview.querySelectorAll(
+    "h1[id],h2[id],h3[id],h4[id],h5[id],h6[id]",
+  )) {
+    const line = lines.get(heading.id);
+    if (line) {
+      heading.dataset.sourceLine = String(line);
+      headings.push(heading);
+    }
+  }
+  return headings;
+}
+
+/** @returns {Promise<void>} */
 async function updatePreview() {
   clearTimeout(previewTimer);
   const generation = ++previewGeneration;
@@ -506,27 +525,24 @@ async function updatePreview() {
       ...previewCopy,
     });
     if (generation !== previewGeneration) return;
-    renderQueue = renderQueue
-      .catch(() => {})
-      .then(async () => {
-        if (generation !== previewGeneration) return;
-        preview.innerHTML = result.html;
-        chapters.rendered(result);
-        view.dispatch(setDiagnostics(view.state, []));
-        headings = Array.from(preview.querySelectorAll("[data-source-line]"));
-        $("preview-status").textContent = source.trim()
-          ? "Preview · same renderer as the published paper"
-          : "Your formatted note will appear here as you write.";
-        if (!openedSection) {
-          openedSection = true;
-          const heading = headings.find((el) => el.id === initial.section);
-          if (heading) {
-            goToLine(Number(heading.dataset.sourceLine), false);
-            previewPane.scrollTop = heading.offsetTop - preview.offsetTop;
-          }
-        }
-      });
-    await renderQueue;
+    preview.innerHTML = result.html;
+    chapters.rendered(result);
+    view.dispatch(setDiagnostics(view.state, []));
+    headings = previewHeadings(preview, result.contents);
+    $("preview-status").textContent = source.trim()
+      ? "Preview · same renderer as the published paper"
+      : "Your formatted note will appear here as you write.";
+    if (!openedSection) {
+      openedSection = true;
+      const heading = headings.find(
+        /** @param {HTMLElement} el @returns {boolean} */ (el) =>
+          el.id === initial.section,
+      );
+      if (heading) {
+        goToLine(Number(heading.dataset.sourceLine), false);
+        previewPane.scrollTop = heading.offsetTop - preview.offsetTop;
+      }
+    }
   } catch (error) {
     if (generation !== previewGeneration) return;
     $("preview-status").textContent = "Preview unavailable · " + error.message;

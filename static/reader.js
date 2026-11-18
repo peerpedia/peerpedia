@@ -1,15 +1,35 @@
 /* Section links work without JavaScript; this adds reading-position feedback. */
+/** @returns {void} */
 (() => {
   const contents = document.querySelector(".reader-contents");
   if (!contents) return;
   const navigation = contents.querySelector("nav");
   const summary = contents.querySelector("summary");
   const currentLabel = contents.querySelector(".reader-current");
-  const links = Array.from(contents.querySelectorAll("[data-section]"));
-  const headings = links.map((link) =>
-    document.getElementById(link.dataset.section),
-  );
+  const article = document.querySelector("main.markdown-body");
+  const links = [];
+  const headings = [];
+  const sections = new Map();
   const desktop = window.matchMedia("(min-width: 1050px)");
+  for (const heading of article.querySelectorAll(
+    "h1[id],h2[id],h3[id],h4[id],h5[id],h6[id]",
+  ))
+    sections.set(heading.id, heading);
+  for (const link of contents.querySelectorAll("[data-section]")) {
+    const heading = sections.get(link.dataset.section);
+    if (!heading) continue;
+    links.push(link);
+    headings.push(heading);
+    const controls = link.parentElement.querySelector("template");
+    if (controls) heading.append(...controls.content.children);
+    /** @returns {void} */
+    function focusSection() {
+      if (!desktop.matches) contents.open = false;
+      heading.setAttribute("tabindex", "-1");
+      heading.focus({ preventScroll: true });
+    }
+    link.addEventListener("click", focusSection);
+  }
   let active = -1;
   let scheduled = false;
 
@@ -60,14 +80,6 @@
   summary.addEventListener("click", (event) => {
     if (desktop.matches) event.preventDefault();
   });
-  links.forEach((link) =>
-    link.addEventListener("click", () => {
-      if (!desktop.matches) contents.open = false;
-      const heading = document.getElementById(link.dataset.section);
-      heading.setAttribute("tabindex", "-1");
-      heading.focus({ preventScroll: true });
-    }),
-  );
   contents.addEventListener("keydown", (event) => {
     if (event.key === "Escape" && !desktop.matches && contents.open) {
       contents.open = false;

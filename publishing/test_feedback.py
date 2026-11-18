@@ -23,7 +23,10 @@ from .notifications import notify
 from .tests import document
 
 
-@override_settings(PASSWORD_HASHERS=["django.contrib.auth.hashers.MD5PasswordHasher"])
+@override_settings(
+    PASSAGE_COMMENTS_ENABLED=True,
+    PASSWORD_HASHERS=["django.contrib.auth.hashers.MD5PasswordHasher"],
+)
 class FeedbackTests(TestCase):
     def setUp(self):
         self.owner = consenting_user("owner", "owner@example.org", email_verified=True)

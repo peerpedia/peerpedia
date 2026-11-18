@@ -167,7 +167,8 @@ class CLIJourneys(StaticLiveServerTestCase):
     def fixture_paper(self):
         return publish(self.owner, document())
 
-    def test_read_feedback_and_push_linked_multi_snapshot_pr(self):
+    @override_settings(PASSAGE_COMMENTS_ENABLED=True)
+    def test_read_feedback_and_push_linked_multi_snapshot_pr(self: "CLIJourneys") -> None:
         from publishing.models import Passage, PassageComment, PassageCommentRevision
         from publishing.passages import validate
 

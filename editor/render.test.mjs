@@ -63,12 +63,16 @@ test("native book numbering, bibliography and version links", async () => {
   assert.match(result.pages[1].html, /bm-bibliography/);
 });
 
-test("passage atoms and source ranges agree with native rendering", async () => {
+test("passage atoms and source ranges agree with native rendering", /** @returns {Promise<void>} */ async () => {
   const source =
     "# Title\n\n🌱 $x$.\n\n## Section\n\nLine.  \nNext.\n\n$$y=2$$\n\n| A | B |\n|---|---|\n| 1 | 2 |\n\n```js\nx()\n```";
   const {
     pages: [page],
-  } = await renderDocument({ source, numberSections: false });
+  } = await renderDocument({
+    source,
+    numberSections: false,
+    passageComments: true,
+  });
   assert.deepEqual(
     page.blocks.slice(-3).map((b) => b.kind),
     ["equation", "table", "code"],
@@ -124,11 +128,11 @@ test("TikZ compilation and cache use the same blackboard-bold fonts", async () =
   }
 });
 
-test("automatic equation numbers do not change discussion anchors", async () => {
+test("automatic equation numbers do not change discussion anchors", /** @returns {Promise<void>} */ async () => {
   const a = { id: "a", markdown: "```math {@eq:a}\nx = 1\n```" };
   const b = { id: "b", markdown: "Other chapter." };
-  const first = await renderDocument({ pages: [a, b] });
-  const second = await renderDocument({ pages: [b, a] });
+  const first = await renderDocument({ passageComments: true, pages: [a, b] });
+  const second = await renderDocument({ passageComments: true, pages: [b, a] });
   assert.equal(first.pages[0].blocks[0].text, "x = 1");
   assert.equal(second.pages[1].blocks[0].text, "x = 1");
   assert.match(first.pages[0].html, /tag\{1.1\}/);
@@ -228,19 +232,22 @@ async function reuseChapter(t) {
     { id: "earlier", markdown: "First." },
     { id: "later", markdown: "A formula $x_{unique}$." },
   ];
-  const first = await renderDocument({ pages });
+  const first = await renderDocument({ pages, passageComments: true });
   const coldCalls = render.mock.callCount();
   render.mock.resetCalls();
   pages[0].markdown += "\n\nAdded paragraph.";
-  const second = await renderDocument({ pages });
-  // BananaMark still checks the source while resolving the book; the cached
-  // chapter must skip the second KaTeX call that produces the final HTML.
+  const second = await renderDocument({ pages, passageComments: true });
+  // The cached chapter skips KaTeX even after an earlier block moves.
   assert.ok(coldCalls > 0);
   assert.ok(render.mock.callCount() < coldCalls);
   assert.equal(first.pages[1].blocks[0].id, "b1");
   assert.equal(second.pages[1].blocks[0].id, "b2");
   assert.match(second.pages[1].html, /data-passage="b2"/);
-  const preview = await renderDocument({ pages, renderChapter: "later" });
+  const preview = await renderDocument({
+    pages,
+    renderChapter: "later",
+    passageComments: true,
+  });
   assert.match(preview.pages[0].html, /data-passage="b0"/);
 }
 test(
@@ -259,6 +266,7 @@ async function invalidateReferences() {
     },
   ];
   const input = {
+    passageComments: true,
     pages,
     bibliography:
       "ref:\n  type: book\n  title: My Book\n  author: Adams\n  year: 2023",
@@ -288,14 +296,87 @@ async function invalidatePlainLink() {
     { id: "target", markdown: "# Intro\n\n## Example" },
     { id: "linker", markdown: "[Section 1.1](?chapter=target#example)" },
   ];
-  const before = await renderDocument({ pages });
+  const before = await renderDocument({ pages, passageComments: true });
   assert.doesNotMatch(before.pages[1].html, /data-reference=/);
   pages[0].markdown += " {@section-label}";
-  const after = await renderDocument({ pages });
+  const after = await renderDocument({ pages, passageComments: true });
   assert.match(after.pages[1].html, /data-reference="section-label"/);
   assert.equal(after.pages[1].blocks[0].text, "@section-label");
 }
 test(
   "a manual link acquires its canonical label when only the target chapter changes",
   invalidatePlainLink,
+);
+
+/** @returns {Promise<void>} */
+async function nativeArticle() {
+  const { createBook, createRenderer, defineDialect } =
+    await import("bananamark");
+  const { dialectOptions, numbering } = await import("./dialect.js");
+  const dialect = defineDialect(dialectOptions);
+  const book = createBook({ dialect, numbering });
+  const source =
+    "# Heading\n\n> A *quote* with $x$.\n\n- One\n- Two\n\n`data-passage`.";
+  const info = { key: "main", file: "main.md", lang: "en" };
+  const handle = book.add(source, {
+    key: "main",
+    position: [1],
+    title: "Heading",
+    file: info.file,
+  });
+  const expected = createRenderer({ dialect }).renderDocument(
+    book.transform(handle),
+    info,
+  );
+  const result = await renderDocument({ source });
+  assert.deepEqual(result.pages[0].blocks, []);
+  assert.equal(result.pages[0].html, expected.html);
+  assert.equal(result.pages[0].nativeHtml, true);
+  assert.equal(result.pages[0].headings[0].line, 1);
+}
+test("ordinary article HTML is byte-for-byte BananaMark output", nativeArticle);
+
+/** @returns {Promise<void>} */
+async function externalDefinitions() {
+  const source =
+    "## Other\n\n[doc]: https://example.org/\n\n## Selected\n\nSee [link][doc] and note[^a].\n\n## Last\n\n[^a]: An external footnote.";
+  const {
+    pages: [page],
+  } = await renderDocument({
+    source,
+    section: { chapter: "main", line: 5, end: 9 },
+  });
+  assert.match(page.html, /href="https:\/\/example.org\/"/);
+  assert.match(page.html, /An external footnote/);
+  assert.doesNotMatch(page.html, />Other<|>Last</);
+}
+test(
+  "section previews keep link and footnote definitions from the complete chapter",
+  externalDefinitions,
+);
+
+/** @returns {Promise<void>} */
+async function unusedFootnoteMath() {
+  await assert.rejects(
+    renderDocument({ source: "Text\n\n[^unused]: $\\badCommand$" }),
+    { code: "katex", file: "main.md", line: 3 },
+  );
+}
+test(
+  "unreferenced footnotes still validate their formulas",
+  unusedFootnoteMath,
+);
+
+/** @returns {Promise<void>} */
+async function discardedCellMath() {
+  await assert.rejects(
+    renderDocument({
+      source: "| a | b |\n|---|---|\n| one | two | $\\unknownMacro$ |",
+    }),
+    { code: "katex", file: "main.md", line: 3 },
+  );
+}
+test(
+  "BananaMark validates hidden overflow table cells on first build",
+  discardedCellMath,
 );

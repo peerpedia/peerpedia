@@ -1,7 +1,8 @@
 from django.conf import settings
+from django.http import HttpRequest
 
 
-def project_info(request):
+def project_info(request: HttpRequest) -> dict[str, object]:
     from publishing.notifications import visible
 
     from publishing.licensing import acceptance
@@ -20,4 +21,5 @@ def project_info(request):
         "developer_url": settings.DEVELOPER_URL,
         "site_url": settings.SITE_URL,
         "google_login_enabled": settings.GOOGLE_LOGIN_ENABLED,
+        "passage_comments_enabled": settings.PASSAGE_COMMENTS_ENABLED,
     }
