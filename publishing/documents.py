@@ -1,11 +1,17 @@
 """Canonical multi-page payloads. Legacy snapshots are never rewritten."""
 
+from __future__ import annotations
+
 import hashlib
 from copy import deepcopy
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 import re
 from django.conf import settings
 from django.core.exceptions import ValidationError
+
+if TYPE_CHECKING:
+    from .models import Submission
 
 ID = re.compile(r"[A-Za-z0-9_-]{1,64}\Z")
 MAX_CHAPTERS = 64
@@ -23,7 +29,7 @@ def combined(chapters):
     return "\n\n".join(chapter["markdown"] for chapter in chapters)
 
 
-def validate(chapters, bibliography="", *, allow_empty=False):
+def validate(chapters: list[dict[str, str]], bibliography: str = "") -> list[dict[str, str]]:
     if not isinstance(chapters, list) or len(chapters) > MAX_CHAPTERS:
         raise ValidationError("Use up to 64 chapters.")
     if not isinstance(bibliography, str):
@@ -44,7 +50,7 @@ def validate(chapters, bibliography="", *, allow_empty=False):
                 "Chapter IDs must be unique letters, numbers, hyphens or underscores."
             )
         seen.add(chapter["id"].casefold())
-        if not allow_empty and not chapter["markdown"].strip():
+        if not chapter["markdown"].strip():
             raise ValidationError(f"Write some text in chapter {chapter['id']} before submitting.")
     text = combined(chapters) + bibliography
     try:
@@ -64,23 +70,21 @@ class PreparedDocument:
     result: dict
     renderer_version: str
     base_id: object = None
-    section: object = None
 
 
-def prepare(data, base=None, section=None):
+def prepare(data: dict, base: Submission | None = None) -> PreparedDocument:
     """Reject old-client replacement of a multi-page document instead of losing pages."""
     data = deepcopy(data)
     if base and (base.chapters or base.bibliography) and "chapters" not in data:
         raise ValidationError(
-            "This paper has chapters or a bibliography. Use the online editor or update the CLI before revising it."
+            "This paper has chapters or a bibliography. Please update the CLI before revising it."
         )
     chapters, bib = data.get("chapters", []), data.get("bibliography", "")
     validate(chapters, bib)
     if chapters:
         if data.get("markdown") != combined(chapters):
             raise ValidationError("Combined Markdown must exactly match the chapter files.")
-    # Saved drafts may be incomplete; every publication path validates the whole
-    # book and compiles its diagrams before any snapshot is written.
+    # Validate the entire book and compile diagrams before creating a snapshot.
     from .bananamark import request
 
     result = request(
@@ -91,17 +95,10 @@ def prepare(data, base=None, section=None):
         diagrams=True,
     )
     titles = {page["id"]: page["title"] for page in result["pages"]}
-    data["chapters"] = [
-        {**page, "title": titles[page["id"]]}
-        if not section or page["id"] == section.get("chapter")
-        else page
-        for page in chapters
-    ]
+    data["chapters"] = [{**page, "title": titles[page["id"]]} for page in chapters]
     from .artifacts import renderer_version
 
-    return PreparedDocument(
-        data, result, renderer_version(), base.pk if base else None, deepcopy(section)
-    )
+    return PreparedDocument(data, result, renderer_version(), base.pk if base else None)
 
 
 def chapter_diff(before, after):

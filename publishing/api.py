@@ -1,23 +1,16 @@
 """Versioned JSON API. Write access uses bearer tokens, never session cookies."""
 
-from django.contrib.auth.models import AnonymousUser
-from .feedback_queries import (
-    passage_index,
-    passage_detail,
-    comment_replies,
-    comment_history,
-    offset,
-    FeedbackError,
-)
+from collections.abc import Callable
 from functools import wraps
 import hashlib
 import json
 import uuid
+from typing import Concatenate, ParamSpec
 from django.conf import settings
 from django.core.exceptions import PermissionDenied, RequestDataTooBig, ValidationError
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.db import transaction
-from django.http import Http404, JsonResponse
+from django.http import Http404, HttpRequest, HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404
 from django.urls import path, reverse
 from django.views.decorators.csrf import csrf_exempt
@@ -30,8 +23,6 @@ from .models import (
     ApiPush,
     SubmissionSource,
     PullRequest,
-    PassageComment,
-    PassagePRLink,
     Review,
     Comment,
 )
@@ -52,12 +43,29 @@ def error_response(code, message, status, details=None):
     )
 
 
-def endpoint(method="GET", authenticated=False):
-    def decorate(view):
+P = ParamSpec("P")
+
+
+def offset(value: str | None) -> int:
+    try:
+        return min(1_000_000, max(0, int(value or 0)))
+    except ValueError:
+        return 0
+
+
+def endpoint(
+    method: str = "GET", authenticated: bool = False
+) -> Callable[
+    [Callable[Concatenate[HttpRequest, P], HttpResponse]],
+    Callable[Concatenate[HttpRequest, P], HttpResponse],
+]:
+    def decorate(
+        view: Callable[Concatenate[HttpRequest, P], HttpResponse],
+    ) -> Callable[Concatenate[HttpRequest, P], HttpResponse]:
         @csrf_exempt
         @wraps(view)
         @sensitive_variables("raw")
-        def wrapped(request, *args, **kwargs):
+        def wrapped(request: HttpRequest, /, *args: P.args, **kwargs: P.kwargs) -> HttpResponse:
             try:
                 if request.method != method:
                     raise APIError("method_not_allowed", f"Use {method}.", 405)
@@ -77,12 +85,6 @@ def endpoint(method="GET", authenticated=False):
                         "rate_limited", "Too many pushes. Try again later.", 429
                     )
                     response["Retry-After"] = retry
-            except FeedbackError as error:
-                response = error_response(
-                    "unavailable" if error.status == 404 else "invalid_request",
-                    str(error),
-                    error.status,
-                )
             except APIError as error:
                 response = error_response(error.code, error.message, error.status, error.details)
             except Http404:
@@ -285,7 +287,7 @@ def push_retry(request, key, fingerprint):
 
 @endpoint(method="POST", authenticated=True)
 @limited("api_push", limit=40, seconds=3600)
-def push(request):
+def push(request: HttpRequest) -> JsonResponse:
     if request.content_type != "application/json":
         raise APIError("invalid_content_type", "Send application/json.", 415)
     try:
@@ -326,7 +328,6 @@ def push(request):
     if type(payload.get("ai_assisted", False)) is not bool:
         raise APIError("invalid_request", "ai_assisted must be true or false.")
     pr_id, expected = payload.get("pull_request_id"), payload.get("expected_head")
-    links = payload.get("discussion_ids", [])
     try:
         if pr_id is not None:
             uuid.UUID(pr_id)
@@ -334,25 +335,17 @@ def push(request):
                 raise ValueError()
         elif expected is not None:
             raise ValueError()
-        if not isinstance(links, list) or len(links) > 50:
-            raise ValueError()
-        for value in links:
-            uuid.UUID(value)
-        if len(set(links)) != len(links):
-            raise ValueError()
     except (ValueError, TypeError, AttributeError):
         raise APIError(
             "invalid_request",
-            "Use a PR UUID with its expected full head hash, and up to 50 distinct discussion thread UUIDs.",
+            "Use a PR UUID with its expected full head hash.",
         )
     if len(payload["markdown"].encode("utf-8")) > settings.MAX_MARKDOWN_BYTES:
         raise APIError("too_large", "Markdown must be 1 MB or smaller.", 413)
     initial = payload["paper_id"] is None
     if initial:
-        if pr_id is not None or links:
-            raise APIError(
-                "invalid_request", "Only revisions can update PRs or address existing discussions."
-            )
+        if pr_id is not None:
+            raise APIError("invalid_request", "Only revisions can update PRs.")
         if payload["base_hash"] is not None:
             raise APIError("invalid_request", "A new paper cannot have a base hash.")
         if not request.api_token.can_publish:
@@ -374,6 +367,9 @@ def push(request):
     retry = push_retry(request, key, fingerprint)
     if retry is not None:
         return retry
+    # Preserve exact receipts for pushes completed before discussion links were retired.
+    if payload.get("discussion_ids", []) != []:
+        raise APIError("invalid_request", "This server no longer accepts discussion links.")
     require_agreement(request.user)
     item = get_object_or_404(public_papers(), pk=payload["paper_id"]) if not initial else None
     if item and item.current.hash != payload["base_hash"]:
@@ -397,20 +393,6 @@ def push(request):
                 409,
             )
         expected_id = pr.head_id
-    threads = list(
-        PassageComment.objects.select_related("passage__submission__paper").filter(
-            pk__in=links,
-            parent__isnull=True,
-            is_hidden=False,
-            is_deleted=False,
-            passage__submission__paper=item,
-        )
-    )
-    if len(threads) != len(links):
-        raise APIError(
-            "invalid_discussion",
-            "Each linked ID must name a visible top-level discussion on this paper.",
-        )
     # Old clients may omit subjects when editing: inherit the accepted snapshot.
     # Explicit empty/invalid values still fail validation. Retries above retain
     # their original request fingerprint, even across the schema upgrade.
@@ -437,9 +419,8 @@ def push(request):
     if "license" in payload:
         data["license"] = payload["license"]
     from .documents import prepare
-    from .services import prepare_proposal
 
-    prepared = prepare(data) if initial else prepare_proposal(data, item.current)
+    prepared = prepare(data, None if initial else item.current)
     with transaction.atomic():
         # Serialize only retry checks and writes, across all tokens for this account.
         User.objects.select_for_update(no_key=True).get(pk=request.user.pk)
@@ -461,58 +442,10 @@ def push(request):
         SubmissionSource.objects.create(
             submission=record, ai_assisted=payload.get("ai_assisted", False)
         )
-        from .notifications import link_activity
-
-        for thread in threads:
-            link, created = PassagePRLink.objects.get_or_create(
-                thread=thread,
-                pull_request=record.pr_commit.request,
-                defaults={"user": request.user},
-            )
-            if created:
-                link_activity(link)
         ApiPush.objects.create(
             user=request.user, key=key, request_hash=fingerprint, submission=record
         )
         return JsonResponse(snapshot(record), status=201)
-
-
-@endpoint()
-def feedback(request, paper_id=None, submission_id=None):
-    record = (
-        get_object_or_404(public_papers(), pk=paper_id).current
-        if paper_id
-        else get_object_or_404(submission_queryset(), pk=submission_id)
-    )
-    start = offset(request.GET.get("offset"))
-    data = passage_index(record.pk, start)
-    data.update(
-        paper_id=str(record.paper_id),
-        submission_id=str(record.pk),
-        hash=record.hash,
-        access="read-only",
-        offset=start,
-    )
-    return JsonResponse(data)
-
-
-@endpoint()
-def passage_feedback(request, passage_id):
-    return JsonResponse(
-        passage_detail(passage_id, AnonymousUser(), offset(request.GET.get("offset")))
-    )
-
-
-@endpoint()
-def feedback_replies(request, comment_id):
-    return JsonResponse(
-        comment_replies(comment_id, AnonymousUser(), offset(request.GET.get("offset")))
-    )
-
-
-@endpoint()
-def feedback_history(request, comment_id):
-    return JsonResponse(comment_history(comment_id, offset(request.GET.get("offset"))))
 
 
 @endpoint()
@@ -540,7 +473,7 @@ def paper_reviews(request, paper_id):
 
 
 @endpoint()
-def pr_feedback(request, pr_id):
+def pr_feedback(request: HttpRequest, pr_id: uuid.UUID) -> JsonResponse:
     pr = get_object_or_404(
         PullRequest.objects.select_related("head"), pk=pr_id, paper__is_hidden=False
     )
@@ -569,9 +502,6 @@ def pr_feedback(request, pr_id):
             "head_hash": pr.head.hash,
             "status": pr.head.status,
             "snapshots": rows,
-            "discussion_ids": [
-                str(pk) for pk in pr.linked_threads.values_list("thread_id", flat=True)
-            ],
             "next": start + 100 if len(commits) > 100 else None,
         }
     )
@@ -595,12 +525,7 @@ urlpatterns = [
     path("papers/", search),
     path("papers/<uuid:paper_id>/prs/", paper_prs),
     path("licenses/", licenses),
-    path("papers/<uuid:paper_id>/feedback/", feedback),
-    path("submissions/<uuid:submission_id>/feedback/", feedback),
     path("papers/<uuid:paper_id>/reviews/", paper_reviews),
-    path("passages/<uuid:passage_id>/", passage_feedback),
-    path("discussion-comments/<uuid:comment_id>/replies/", feedback_replies),
-    path("discussion-comments/<uuid:comment_id>/history/", feedback_history),
     path("prs/<uuid:pr_id>/", pr_feedback),
     path("prs/<uuid:pr_id>/comments/", pr_comments),
     path("categories/", categories),

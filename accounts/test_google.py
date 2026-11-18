@@ -90,18 +90,22 @@ class GoogleTests(TestCase):
         self.assertFalse(SocialToken.objects.exists())
         self.assertEqual(int(self.client.session["_auth_user_id"]), user.pk)
 
-    def test_email_collision_requires_explicit_link_not_automatic_login(self):
+    def test_email_collision_requires_explicit_link_not_automatic_login(
+        self: "GoogleTests",
+    ) -> None:
         existing = User.objects.create_user("reader", "Reader@gmail.com", PASSWORD)
-        state = self.start()["state"][0]
+        state = self.start(next="/inbox/")["state"][0]
         response, _ = self.callback(state)
-        self.assertEqual(response.url, reverse("login"))
+        self.assertEqual(response.url, reverse("login", query={"next": "/inbox/"}))
         self.assertNotIn("_auth_user_id", self.client.session)
         self.assertFalse(SocialAccount.objects.exists())
         self.assertEqual(User.objects.count(), 1)
         existing.refresh_from_db()
         self.assertFalse(existing.email_verified)
 
-    def test_explicit_link_requires_password_matching_email_and_can_disconnect(self):
+    def test_explicit_link_requires_password_matching_email_and_can_disconnect(
+        self: "GoogleTests",
+    ) -> None:
         user = User.objects.create_user("reader", "reader@gmail.com", PASSWORD)
         self.client.force_login(user)
         response = self.client.post(
@@ -117,13 +121,17 @@ class GoogleTests(TestCase):
         response, _ = self.callback(state)
         self.assertEqual(response.url, reverse("socialaccount_connections"))
         self.assertEqual(SocialAccount.objects.get().user_id, user.pk)
+        self.assertTrue(user.email_verified)
         self.client.post(reverse("socialaccount_connections"), {"password": "wrong"})
         self.assertTrue(SocialAccount.objects.exists())
         self.client.post(reverse("socialaccount_connections"), {"password": PASSWORD})
         self.assertFalse(SocialAccount.objects.exists())
 
-    def test_existing_identity_login_preserves_user_and_rejects_inactive(self):
-        user = User.objects.create_user("reader", "old@gmail.com", PASSWORD, email_verified=True)
+    def test_existing_identity_login_preserves_user_and_rejects_inactive(
+        self: "GoogleTests",
+    ) -> None:
+        user = User.objects.create_user("reader", "old@gmail.com", PASSWORD)
+        user.emailaddress_set.create(email=user.email, verified=True, primary=True)
         SocialAccount.objects.create(user=user, provider="google", uid="google-reader")
         response, _ = self.callback(self.start()["state"][0], email="new@gmail.com")
         self.assertEqual(response.status_code, 302)
@@ -208,7 +216,9 @@ class GoogleTests(TestCase):
         self.assertContains(response, "An account already uses this email")
         self.assertFalse(SocialAccount.objects.exists())
 
-    def test_google_only_account_cannot_disconnect_or_access_another_account(self):
+    def test_google_only_account_cannot_disconnect_or_access_another_account(
+        self: "GoogleTests",
+    ) -> None:
         user = User.objects.create_user("reader", "reader@gmail.com")
         other = User.objects.create_user("other", "other@example.org", PASSWORD)
         SocialAccount.objects.create(user=user, provider="google", uid="google-reader")
@@ -217,17 +227,19 @@ class GoogleTests(TestCase):
         response, _ = self.callback(state, email=other.email)
         self.assertEqual(response.status_code, 302)
         self.assertEqual(SocialAccount.objects.get().user_id, user.pk)
+        self.assertFalse(other.email_verified)
         self.client.force_login(user)
         self.client.post(reverse("socialaccount_connections"), {"password": PASSWORD})
         self.assertTrue(SocialAccount.objects.exists())
 
-    def test_google_only_password_setup_requires_email_link(self):
+    def test_google_only_password_setup_requires_email_link(self: "GoogleTests") -> None:
         from django.core import mail
         from django.contrib.auth.tokens import default_token_generator
         from django.utils.encoding import force_bytes
         from django.utils.http import urlsafe_base64_encode
 
-        user = User.objects.create_user("reader", "reader@gmail.com", email_verified=True)
+        user = User.objects.create_user("reader", "reader@gmail.com")
+        user.emailaddress_set.create(email=user.email, verified=True, primary=True)
         SocialAccount.objects.create(user=user, provider="google", uid="google-reader")
         response = self.client.post(reverse("password_reset"), {"email": user.email})
         self.assertEqual(response.url, reverse("password_reset_done"))
@@ -254,10 +266,10 @@ class GoogleTests(TestCase):
         self.client.post(reverse("socialaccount_connections"), {"password": PASSWORD})
         self.assertFalse(SocialAccount.objects.exists())
 
-    def test_unverified_unusable_password_account_cannot_reset(self):
+    def test_unverified_unusable_password_account_cannot_reset(self: "GoogleTests") -> None:
         from django.core import mail
 
-        user = User.objects.create_user("reader", "reader@gmail.com", email_verified=False)
+        user = User.objects.create_user("reader", "reader@gmail.com")
         SocialAccount.objects.create(user=user, provider="google", uid="google-reader")
         self.client.post(reverse("password_reset"), {"email": user.email})
         self.assertEqual(len(mail.outbox), 0)

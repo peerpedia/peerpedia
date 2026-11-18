@@ -1,46 +1,55 @@
+from typing import Any
+
 from django import forms
 from django.conf import settings
 from .rendering import has_images
-from .subjects import ALIASES, choices
+from .subjects import ALIASES, METADATA_FIELDS, choices
 
 
 class UploadForm(forms.Form):
+    file = forms.FileField(
+        label="Markdown document",
+        widget=forms.FileInput(attrs={"accept": ".md"}),
+        help_text="Choose one UTF-8 .md file, up to 1 MB.",
+    )
+    explanation = forms.CharField(
+        max_length=5000,
+        label="What changed?",
+        widget=forms.Textarea(attrs={"rows": 3}),
+        help_text="Summarize the change for the corresponding author.",
+    )
     title = forms.CharField(max_length=250)
     authors = forms.CharField(
         max_length=2000,
         widget=forms.Textarea(attrs={"rows": 3}),
-        help_text="Enter author names manually, one per line, in publication order.",
+        help_text="One name per line, in publication order.",
     )
     abstract = forms.CharField(max_length=10000, widget=forms.Textarea(attrs={"rows": 5}))
     primary_category = forms.ChoiceField(
         choices=[("", "Choose a primary subject"), *choices()],
         label="Primary subject",
-        help_text="Choose the closest arXiv subject. This is part of the frozen submission.",
     )
     secondary_categories = forms.MultipleChoiceField(
         choices=choices(),
         required=False,
         label="Cross-list subjects",
         widget=forms.CheckboxSelectMultiple,
-        help_text="Optional: select other subjects whose readers would find this paper relevant.",
-    )
-    file = forms.FileField(
-        label="Markdown document",
-        widget=forms.ClearableFileInput(attrs={"accept": ".md"}),
-        help_text="One UTF-8 .md file, up to 1 MB. Text, equations, links, and references; no images or embedded HTML.",
-    )
-    explanation = forms.CharField(
-        max_length=5000, label="What changed?", widget=forms.Textarea(attrs={"rows": 3})
     )
     base = forms.UUIDField(required=False, widget=forms.HiddenInput)
 
-    def __init__(self, *args, initial_publication=False, **kwargs):
+    def __init__(
+        self: "UploadForm", *args: Any, initial_publication: bool = False, **kwargs: Any
+    ) -> None:
         super().__init__(*args, **kwargs)
         if initial_publication:
             self.fields["explanation"].widget = forms.HiddenInput()
             self.fields["explanation"].required = False
         else:
             self.fields["base"].required = True
+
+    @property
+    def paper_details(self: "UploadForm") -> list[forms.BoundField]:
+        return [self[name] for name in METADATA_FIELDS]
 
     def clean(self):
         data = super().clean()

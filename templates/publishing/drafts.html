@@ -1,4 +1,15 @@
-{% extends 'base.html' %}
-{% block title %}My drafts · Peerpedia{% endblock %}
-{% block content %}<div class="section-heading"><div><h1>My drafts</h1><p class="muted">{% if desktop %}Private drafts saved on this computer. Nothing is uploaded until you submit it.{% else %}Only you can see these. Saved across your devices.{% endif %}</p></div><a class="button" href="{% url 'write' %}">Write a new note</a></div>
-{% for draft in drafts %}<article class="history-row"><div><a class="entry-title" href="{% url 'editor' draft.pk %}">{{ draft.title }}</a><p class="muted">{% if draft.pull_request_id or draft.workingcopy.pr %}PR update{% elif draft.paper_id or draft.workingcopy.mirror_id %}Proposed change{% else %}New note{% endif %}{% if draft.section %} · Section: {{ draft.section.label }}{% else %} · Whole paper{% endif %} · Saved {{ draft.updated_at|date:'j M Y, H:i' }} UTC</p></div></article>{% empty %}<p class="empty-inline">No unfinished drafts. Start a new note above, or select Edit while reading a paper to propose a correction.</p>{% endfor %}{% endblock %}
+{% extends 'base.html' %}{% load static %}
+{% block head %}<script defer src="{% static 'draft-archive.js' %}"></script>{% endblock %}
+{% block title %}Archived drafts · Peerpedia{% endblock %}
+{% block content %}
+<div class="form-layout">
+<header class="page-heading"><h1>Archived drafts</h1>
+<p>Download the last copy saved to your account. Each ZIP contains the saved Markdown, paper details, and any chapter files or bibliography. For a section or chapter draft, apply the saved text to the corresponding part of the paper before submitting.</p></header>
+{% for draft in drafts %}
+<article class="history-row"><div>
+  <h2 class="entry-title">{{ draft.title }}</h2>
+  <p class="muted">{% if draft.pull_request_id %}PR update{% elif draft.paper_id %}Proposed change{% else %}New paper{% endif %}{% if draft.section %} · {{ draft.scope_label|capfirst }}: {{ draft.section.label }}{% endif %}{% if draft.submitted_id %} · Submitted{% endif %} · Saved {{ draft.updated_at|date:'j M Y, H:i T' }}</p>
+</div><div class="inline-links" data-draft-id="{{ draft.pk }}" data-recovery-prefix="peerpedia:draft:{{ request.user.pk }}:{{ draft.pk }}:"><a href="{% url 'draft_export' draft.pk %}">Download ZIP</a></div></article>
+{% empty %}<p class="empty-inline">You have no archived drafts.</p>{% endfor %}
+</div>
+{% endblock %}

@@ -1,7 +1,8 @@
 from django.conf import settings
+from django.http import HttpRequest
 
 
-def project_info(request):
+def project_info(request: HttpRequest) -> dict[str, object]:
     from publishing.notifications import visible
 
     from publishing.licensing import acceptance

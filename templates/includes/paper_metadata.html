@@ -1,10 +1,22 @@
-<article class="paper-metadata">
-  <div class="eyebrow">RESEARCH PAPER / NOTE</div>
+<header class="paper-metadata">
+  <p class="record-meta">{% if paper.current.primary_category %}<span>{{ paper.current.primary_category }}</span>{% endif %}<time datetime="{{ paper.accepted_at|date:'Y-m-d' }}">Updated {{ paper.accepted_at|date:'j M Y' }}</time></p>
   <h1>{{ paper.current.title }}</h1>
-  <p class="author-list">{{ paper.current.authors|linebreaksbr }}</p>
-  {% if desktop %}<div class="meta-line">{% if paper.public_id %}<span>Peerpedia <strong>{{ paper.public_id }}</strong></span>{% endif %}<span>Saved on this computer · {{ mirror.updated_at|date:'j M Y, H:i' }} UTC</span></div>{% else %}<div class="meta-line">{% if paper.public_id %}<span>Peerpedia <strong>{{ paper.public_id }}</strong></span>{% endif %}<span>Corresponding author: <strong>{{ paper.owner.username }}</strong></span><span>Latest acceptance: {{ paper.accepted_at|date:'j M Y, H:i' }} UTC</span></div>{% endif %}
-  {% include 'includes/subjects.html' with subjects=paper.current.subjects %}
-  {% include 'includes/license.html' with submission=paper.current %}
-  <section class="abstract"><h2>Abstract</h2><p>{{ paper.current.abstract|linebreaksbr }}</p></section>
-  <div class="actions"><a class="button" href="{{ paper.read_url }}">Read paper <span aria-hidden="true">↗</span></a><a class="button secondary" href="{{ paper.current.download_url }}">Download Markdown</a><a class="button secondary" href="{% url 'edit_paper' paper.pk %}">Edit paper</a>{% if desktop %}<form class="inline-form" method="post" action="{% url 'local_add' %}">{% csrf_token %}<input type="hidden" name="url" value="{{ remote }}"><button type="submit" class="button secondary">Refresh download</button></form>{% endif %}</div>
-</article>
+  <p class="byline">{{ paper.current.authors.splitlines|join:", " }}</p>
+  <div class="actions paper-actions"><a class="button" href="{{ paper.read_url }}">Read paper</a><a href="{% url 'propose' paper.pk %}">Propose a change</a></div>
+</header>
+<section class="abstract" aria-labelledby="abstract-title">
+  <h2 id="abstract-title">Abstract</h2>
+  <div>
+    <p>{{ paper.current.abstract|linebreaksbr }}</p>
+    <details class="publication-details">
+      <summary>Publication details</summary>
+      <dl class="facts">
+        {% if paper.public_id %}<dt>Paper ID</dt><dd>{{ paper.public_id }}</dd>{% endif %}
+        <dt>Corresponding author</dt><dd>{{ paper.owner.username }}</dd>
+        <dt>Subjects</dt><dd>{% include 'includes/subjects.html' with subjects=paper.current.subjects %}</dd>
+        {% with rights=paper.current.licensing %}<dt>License</dt><dd><a rel="license" href="{{ rights.url }}">{{ rights.label }}</a>{% if rights.declaration %} · Declared by {{ rights.declaration.actor }} on {{ rights.declaration.declared_at }}{% endif %}</dd>{% endwith %}
+      </dl>
+      <div class="inline-links"><a href="{{ paper.current.download_url }}">Download {% if paper.current.chapters or paper.current.bibliography %}source files{% else %}Markdown{% endif %}</a><a href="?tab=submissions">Proposed changes</a><a href="?tab=history">History</a></div>
+    </details>
+  </div>
+</section>

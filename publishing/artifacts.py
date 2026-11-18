@@ -1,16 +1,18 @@
 """Durable BM output. Reading a frozen snapshot does not need a live compiler."""
 
 import hashlib
-import re
-from html import escape
-from html.parser import HTMLParser
 from functools import lru_cache
 from django.conf import settings
-from .models import RenderedSubmission
+from django.utils import timezone
+from .models import RenderedSubmission, Submission
 
 
-@lru_cache(maxsize=1)
-def renderer_version():
+def renderer_version() -> str:
+    return _renderer_version(settings.STATIC_URL)
+
+
+@lru_cache(maxsize=2)
+def _renderer_version(static_url: str) -> str:
     digest = hashlib.sha256()
     for name in (
         "editor/package-lock.json",
@@ -21,20 +23,15 @@ def renderer_version():
     ):
         digest.update(name.encode())
         digest.update((settings.BASE_DIR / name).read_bytes())
-    digest.update(settings.STATIC_URL.encode())
+    digest.update(static_url.encode())
     return digest.hexdigest()
 
 
-def store(submission, result, version):
+def store(submission: Submission, result: dict, version: str) -> dict:
+    reader_url = submission.read_url
     result = {
         **result,
-        "pages": [
-            {**page, "html": reader_links(page["html"], submission.read_url)}
-            for page in result["pages"]
-        ],
-        "targets": [
-            {**target, "url": submission.read_url + target["url"]} for target in result["targets"]
-        ],
+        "targets": [{**target, "url": reader_url + target["url"]} for target in result["targets"]],
     }
     artifact, _ = RenderedSubmission.objects.get_or_create(
         submission=submission,
@@ -44,14 +41,20 @@ def store(submission, result, version):
     return artifact.result
 
 
-def load(submission, *, refresh=False):
+def load(submission: Submission, *, refresh: bool = False) -> dict:
     # Keep the last explicitly built version across BM upgrades. Rebuild with the
     # management command, never make ordinary reading depend on an upgrade.
-    query = RenderedSubmission.objects.filter(submission=submission, source_hash=submission.hash)
-    if refresh:
-        query = query.filter(renderer_version=renderer_version())
-    artifact = query.order_by("-created_at", "-pk").first()
+    copies = RenderedSubmission.objects.filter(
+        submission=submission, source_hash=submission.hash
+    ).order_by("-created_at", "-pk")
+    artifact = (
+        copies.filter(renderer_version=renderer_version()).first() if refresh else copies.first()
+    )
     if artifact:
+        if refresh and copies.values_list("pk", flat=True).first() != artifact.pk:
+            # Re-select a cached build as the current reading copy. Its HTML and
+            # the immutable submission are independent of this build timestamp.
+            copies.filter(pk=artifact.pk).update(created_at=timezone.now())
         return artifact.result
     from .bananamark import request
     from .documents import pages
@@ -63,33 +66,6 @@ def load(submission, *, refresh=False):
         diagrams=True,
     )
     return store(submission, result, renderer_version())
-
-
-def reader_links(html, reader):
-    replacements = []
-    offsets = [0]
-    for line in html.split("\n"):
-        offsets.append(offsets[-1] + len(line) + 1)
-
-    class Links(HTMLParser):
-        def handle_starttag(self, tag, attrs):
-            href = dict(attrs).get("href", "")
-            if tag != "a" or not href.startswith("?chapter="):
-                return
-            raw = self.get_starttag_text()
-            rewritten = re.sub(
-                r'(\shref=")[^"]*"',
-                lambda match: match[1] + escape(reader + href, quote=True) + '"',
-                raw,
-            )
-            line, column = self.getpos()
-            start = offsets[line - 1] + column
-            replacements.append((start, start + len(raw), rewritten))
-
-    Links(convert_charrefs=False).feed(html)
-    for start, end, value in reversed(replacements):
-        html = html[:start] + value + html[end:]
-    return html
 
 
 def references(submission):

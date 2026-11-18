@@ -28,19 +28,15 @@ Inside a cloned paper folder:
 peerpedia status --json
 peerpedia diff --json
 peerpedia reviews --all --json
-peerpedia feedback --all --json
-peerpedia discussion PASSAGE_UUID --all --json
 peerpedia prs --all --json
 peerpedia pr PR_UUID --all --json
 peerpedia pr-comments PR_UUID --all --json
-peerpedia feedback --submission SNAPSHOT_UUID --all --json
-peerpedia comment-history COMMENT_UUID --all --json
 ```
 
-`--all` follows pagination; discussion also fetches all nested replies. Public
-reads send no token. `feedback` returns anchors, original hashes and current mappings;
-read discussion details rather than relying on excerpts. `prs` returns contributor,
-head and status for pending and decided PRs. `pr` lists all immutable snapshots.
+`--all` follows pagination. Public reads send no token. `reviews` lists public
+paper reviews and the overall rating. `prs` returns the contributor, head and
+status for each PR. `pr` lists its immutable snapshots and `pr-comments` reads
+its public conversation.
 To read a specific full snapshot without changing the working copy:
 
 ```sh
@@ -82,14 +78,13 @@ After explicit submission authorization, from the working copy:
 
 ```sh
 peerpedia diff --json
-peerpedia push -m "Explain the correction and any uncertainty" --ai-assisted --address THREAD_UUID --json
-peerpedia push -m "Continue the selected PR" --ai-assisted --pr PR_UUID --expected-head FULL_HEAD_HASH --address THREAD_UUID --json
+peerpedia push -m "Explain the correction and any uncertainty" --ai-assisted --json
+peerpedia push -m "Continue the selected PR" --ai-assisted --pr PR_UUID --expected-head FULL_HEAD_HASH --json
 ```
 
 For initial publication use `push -m "Initial publication" --ai-assisted --json`.
-New papers publish immediately. Revision pushes create pending proposals. Repeat
-`--address` for multiple top-level passage threads; omit it if none applies.
-There is no CLI acceptance, voting, commenting, or private website-draft command.
+New papers publish immediately. Revision pushes create pending proposals. Use the website
+to accept a proposal, post a review or comment, or work on a private draft.
 
 ## Conflict or interrupted request
 

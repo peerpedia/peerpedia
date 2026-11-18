@@ -1,4 +1,4 @@
-// Shared by the browser language tools and the server renderer.
+// BananaMark settings for published papers and help examples.
 export const dialectOptions = {
   wikiLinks: false,
   bibliography: true,

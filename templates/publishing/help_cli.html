@@ -1,7 +1,7 @@
 {% extends 'publishing/help_base.html' %}
 {% block title %}Command-line guide · Peerpedia{% endblock %}
 {% block guide_heading %}Work from your computer{% endblock %}
-{% block guide_intro %}Use the command-line client to read papers, edit local Markdown files, and submit changes. You can use your own editor or an AI assistant.{% endblock %}
+{% block guide_intro %}<p class="lede">Use the command-line client to read papers, edit local Markdown files, and submit changes. You can use your own editor or an AI assistant.</p>{% endblock %}
 {% block guide_tabs %}{% include 'publishing/includes/help_tabs.html' with current='cli' %}{% endblock %}
 {% block guide_contents %}
 <a href="#install">Install the client</a>
@@ -10,7 +10,7 @@
 <a href="#propose">Submit an edit</a>
 <a href="#publish">Publish a new note</a>
 <a href="#chapters">Work with chapters</a>
-<a href="#feedback">Read feedback and fix the text</a>
+<a href="#feedback">Read paper reviews</a>
 <a href="#update-pr">Update a pending PR</a>
 <a href="#sync">Keep your copy up to date</a>
 <a href="#ai">Use an AI assistant</a>
@@ -51,10 +51,10 @@ cd my-paper</code></pre>
 <section id="login">
   <h2>Connect your account</h2>
   <p>To submit changes, the CLI needs an <strong>access token</strong>, a credential that gives it limited permission to act through your account.</p>
-  <ol><li>Sign in on the website, verify your email, and accept the <a href="{% url 'agreements' %}">submission agreement</a>.</li><li>Open <a href="{% url 'access_tokens' %}">Access tokens</a>, confirm your password, and create a token. Enable <strong>Also allow publishing new papers</strong> if you want to create new work, rather than only propose edits.</li><li>Run the command below. Paste the token at the hidden prompt, not into the command itself.</li></ol>
+  <ol><li>Sign in on the website, verify your email, and accept the <a href="{% url 'agreements' %}">submission agreement</a>.</li><li>Open <strong>Account</strong> and select <a href="{% url 'access_tokens' %}">Access tokens</a>, confirm your password, and create a token. Enable <strong>Also allow publishing new papers</strong> if you want to create new work, rather than only propose edits.</li><li>Run the command below. Paste the token at the hidden prompt, not into the command itself.</li></ol>
   <pre><code>peerpedia login {{ site_url }}</code></pre>
   <p>If you signed up through Google and have no Peerpedia password, open <strong>Account</strong> and choose <strong>Add a password by email</strong> first.</p>
-  <p>Keep tokens out of Markdown files, messages, and Git repositories. You can revoke one on the Access tokens page. A token cannot accept PRs, post comments, give ratings, vote, or grant administrator access.</p>
+  <p>Keep tokens out of Markdown files, messages, and Git repositories. You can revoke one on the Access tokens page. A token cannot accept PRs, post comments, give ratings, or grant administrator access.</p>
 </section>
 <section id="propose">
   <h2>Submit an edit</h2>
@@ -100,16 +100,12 @@ peerpedia push -m "Initial publication"</code></pre>
   <p>The bibliography is a shared BananaMark YAML file. See the <a href="{% url 'help_writing' %}#citations">citation example</a> for its contents. Clone, diff, push, and pull include all chapters and the bibliography together.</p>
 </section>
 <section id="feedback">
-  <h2>Read feedback and fix the text</h2>
-  <p>Overall reviews concern the whole paper. Passage feedback concerns a particular sentence, equation, or other part of the text. These commands read both from your working-copy folder.</p>
-  <pre><code>peerpedia reviews --all
-peerpedia feedback --all</code></pre>
-  <p><code>--all</code> fetches every page of results. The feedback list gives passage IDs and quotations. To read a passage’s complete discussion, replace <code>PASSAGE_ID</code> with its ID.</p>
-  <pre><code>peerpedia discussion PASSAGE_ID --all</code></pre>
-  <p>A passage can have several conversations. Each begins with a top-level comment, called a <strong>thread</strong>. The discussion output gives its thread ID. Read the replies as well as the first comment before deciding what to change.</p>
-  <p>After editing your files and checking the diff, you can link your proposal to the thread it addresses. Replace <code>THREAD_ID</code> with that thread’s ID, not the passage ID.</p>
-  <pre><code>peerpedia push -m "Explain why compactness is needed" --address THREAD_ID --ai-assisted</code></pre>
-  <p>Repeat <code>--address</code> to link more than one thread. Omit <code>--ai-assisted</code> if AI did not help prepare the change. A linked fix leaves the discussion open for its commenter to review.</p>
+  <h2>Read paper reviews</h2>
+  <p>From your working-copy folder, read the paper’s reviews and overall rating. The <code>--all</code> option fetches every page of reviews.</p>
+  <pre><code>peerpedia reviews --all</code></pre>
+  <p>If a review prompts a revision, edit your files, inspect the diff, and describe the change in your PR message.</p>
+  <pre><code>peerpedia diff
+peerpedia push -m "Explain why the proof requires compactness"</code></pre>
 </section>
 <section id="update-pr">
   <h2>Update a pending PR</h2>
@@ -143,11 +139,11 @@ peerpedia diff</code></pre>
 </section>
 <section id="ai">
   <h2>Use an AI assistant</h2>
-  <p>The <a href="{{ repository_url }}/tree/main/plugins/peerpedia">Peerpedia plugin for Codex</a> helps find papers, read discussions, and prepare proposed changes. Its installation instructions are in the linked guide.</p>
-  <div class="help-example"><h3>Example request</h3><p>“Find the discussion about the compactness assumption. Read the paper and all replies in that thread. Suggest a correction, show me the diff, and wait before submitting it.”</p></div>
+  <p>The <a href="{{ repository_url }}/tree/main/plugins/peerpedia">Peerpedia plugin for Codex</a> helps find papers, read reviews and PR comments, and prepare proposed changes. Its installation instructions are in the linked guide.</p>
+  <div class="help-example"><h3>Example request</h3><p>“Read the paper and its reviews. Check whether the proof relies on an unstated compactness assumption. Suggest a correction, show me the diff, and wait before submitting it.”</p></div>
   <p>An assistant can work on the same local Markdown and bibliography as you. Adding <code>--json</code> to commands gives it structured results. Public reading needs no token. Submitting needs your token and follows the same PR process.</p>
   <p>For a scripted runner, provide <code>PEERPEDIA_TOKEN</code> through its secret settings and set <code>PEERPEDIA_SERVER</code> to <code>{{ site_url }}</code>. Never put a token in a paper, prompt, or repository.</p>
-  <p>AI access to feedback is read-only. The CLI cannot post comments, rate papers or passages, vote, resolve discussions, accept a PR, or read private website drafts and inbox messages.</p>
+  <p>The CLI provides read-only access to public reviews and PR comments. Use the website to rate a paper, post a comment, accept a PR, or read your inbox.</p>
   <p>For more command options, run <code>peerpedia --help</code> or <code>peerpedia push --help</code>. The <a href="{{ repository_url }}#local-editing-and-command-line-pushes">repository reference</a> covers credential storage and verification in more detail.</p>
 </section>
 {% endblock %}

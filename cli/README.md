@@ -47,7 +47,7 @@ when opening a new terminal.
 peerpedia search "Galois" --server https://peerpedia.dev
 peerpedia clone PAPER_ID my-paper --server https://peerpedia.dev
 cd my-paper
-peerpedia feedback --json
+peerpedia reviews --all --json
 ```
 
 Replace `PAPER_ID` with an ID from the search results. A newly started site may

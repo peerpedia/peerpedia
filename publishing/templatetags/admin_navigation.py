@@ -5,21 +5,9 @@ register = template.Library()
 SECTIONS = (
     (
         "Moderation",
-        "Review reports and manage the visibility of public content.",
+        "Manage the visibility of public content.",
         (
-            (
-                "publishing",
-                "PassageReport",
-                "Reported comments",
-                "Review concerns raised by readers.",
-            ),
             ("publishing", "Paper", "Papers", "Find papers and manage their visibility."),
-            (
-                "publishing",
-                "PassageComment",
-                "Passage discussions",
-                "Review comments and replies on specific passages.",
-            ),
             (
                 "publishing",
                 "Review",
@@ -68,18 +56,6 @@ SECTIONS = (
                 "ModerationEvent",
                 "Moderation history",
                 "See who hid or restored content.",
-            ),
-            (
-                "publishing",
-                "Passage",
-                "Quoted passages",
-                "Inspect the original text attached to discussions.",
-            ),
-            (
-                "publishing",
-                "PassageCommentRevision",
-                "Comment edit history",
-                "Read preserved versions of comments.",
             ),
             (
                 "publishing",

@@ -1,23 +1,26 @@
 from .queries import public_papers, submission_queryset, search_papers
 from .comparisons import diff_lines, metadata_diff
 import uuid
+from typing import Any
 from django import forms
 from django.contrib import messages
+from django.core.files.uploadedfile import SimpleUploadedFile
 from django.core import signing
 from django.core.exceptions import ValidationError
 from django.core.paginator import Paginator
 from django.db import connection, IntegrityError
 from django.db.models import Avg, Count
-from django.http import HttpResponse, JsonResponse, Http404
+from django.http import HttpRequest, HttpResponse, JsonResponse, Http404
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils.safestring import mark_safe
-from django.views.decorators.http import require_POST
+from django.views.decorators.cache import never_cache
+from django.views.decorators.http import require_http_methods, require_POST
 from accounts.security import limited, verified_required
 from .forms import CommentForm, ReviewForm, UploadForm
 from .licensing import PublicationConsentForm, agreement_required
-from .models import Comment, Review, Submission, PullRequest, PullRequestCommit
-from .rendering import render_markdown
+from .models import Comment, Paper, Review, Submission, PullRequest, PullRequestCommit
+from .documents import PreparedDocument, prepare
 from .services import decide, propose, publish
 from .subjects import (
     METADATA_FIELDS,
@@ -52,57 +55,56 @@ def paper_permalink(request, public_id):
     return paper_detail(request, public_id=public_id)
 
 
-def paper_detail(request, paper_id=None, public_id=None):
+def paper_detail(
+    request: HttpRequest, paper_id: uuid.UUID | None = None, public_id: str | None = None
+) -> HttpResponse:
     paper = get_object_or_404(
         public_papers(), **({"public_id": public_id} if public_id else {"pk": paper_id})
     )
-    reviews = paper.reviews.filter(is_hidden=False).select_related("user")
-    stats = reviews.aggregate(average=Avg("score"), count=Count("pk"))
-    own_review = (
-        paper.reviews.filter(user=request.user).first() if request.user.is_authenticated else None
-    )
-    form = ReviewForm(
-        initial={"score": own_review.score, "text": own_review.text} if own_review else None
-    )
-    tab = request.GET.get("tab", "reviews")
-    if tab not in {"reviews", "submissions", "history"}:
-        tab = "reviews"
-    proposals = paper.submissions.filter(base__isnull=False, head_of__isnull=False).select_related(
-        "decision", "base"
-    )
-    history = (
-        paper.submissions.filter(decision__action="accepted")
-        .select_related("decision")
-        .order_by("-decision__created_at")
-    )
-    return render(
-        request,
-        "publishing/paper.html",
-        {
-            "paper": paper,
-            "stats": stats,
-            "review_page": Paginator(reviews, 20).get_page(request.GET.get("page")),
-            "review_form": form,
-            "own_review": own_review,
-            "tab": tab,
-            "submission_page": Paginator(proposals, 25).get_page(request.GET.get("page")),
-            "history_page": Paginator(history, 25).get_page(request.GET.get("page")),
-            "contributions": history.filter(base__isnull=False)
+    tab = request.GET.get("tab")
+    page = request.GET.get("page")
+    context: dict[str, Any] = {"paper": paper}
+    if tab == "submissions":
+        proposals = paper.submissions.filter(base__isnull=False, head_of__isnull=False)
+        context["submission_page"] = Paginator(proposals, 25).get_page(page)
+    elif tab == "history":
+        history = (
+            paper.submissions.filter(decision__action="accepted")
+            .select_related("decision")
+            .order_by("-decision__created_at")
+        )
+        context["history_page"] = Paginator(history, 25).get_page(page)
+        context["contributions"] = (
+            history.filter(base__isnull=False)
             .values("contributor_name")
             .annotate(total=Count("pk"))
-            .order_by("contributor_name"),
-        },
-    )
+            .order_by("contributor_name")
+        )
+    else:
+        tab = "reviews"
+        reviews = paper.reviews.filter(is_hidden=False).select_related("user")
+        own = (
+            paper.reviews.filter(user=request.user).first()
+            if request.user.is_authenticated
+            else None
+        )
+        context.update(
+            stats=reviews.aggregate(average=Avg("score"), count=Count("pk")),
+            review_page=Paginator(reviews, 20).get_page(page),
+            own_review=own,
+            review_form=ReviewForm(initial={"score": own.score, "text": own.text} if own else None),
+        )
+    return render(request, "publishing/paper.html", {**context, "tab": tab})
 
 
-def read_paper(request, paper_id):
+def read_paper(request: HttpRequest, paper_id: uuid.UUID) -> HttpResponse:
     paper = get_object_or_404(public_papers(), pk=paper_id)
-    return reader(request, paper.current)
+    return redirect(reverse("read_snapshot", args=[paper.current.public_id], query=request.GET))
 
 
-def read_permalink(request, public_id):
+def read_permalink(request: HttpRequest, public_id: str) -> HttpResponse:
     paper = get_object_or_404(public_papers(), public_id=public_id)
-    return reader(request, paper.current)
+    return redirect(reverse("read_snapshot", args=[paper.current.public_id], query=request.GET))
 
 
 def read_version(request, public_id, submission_id):
@@ -137,12 +139,7 @@ def read_submission(request, submission_id):
     return reader(request, submission)
 
 
-def reader(request, submission):
-    edit_url = (
-        reverse("edit_paper", args=[submission.paper_id]) + "?version=" + str(submission.pk)
-        if submission.pk == submission.paper.current_id
-        else None
-    )
+def reader(request: HttpRequest, submission: Submission) -> HttpResponse:
     from .documents import pages, digest
     from urllib.parse import urlencode
 
@@ -165,59 +162,13 @@ def reader(request, submission):
         )
         response["Retry-After"] = "30"
         return response
-    selected = request.GET.get("chapter")
-    if not selected and request.GET.get("discussion"):
-        from .feedback_queries import anchors_for, mapping
-
-        try:
-            discussion_id = uuid.UUID(request.GET["discussion"])
-        except ValueError:
-            raise Http404()
-        anchor = anchors_for(submission).filter(pk=discussion_id).first()
-        if anchor:
-            all_blocks = [block for page in refs.result["pages"] for block in page["blocks"]]
-            _, spans = mapping(anchor, submission, all_blocks)
-            if spans:
-                selected = next(
-                    (b.get("chapter") for b in all_blocks if b["id"] == spans[0]["block"]), None
-                )
-    selected = selected or chapters[0]["id"]
+    selected = request.GET.get("chapter") or chapters[0]["id"]
     page = next((p for p in chapters if p["id"] == selected), None)
     if page is None:
         raise Http404("This chapter is not in this version.")
     index = chapters.index(page)
     reader_url = submission.read_url
-    if edit_url and submission.chapters:
-        edit_url += "&" + urlencode({"chapter": selected})
-    body, contents = refs.render(
-        selected,
-        edit_url=edit_url,
-        passage_annotations=True,
-    )
-    from urllib.parse import urlencode
-
-    config = {
-        "index": reverse("passage_index", args=[submission.pk]),
-        "create": reverse("passage_create", args=[submission.pk]),
-        "participate": request.user.is_authenticated
-        and request.user.is_active
-        and request.user.email_verified,
-        "login": reverse("login") + "?" + urlencode({"next": request.get_full_path()}),
-        "version": submission.public_id,
-        "status": submission.status,
-    }
-    from .licensing import acceptance
-
-    if (
-        request.user.is_authenticated
-        and request.user.email_verified
-        and not acceptance(request.user)
-    ):
-        config.update(
-            participate=False,
-            login=reverse("agreements") + "?" + urlencode({"next": request.get_full_path()}),
-            agreement_required=True,
-        )
+    body, contents = refs.render(selected)
     response = render(
         request,
         "publishing/reader.html",
@@ -230,7 +181,6 @@ def reader(request, submission):
             },
             "body": mark_safe(body),
             "contents": contents,
-            "discussion_config": config,
             "chapters": [
                 {
                     **p,
@@ -242,9 +192,6 @@ def reader(request, submission):
             if submission.chapters
             else [],
             "chapter": page,
-            "chapter_edit_url": edit_url + "&" + urlencode({"scope": "@chapter"})
-            if edit_url
-            else None,
             "chapter_reference_url": reader_url + "?" + urlencode({"chapter": selected}),
             "chapter_number": index + 1,
             "chapter_has_title": any(
@@ -263,7 +210,7 @@ def reader(request, submission):
                 "paper": str(submission.paper_id),
                 "submission": str(submission.pk),
                 "chapter": selected,
-                "explicit": bool(request.GET.get("chapter") or request.GET.get("discussion")),
+                "explicit": bool(request.GET.get("chapter")),
                 "progress_url": reverse("reading_progress", args=[submission.paper_id])
                 if request.user.is_authenticated
                 else "",
@@ -327,136 +274,181 @@ def manifest(request, submission_id):
     return response
 
 
+@never_cache
 @verified_required
 @limited("upload", limit=40, seconds=3600)
 @agreement_required
-def upload(request, paper_id=None):
+@require_http_methods(["GET", "POST"])
+def upload(request: HttpRequest, paper_id: uuid.UUID | None = None) -> HttpResponse:
     paper = get_object_or_404(public_papers(), pk=paper_id) if paper_id else None
-    if request.method == "GET":
-        return redirect("edit_paper", paper_id=paper.pk) if paper else redirect("write")
-    if request.method == "POST" and request.POST.get("action") == "confirm":
-        return confirm_upload(request, paper)
+    action = request.POST.get("action")
+    token = request.POST.get("token", "")
+    previous = None
+    if token or action in {"edit", "confirm"}:
+        try:
+            previous = signing.loads(token, salt="upload-preview", max_age=3600)
+            if previous["user"] != request.user.pk or previous["paper"] != (
+                str(paper.pk) if paper else None
+            ):
+                raise signing.BadSignature()
+        except (signing.BadSignature, KeyError, ValueError):
+            return render(
+                request,
+                "error.html",
+                {
+                    "heading": "Preview expired",
+                    "detail": "Upload your Markdown file again.",
+                    "retry_upload": True,
+                    "paper": paper,
+                },
+                status=400,
+            )
+        if action == "confirm":
+            return confirm_upload(request, paper, previous, token)
+        if paper and str(paper.current_id) != previous["base"]:
+            return render(
+                request,
+                "error.html",
+                {
+                    "heading": "This paper has a newer version",
+                    "detail": "Download the latest accepted version before proposing changes.",
+                    "retry_upload": True,
+                    "paper": paper,
+                },
+                status=409,
+            )
+    if paper and (paper.current.chapters or paper.current.bibliography):
+        return render(
+            request,
+            "publishing/upload.html",
+            {"paper": paper, "source_bundle": True},
+            status=409 if request.method == "POST" else 200,
+        )
     initial = (
         {**{key: getattr(paper.current, key) for key in METADATA_FIELDS}, "base": paper.current_id}
         if paper
         else {}
     )
+    reviewing = request.method == "POST" and action != "edit"
+    filename = ""
+    if previous:
+        filename = previous.get("filename", "paper.md")
+        initial.update(previous["data"])
+        initial["file"] = SimpleUploadedFile(filename, previous["data"]["markdown"].encode())
     form = UploadForm(
-        request.POST or None,
-        request.FILES or None,
+        request.POST if reviewing else None,
+        request.FILES if reviewing else None,
         initial=initial,
         initial_publication=paper is None,
     )
-    if request.method == "POST" and form.is_valid():
+    if reviewing and form.is_valid():
         base_id = form.cleaned_data.get("base")
-        if paper and str(base_id) != str(paper.current_id):
+        if paper and base_id != paper.current_id:
             form.add_error(
                 None,
                 "The paper has changed since you opened this form. Reload this page and use the latest accepted version.",
             )
+        elif request.FILES and (
+            list(request.FILES) != ["file"] or len(request.FILES.getlist("file")) != 1
+        ):
+            form.add_error("file", "Upload one Markdown file. Use the CLI for multiple files.")
         else:
-            data = form.submission_data()
+            data = {**form.submission_data(), "id": str(uuid.uuid4())}
             try:
-                preview_body = render_markdown(data["markdown"])
+                prepared = prepare(data, paper.current if paper else None)
             except ValidationError as error:
                 form.add_error("file", error)
-                return render(request, "publishing/upload.html", {"form": form, "paper": paper})
-            data["id"] = str(uuid.uuid4())
-            payload = {
-                "user": request.user.pk,
-                "paper": str(paper.pk) if paper else None,
-                "base": str(base_id) if paper else None,
-                "data": data,
-            }
-            token = signing.dumps(payload, salt="upload-preview", compress=True)
-            response = render(
-                request,
-                "publishing/preview.html",
-                {
-                    "paper": paper,
+            else:
+                payload = {
+                    "user": request.user.pk,
+                    "paper": str(paper.pk) if paper else None,
+                    "base": str(base_id) if paper else None,
                     "data": data,
-                    "token": token,
-                    "consent_form": PublicationConsentForm(paper=paper),
-                    "subjects": subject_links(
-                        data["primary_category"], data["secondary_categories"]
-                    ),
-                    "diff": diff_lines(paper.current.markdown, data["markdown"]) if paper else [],
-                    "metadata_changes": metadata_diff(paper.current if paper else None, data),
-                    "body": mark_safe(preview_body),
-                },
-            )
-            response["Cache-Control"] = "no-store"
-            return response
-    return render(request, "publishing/upload.html", {"form": form, "paper": paper})
+                    "filename": form.cleaned_data["file"].name,
+                }
+                token = signing.dumps(payload, salt="upload-preview", compress=True)
+                return upload_preview(
+                    request, paper, prepared, token, PublicationConsentForm(paper=paper)
+                )
+    return render(
+        request,
+        "publishing/upload.html",
+        {"form": form, "paper": paper, "previous_token": token, "filename": filename},
+    )
 
 
-def confirm_upload(request, paper):
-    try:
-        payload = signing.loads(request.POST.get("token", ""), salt="upload-preview", max_age=3600)
-        if payload["user"] != request.user.pk or payload["paper"] != (
-            str(paper.pk) if paper else None
-        ):
-            raise signing.BadSignature()
-    except (signing.BadSignature, KeyError, ValueError):
-        return render(
-            request,
-            "error.html",
-            {
-                "heading": "Preview expired",
-                "detail": "Please upload your document again. Nothing has been published.",
-            },
-            status=400,
-        )
-    existing = Submission.objects.filter(pk=payload["data"]["id"], contributor=request.user).first()
+def upload_preview(
+    request: HttpRequest,
+    paper: Paper | None,
+    prepared: PreparedDocument,
+    token: str,
+    consent: PublicationConsentForm,
+    *,
+    status: int = 200,
+) -> HttpResponse:
+    data = prepared.data
+    return render(
+        request,
+        "publishing/preview.html",
+        {
+            "paper": paper,
+            "data": data,
+            "token": token,
+            "consent_form": consent,
+            "subjects": subject_links(data["primary_category"], data["secondary_categories"]),
+            "diff": diff_lines(paper.current.markdown, data["markdown"]) if paper else [],
+            "metadata_changes": metadata_diff(paper.current if paper else None, data),
+            "body": mark_safe(prepared.result["pages"][0]["html"]),
+        },
+        status=status,
+    )
+
+
+def confirm_upload(
+    request: HttpRequest, paper: Paper | None, payload: dict[str, Any], token: str
+) -> HttpResponse:
+    data = payload["data"]
+    existing = Submission.objects.filter(pk=data["id"], contributor=request.user).first()
     if existing:
-        return redirect(existing.get_absolute_url())
+        return redirect(existing.get_absolute_url() if paper else existing.paper.get_absolute_url())
     consent = PublicationConsentForm(request.POST, paper=paper)
-    if not consent.is_valid():
-        data = payload["data"]
-        return render(
-            request,
-            "publishing/preview.html",
-            {
-                "paper": paper,
-                "data": data,
-                "token": request.POST.get("token"),
-                "consent_form": consent,
-                "body": mark_safe(render_markdown(data["markdown"])),
-                "subjects": subject_links(data["primary_category"], data["secondary_categories"]),
-                "diff": diff_lines(paper.current.markdown, data["markdown"]) if paper else [],
-                "metadata_changes": metadata_diff(paper.current if paper else None, data),
-            },
-            status=400,
-        )
-    if not paper:
-        payload["data"]["license"] = consent.code()
     try:
+        if paper and str(paper.current_id) != payload["base"]:
+            raise ValidationError(
+                "This paper has a newer accepted version. Download it before submitting your changes."
+            )
+        if not consent.is_valid():
+            prepared = prepare(data, paper.current if paper else None)
+            return upload_preview(request, paper, prepared, token, consent, status=400)
         if paper:
-            submission = propose(request.user, paper.pk, payload["base"], payload["data"])
-            messages.success(request, "Submission published. Its contents are now frozen.")
+            submission = propose(request.user, paper.pk, payload["base"], data)
+            messages.success(request, "Proposal submitted for review.")
             return redirect(submission.get_absolute_url())
-        new_paper = publish(request.user, payload["data"])
+        new_paper = publish(request.user, {**data, "license": consent.code()})
     except ValidationError as error:
         return render(
             request,
             "error.html",
-            {"heading": "Submission could not be published", "detail": " ".join(error.messages)},
+            {
+                "heading": "Submission could not be published",
+                "detail": " ".join(error.messages),
+                "retry_upload": True,
+                "paper": paper,
+            },
             status=409,
         )
     except IntegrityError:
-        existing = Submission.objects.filter(
-            pk=payload["data"]["id"], contributor=request.user
-        ).first()
+        existing = Submission.objects.filter(pk=data["id"], contributor=request.user).first()
         if existing:
-            return redirect(existing.get_absolute_url())
+            return redirect(
+                existing.get_absolute_url() if paper else existing.paper.get_absolute_url()
+            )
         raise
-    messages.success(
-        request, "Your paper is published. Future changes will create new submissions."
-    )
+    messages.success(request, "Paper published.")
     return redirect(new_paper.get_absolute_url())
 
 
-def submission_detail(request, submission_id):
+def submission_detail(request: HttpRequest, submission_id: uuid.UUID) -> HttpResponse:
     submission = get_object_or_404(submission_queryset(), pk=submission_id)
     base = submission.base
     from .documents import chapter_diff
@@ -501,9 +493,6 @@ def submission_detail(request, submission_id):
             "comment_form": CommentForm(),
             "pr": pr,
             "commits": pr.commits.select_related("submission") if pr else [],
-            "linked_discussions": pr.linked_threads.select_related("thread__passage__submission")
-            if pr
-            else [],
         },
     )
 

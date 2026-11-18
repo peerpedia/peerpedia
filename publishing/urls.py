@@ -1,6 +1,6 @@
 from django.urls import path
-from django.views.generic import TemplateView
-from . import views, drafts, discussions, notifications
+from django.views.generic import RedirectView, TemplateView
+from . import views, drafts, notifications
 from . import licensing, reading
 
 urlpatterns = [
@@ -23,7 +23,6 @@ urlpatterns = [
         views.read_version,
         name="read_version",
     ),
-    path("references/search/", reading.reference_search, name="reference_search"),
     path("papers/<uuid:paper_id>/progress/", reading.progress, name="reading_progress"),
     path("terms/", licensing.terms, name="terms"),
     path("terms/<str:version>/", licensing.terms, name="terms_version"),
@@ -35,50 +34,19 @@ urlpatterns = [
     path("inbox/", notifications.inbox, name="inbox"),
     path("inbox/read/", notifications.mark_read, name="inbox_read"),
     path("inbox/<int:notification_id>/open/", notifications.open_notification, name="inbox_open"),
-    path("submissions/<uuid:submission_id>/passages/", discussions.index, name="passage_index"),
+    path("write/", RedirectView.as_view(pattern_name="publish"), name="write"),
     path(
-        "submissions/<uuid:submission_id>/discussions/", discussions.create, name="passage_create"
-    ),
-    path("passages/<uuid:passage_id>/", discussions.detail, name="passage_detail"),
-    path(
-        "discussion-comments/<uuid:comment_id>/replies/",
-        discussions.replies,
-        name="passage_replies",
-    ),
-    path("discussion-comments/<uuid:comment_id>/reply/", discussions.reply, name="passage_reply"),
-    path("discussion-comments/<uuid:comment_id>/edit/", discussions.edit, name="passage_edit"),
-    path(
-        "discussion-comments/<uuid:comment_id>/history/",
-        discussions.history,
-        name="passage_history",
-    ),
-    path("discussion-comments/<uuid:comment_id>/vote/", discussions.vote, name="passage_vote"),
-    path(
-        "discussion-comments/<uuid:comment_id>/resolve/",
-        discussions.resolve,
-        name="passage_resolve",
+        "papers/<uuid:paper_id>/edit/",
+        RedirectView.as_view(pattern_name="propose"),
+        name="edit_paper",
     ),
     path(
-        "discussion-comments/<uuid:comment_id>/report/", discussions.report, name="passage_report"
+        "prs/<uuid:pr_id>/edit/", RedirectView.as_view(pattern_name="pull_request"), name="edit_pr"
     ),
-    path(
-        "discussion-comments/<uuid:comment_id>/link_pr/",
-        discussions.link_pr,
-        name="passage_link_pr",
-    ),
-    path("write/", drafts.start, name="write"),
-    path("papers/<uuid:paper_id>/edit/", drafts.start, name="edit_paper"),
-    path("prs/<uuid:pr_id>/edit/", drafts.start, name="edit_pr"),
     path("prs/<uuid:pr_id>/", views.pull_request_detail, name="pull_request"),
     path("drafts/", drafts.listing, name="drafts"),
-    path("drafts/<uuid:draft_id>/", drafts.editor, name="editor"),
-    path("drafts/<uuid:draft_id>/save/", drafts.save, name="draft_save"),
+    path("drafts/<uuid:draft_id>/", drafts.detail),
     path("drafts/<uuid:draft_id>/export/", drafts.export, name="draft_export"),
-    path("drafts/<uuid:draft_id>/preview/", drafts.preview, name="draft_preview"),
-    path("drafts/<uuid:draft_id>/rebase/", drafts.rebase, name="draft_rebase"),
-    path("drafts/<uuid:draft_id>/review/", drafts.review, name="draft_review"),
-    path("drafts/<uuid:draft_id>/submit/", drafts.submit, name="draft_submit"),
-    path("drafts/<uuid:draft_id>/discard/", drafts.discard, name="draft_discard"),
     path("", views.browse, name="browse"),
     path("health/", views.health, name="health"),
     path("help/", TemplateView.as_view(template_name="publishing/help.html"), name="help"),

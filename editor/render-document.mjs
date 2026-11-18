@@ -1,249 +1,138 @@
-import { createProcessor, defineDialect } from "bananamark";
-import { declaredLabels } from "bananamark-codemirror";
+import { createBook, createRenderer, defineDialect } from "bananamark";
 import { tikz } from "bananamark-tikz";
-import { JSDOM } from "jsdom";
+import { load } from "cheerio";
+import { decodeHTMLAttribute } from "entities";
+import { createHash } from "node:crypto";
+import { LRUCache } from "lru-cache";
 import { dialectOptions, numbering } from "./dialect.js";
-import { chapterTitle } from "./chapter-title.js";
+import { inspectChapter } from "./chapter-title.js";
 
 const dialect = defineDialect(dialectOptions);
-const dom = new JSDOM("");
-const document = dom.window.document;
-const fragment = (html) => {
-  const element = document.createElement("div");
-  element.innerHTML = html;
-  return element;
-};
-const plain = (html) => fragment(html).textContent;
-// DOM serialization leaves angle brackets literal in quoted attributes. Keep
-// authored TeX/quote metadata escaped as well as the visible content.
-const serialize = (root) =>
-  root.innerHTML.replace(/="[^"]*"/g, (value) =>
-    value.replaceAll("<", "&lt;").replaceAll(">", "&gt;"),
-  );
+/** @typedef {{id: string, title?: string, markdown: string}} Page */
+/** @typedef {{pages?: Page[], source?: string, action?: string, bibliography?: string, reader?: string, prefix?: string,
+ * diagrams?: boolean, staticUrl?: string, numberSections?: boolean}} DocumentInput */
+/** @typedef {ReturnType<typeof createBook>} Book */
+/** @typedef {ReturnType<Book["transform"]>} ResolvedDocument */
+/** @typedef {ReturnType<typeof createRenderer>} Renderer */
+/** @typedef {ReturnType<typeof tikz>} DiagramCompiler */
+/** @typedef {{id:string,level:number,label:string,title:boolean,number:string}} PageHeading */
+/** @typedef {{html:string,headings:PageHeading[],diagramCount:number}} CompiledChapter */
+/** @typedef {{id:string,title:string,html:string,headings:PageHeading[]}} RenderedPage */
+/** @typedef {{pages:RenderedPage[],targets:object[],entries:Record<string, object>,warnings:string[]}} RenderedDocument */
 
-// Source ranges come from BananaMark's own editor grammar. UTF-16 offsets are
-// converted to Unicode code points before crossing the Python boundary.
-export function scan(source) {
-  const headings = [],
-    numberedMath = [],
-    references = new Set();
-  let images = false,
-    depth = 0;
-  dialect.language.language.parser.parse(source).iterate({
-    enter(node) {
-      const written = source.slice(node.from, node.to);
-      if (node.name === "FencedCode") {
-        const language = node.node
-          .getChild("Document")
-          ?.getChild("codeLanguage");
-        const body = node.node.getChild("CodeText");
-        if (
-          language &&
-          body &&
-          source.slice(language.from, language.to) === "math"
-        )
-          numberedMath.push(source.slice(body.from, body.to));
-      }
-      if (node.name === "Image") images = true;
-      if (node.name === "Reference")
-        references.add(written.replace(/^\{?@-?/, "").replace(/\}$/, ""));
-      if (node.name === "EnvironmentFence")
-        depth += /^\s*:::\s*$/.test(written) ? -1 : 1;
-      if (/^(ATX|Setext)Heading\d$/.test(node.name))
-        headings.push({
-          line: source.slice(0, node.from).split(/\r\n|\r|\n/).length,
-          start: [...source.slice(0, node.from)].length,
-          end: [...source.slice(0, node.to)].length,
-          root: node.node.parent?.name === "Document" && depth === 0,
-        });
-    },
+/** @type {LRUCache<string, CompiledChapter>} */
+const chapters = new LRUCache({ max: 256, maxSize: 16 * 1024 * 1024 });
+
+/** @type {LRUCache<string, ReturnType<typeof sourceInfo>>} */
+const sources = new LRUCache({ max: 256, maxSize: 4 * 1024 * 1024 });
+
+/** Only fingerprints of source that passed BananaMark's own math checks. */
+/** @type {LRUCache<string,boolean>} */
+const validated = new LRUCache({ max: 256 });
+
+/** @param {string} source @returns {ReturnType<typeof inspectChapter>} */
+function sourceInfo(source) {
+  const cached = sources.get(source);
+  if (cached) return cached;
+  const info = inspectChapter(source);
+  sources.set(source, info, {
+    size: Math.max(
+      1,
+      Buffer.byteLength(source) + Buffer.byteLength(info.title),
+    ),
   });
-  return { headings, references: [...references], images, numberedMath };
+  return info;
 }
 
-function annotate(
-  html,
-  headingData,
-  offset,
-  chapter,
+/** @param {string} html @returns {string} */
+function plain(html) {
+  return load(html, {}, false).root().text();
+}
+
+/** Put each embedded help example's fragment links and SVG resources in its own namespace.
+ * @param {string} html @param {string} prefix @returns {string} */
+function prefixExampleIds(html, prefix) {
+  const $ = load(html, {}, false);
+  /** @param {string} _match @param {string} id @returns {string} */
+  function svgReference(_match, id) {
+    return "url(#" + prefix + id + ")";
+  }
+  for (const element of $("*")) {
+    for (const [name, value] of Object.entries(element.attribs)) {
+      if (name === "id") element.attribs[name] = prefix + value;
+      else if (
+        (name === "href" || name === "xlink:href") &&
+        value.startsWith("#")
+      )
+        element.attribs[name] = "#" + prefix + value.slice(1);
+      else if (element.namespace === "http://www.w3.org/2000/svg")
+        element.attribs[name] = value.replace(/url\(#([^)]*)\)/g, svgReference);
+    }
+  }
+  return $.html();
+}
+
+/** @param {Page} page @param {ResolvedDocument} resolved @param {Renderer} renderer
+ * @param {DiagramCompiler|null} diagrams @param {number} previousDiagrams @param {string} prefix @returns {Promise<CompiledChapter>} */
+async function compileChapter(
+  page,
+  resolved,
+  renderer,
+  diagrams,
+  previousDiagrams,
   prefix,
-  labels,
-  pageUrl,
-  numberedMath,
 ) {
-  const root = fragment(html),
-    blocks = [],
-    path = [],
-    counts = new Map();
-  // Canonical references keep passage quotes stable when chapter numbers change.
-  for (const link of root.querySelectorAll("a[href]")) {
-    const href = link.getAttribute("href");
-    const label = labels.find(
-      (l) =>
-        (href === "#" + l.anchor && l.page === chapter) ||
-        href === pageUrl(l.page) + "#" + l.anchor,
-    );
-    if (label) {
-      link.dataset.reference = label.name;
-      if (link.textContent === label.text)
-        link.dataset.passageMath = "@" + label.name;
+  const info = { key: page.id, file: page.id + ".md", lang: "en" };
+  if (sourceInfo(page.markdown).images)
+    throw new Error("Images are not supported. Use a TikZ diagram instead.");
+  const result = renderer.renderDocument(resolved, info);
+  let diagramCount = 0;
+  if (diagrams && result.html.includes("bm-tikz-source")) {
+    // Inspect only the renderer's diagram placeholders. The library replaces them
+    // with SVG; ordinary chapters pass through as a single immutable string.
+    for (const match of result.html.matchAll(
+      /<span(?: id="[^"]*")? class="bm-math-rendered(?: bm-math-display)? bm-tikz-source" data-tex="([^"]*)"/g,
+    )) {
+      if (previousDiagrams + ++diagramCount > 32)
+        throw new Error("Keep each paper below 32 diagrams.");
+      if (
+        Buffer.byteLength(match[1]) > 32768 &&
+        Buffer.byteLength(decodeHTMLAttribute(match[1])) > 32768
+      )
+        throw new Error("Keep each diagram below 32 KB.");
     }
+    result.html = await diagrams.render(result.html, info);
   }
-  // These are presentation, never part of a reader's selected quote.
-  const ignored =
-    ".bm-heading-link,.bm-section-number,.bm-envtitle,.bm-footnote-backref";
-  root.querySelectorAll("br").forEach((node) => {
-    if (node.nextSibling?.nodeType === 3)
-      node.nextSibling.textContent = node.nextSibling.textContent.replace(
-        /^\n/,
-        "",
-      );
-  });
-  root.querySelectorAll(".bm-section-number").forEach((node) => {
-    if (node.nextSibling?.nodeType === 3) {
-      const spaces = node.nextSibling.textContent.match(/^\s*/)[0];
-      node.textContent += spaces;
-      node.nextSibling.textContent = node.nextSibling.textContent.slice(
-        spaces.length,
-      );
-    }
-  });
-  root
-    .querySelectorAll(ignored)
-    .forEach((node) => node.setAttribute("data-passage-ignore", ""));
-  root.querySelectorAll(".bm-math-rendered").forEach((node) => {
-    const normalize = (tex) =>
-      tex
-        .trim()
-        .split("\n")
-        .map((line) => line.trim())
-        .join("\n");
-    const unnumbered = node.dataset.tex.replace(/\n\\tag\{[\d.]+\}$/, "");
-    const canonical = numberedMath.some(
-      (tex) => normalize(tex) === normalize(unnumbered),
-    )
-      ? unnumbered
-      : node.dataset.tex;
-    const end = node.querySelector(".bm-math-end");
-    const punctuation = end
-      ? [...end.childNodes]
-          .filter((n) => n.nodeType === 3)
-          .map((n) => n.textContent)
-          .join("")
-      : "";
-    node.dataset.passageMath = "$" + canonical + "$" + punctuation;
-    node.dataset.passageTex = canonical;
-  });
-  root.querySelectorAll(".bm-math-display").forEach((node) => {
-    if (!node.closest("p,pre,table")) {
-      const wrapper = document.createElement("div");
-      wrapper.className = "passage-equation";
-      node.replaceWith(wrapper);
-      wrapper.append(node);
-    }
-  });
-  function text(node) {
-    if (node.nodeType === 3) return node.textContent;
-    if (node.nodeType !== 1 || node.hasAttribute("data-passage-ignore"))
-      return "";
-    if (node.hasAttribute("data-passage-math")) return node.dataset.passageMath;
-    if (node.tagName === "BR") return "\n";
-    return [...node.childNodes].map(text).join("");
-  }
-  // Tight lists have no <p>; wrap their leading inline content for selection.
-  for (const li of root.querySelectorAll("li")) {
-    if (li.closest(".bm-bibliography")) continue;
-    const p = document.createElement("p");
-    while (
-      li.firstChild &&
-      !/^(P|UL|OL|DIV|PRE|TABLE|BLOCKQUOTE)$/.test(li.firstChild.nodeName)
-    )
-      p.append(li.firstChild);
-    if (p.childNodes.length) li.prepend(p);
-  }
-  const candidates = root.querySelectorAll(
-    "h1,h2,h3,h4,h5,h6,p,pre,table,.passage-equation",
-  );
-  for (const node of candidates) {
-    if (
-      node.closest(".bm-bibliography,.bm-envtitle") ||
-      node.parentElement.closest("pre,table,p")
-    )
-      continue;
-    if (/^H[1-6]$/.test(node.tagName)) {
-      const level = Number(node.tagName[1]),
-        label = text(node).trim();
-      while (path.length && path.at(-1).level >= level) path.pop();
-      path.push({ level, label });
-    }
-    let kind =
-      node.tagName === "PRE"
-        ? "code"
-        : node.tagName === "TABLE"
-          ? "table"
-          : "text";
-    const math =
-      node.children.length === 1 &&
-      node.firstElementChild.matches(".bm-math-display")
-        ? node.firstElementChild
-        : null;
-    let value = text(node);
-    if (math) {
-      kind = "equation";
-      value = math.dataset.passageTex;
-    }
-    if (!value.trim()) continue;
-    const sectionPath = path.map((h) => h.label),
-      key = JSON.stringify([sectionPath, kind]);
-    const ordinal = counts.get(key) || 0;
-    counts.set(key, ordinal + 1);
-    const block = {
-      id: "b" + (offset + blocks.length),
-      kind,
-      text: value,
-      path: sectionPath,
-      ordinal,
-      chapter,
-    };
-    blocks.push(block);
-    node.dataset.passage = block.id;
-    node.dataset.passageKind = kind;
-    node.dataset.passageText = value;
-  }
-  const elements = [...root.querySelectorAll("h1,h2,h3,h4,h5,h6")];
-  const headings = headingData.map((heading, i) => {
-    if (heading.line)
-      elements[i]?.setAttribute("data-source-line", heading.line);
-    return { ...heading, id: prefix + heading.id };
-  });
-  if (prefix) {
-    root.querySelectorAll("[id]").forEach((node) => {
-      node.id = prefix + node.id;
-    });
-    root.querySelectorAll("*").forEach((node) => {
-      for (const attribute of [...node.attributes]) {
-        let value = attribute.value;
-        if (
-          ["href", "xlink:href"].includes(attribute.name) &&
-          value.startsWith("#")
-        )
-          value = "#" + prefix + value.slice(1);
-        if (node.namespaceURI === "http://www.w3.org/2000/svg")
-          value = value.replace(
-            /url\(#([^)]*)\)/g,
-            (_, id) => `url(#${prefix}${id})`,
-          );
-        if (value !== attribute.value) node.setAttribute(attribute.name, value);
-      }
+  const headings = [];
+  for (const [n, heading] of result.headings.entries()) {
+    const { id, level } = heading,
+      title = resolved.meta.headingTitles[id];
+    headings.push({
+      level,
+      id: prefix + id,
+      number: resolved.meta.sectionNumbers[id] ?? "",
+      title: n === 0 && level === 1,
+      // Rich labels are rendered as standalone title fragments. A chapter's HTML
+      // is never reopened to recover its table of contents.
+      label:
+        title === undefined
+          ? ""
+          : !title.nodes.length && /^[\p{L}\p{N} .,-]+$/u.test(title.markdown)
+            ? title.markdown
+            : plain(renderer.renderFragment(title, info)),
     });
   }
-  return { html: serialize(root), headings, blocks };
+  return {
+    html: prefix ? prefixExampleIds(result.html, prefix) : result.html,
+    headings,
+    diagramCount,
+  };
 }
 
+/** @param {DocumentInput} input @returns {Promise<RenderedDocument|{images:boolean}>} */
 export async function renderDocument(input) {
-  if (input.action === "titles")
-    return { titles: input.pages.map((p) => chapterTitle(p.markdown)) };
-  if (input.action === "scan") return scan(input.source || "");
+  if (input.action === "scan")
+    return { images: sourceInfo(input.source || "").images };
   const pages = input.pages || [
     { id: "main", title: "", markdown: input.source || "" },
   ];
@@ -255,29 +144,20 @@ export async function renderDocument(input) {
     throw new Error("Document is too large.");
   const reader = input.reader || "",
     prefix = input.prefix || "";
-  const url = (key) => reader + "?chapter=" + encodeURIComponent(key);
-  const processor = createProcessor({
-    dialect,
-    checkMath: true,
-    resolvePageLink: (key) => ({ url: url(key) }),
-  });
-  const book = processor.book({ numbering });
-  // Metadata-only requests may describe one chapter of a larger book. They must
-  // not reject references whose declarations are in the other chapters.
-  if (input.action === "structure") {
-    const known = new Set(
-      pages.flatMap((p) =>
-        declaredLabels(p.markdown, { bibliography: true }).map((l) => l.name),
-      ),
-    );
-    for (const name of new Set(
-      pages.flatMap((p) => scan(p.markdown).references),
-    )) {
-      if (!known.has(name) && !pages.some((p) => p.id === name))
-        book.declare(name, { text: "@" + name });
-    }
+  /** @param {string} key @returns {string} */
+  function url(key) {
+    return reader + "?chapter=" + encodeURIComponent(key);
   }
-  const handles = pages.map((page, i) => {
+  /** @param {string} key @returns {{url:string}} */
+  function resolvePageLink(key) {
+    return { url: url(key) };
+  }
+  const renderer = createRenderer({ dialect, resolvePageLink });
+  const book = createBook({ dialect, numbering });
+  const handles = [],
+    titles = [],
+    sourceKeys = [];
+  for (const [i, page] of pages.entries()) {
     let source = page.markdown;
     if (i === pages.length - 1 && input.bibliography?.trim()) {
       const fence = "`".repeat(
@@ -297,26 +177,38 @@ export async function renderDocument(input) {
         fence +
         "\n";
     }
-    return book.add(source, {
-      key: page.id,
-      title: chapterTitle(page.markdown),
-      position: input.numberSections === false ? [] : [i + 1],
-      file: page.id + ".md",
-    });
-  });
-  let offset = 0,
-    diagramCount = 0;
+    const title = sourceInfo(page.markdown).title;
+    titles.push(title);
+    const sourceKey = createHash("sha256").update(source).digest("hex");
+    sourceKeys.push(sourceKey);
+    handles.push(
+      book.add(source, {
+        key: page.id,
+        // Let BananaMark catch errors even in unused source (e.g. a footnote)
+        // on the first build. Identical source already passed the same dialect.
+        checkMath: !validated.has(sourceKey),
+        title,
+        position: input.numberSections === false ? [] : [i + 1],
+        file: page.id + ".md",
+      }),
+    );
+  }
+  let diagramCount = 0;
   const rendered = [],
     entries = {};
   const diagrams = input.diagrams
     ? tikz({
         cache: process.env.BANANAMARK_CACHE || undefined,
         fonts: {
-          href: (font) =>
-            (input.staticUrl || "/static/") +
-            "vendor/bananamark/tikz/" +
-            font +
-            ".ttf",
+          /** @param {string} font @returns {string} */
+          href(font) {
+            return (
+              (input.staticUrl || "/static/") +
+              "vendor/bananamark/tikz/" +
+              font +
+              ".ttf"
+            );
+          },
         },
         timeout: 8000,
         totalTimeout: 20000,
@@ -325,94 +217,80 @@ export async function renderDocument(input) {
     : null;
   try {
     for (const [i, page] of pages.entries()) {
-      if (input.renderChapter && input.renderChapter !== page.id) continue;
-      const result = book.render(handles[i]);
-      if (
-        input.diagrams &&
-        (!input.diagramChapter || input.diagramChapter === page.id)
-      ) {
-        const raw = fragment(result.html);
-        for (const node of raw.querySelectorAll(".bm-tikz-source")) {
-          diagramCount++;
-          if (diagramCount > 32)
-            throw new Error("Keep each paper below 32 diagrams.");
-          if (Buffer.byteLength(node.dataset.tex) > 32768)
-            throw new Error("Keep each diagram below 32 KB.");
-        }
-        result.html = await diagrams.render(result.html, {
-          file: page.id + ".md",
-        });
-      }
-      const sourceInfo = scan(page.markdown);
-      if (sourceInfo.images)
-        throw new Error(
-          "Images are not supported. Use a TikZ diagram instead.",
+      // Transform resolves all cross-chapter captions, numbering and bibliography
+      // before a cache lookup. An invalid chapter cannot reuse a previous success.
+      const resolved = book.transform(handles[i]);
+      const key = createHash("sha256")
+        .update(
+          JSON.stringify([
+            page.id,
+            page.markdown,
+            resolved,
+            reader,
+            prefix,
+            Boolean(diagrams),
+            input.staticUrl || "/static/",
+          ]),
+        )
+        .digest("hex");
+      let compiled = chapters.get(key);
+      if (!compiled) {
+        compiled = await compileChapter(
+          page,
+          resolved,
+          renderer,
+          diagrams,
+          diagramCount,
+          prefix,
         );
-      const headings = result.headings.map((heading, n) => ({
-        ...heading,
-        ...sourceInfo.headings[n],
-        label: plain(heading.title),
-        title: n === 0 && heading.level === 1,
-      }));
-      const resultPage = annotate(
-        result.html,
-        headings,
-        offset,
-        page.id,
-        prefix,
-        book.labels(),
-        url,
-        sourceInfo.numberedMath,
-      );
-      offset += resultPage.blocks.length;
-      for (const entry of result.bibliography)
-        entries[entry.key] = { ...entry, author: entry.citationLabel };
+        const size =
+          Buffer.byteLength(compiled.html) +
+          Buffer.byteLength(JSON.stringify(compiled.headings));
+        chapters.set(key, compiled, { size });
+      }
+      validated.set(sourceKeys[i], true);
+      diagramCount += compiled.diagramCount;
+      if (diagramCount > 32)
+        throw new Error("Keep each paper below 32 diagrams.");
       rendered.push({
         id: page.id,
-        title: chapterTitle(page.markdown),
-        ...resultPage,
+        title: titles[i],
+        html: compiled.html,
+        headings: structuredClone(compiled.headings),
       });
+      for (const entry of resolved.meta.bibliography)
+        entries[entry.key] = { ...entry, author: entry.citationLabel };
     }
   } finally {
     await diagrams?.close();
   }
-  if (input.section) {
-    const section = input.section,
-      page = rendered.find((p) => p.id === section.chapter);
-    const root = fragment(page.html);
-    let inside = false;
-    for (const node of [...root.childNodes]) {
-      const line = Number(node.dataset?.sourceLine || 0);
-      if (line === section.line) inside = true;
-      if (line >= section.end) inside = false;
-      if (!inside) node.remove();
-    }
-    page.html = serialize(root);
-    page.headings = page.headings.filter(
-      (h) => h.line >= section.line && h.line < section.end,
-    );
+  const targets = [];
+  const anchors = new Map();
+  for (const page of pages) anchors.set(page.id, new Set([""]));
+  for (const label of book.labels()) {
+    anchors.get(label.page)?.add(prefix + label.anchor);
+    targets.push({
+      id: prefix + label.anchor,
+      label: label.name,
+      chapter: label.page,
+      kind: label.kind === "bibliography" ? "citation" : label.kind,
+      text: label.text,
+      title: "",
+      line: label.line,
+      end_line: label.line,
+      explicit: true,
+      url:
+        url(label.page) +
+        (label.anchor ? "#" + encodeURIComponent(prefix + label.anchor) : ""),
+    });
   }
-  const targets = book.labels().map((label) => ({
-    id: prefix + label.anchor,
-    label: label.name,
-    chapter: label.page,
-    kind: label.kind === "bibliography" ? "citation" : label.kind,
-    text: label.text,
-    title: "",
-    line: label.line,
-    end_line: label.line,
-    explicit: true,
-    url:
-      url(label.page) +
-      (label.anchor ? "#" + encodeURIComponent(prefix + label.anchor) : ""),
-  }));
-  for (const page of pages) {
+  for (const [index, page] of pages.entries()) {
     targets.push({
       id: "",
       label: page.id,
       chapter: page.id,
       kind: "chapter",
-      text: chapterTitle(page.markdown),
+      text: titles[index],
       title: "",
       explicit: false,
       url: url(page.id),
@@ -420,11 +298,9 @@ export async function renderDocument(input) {
   }
   for (const page of rendered) {
     for (const heading of page.headings) {
-      if (
-        heading.title ||
-        targets.some((t) => t.chapter === page.id && t.id === heading.id)
-      )
-        continue;
+      const ids = anchors.get(page.id);
+      if (heading.title || ids.has(heading.id)) continue;
+      ids.add(heading.id);
       targets.push({
         id: heading.id,
         label: heading.id,
@@ -433,8 +309,6 @@ export async function renderDocument(input) {
         text: heading.label,
         title: "",
         explicit: false,
-        line: heading.line,
-        end_line: heading.line,
         url: url(page.id) + "#" + encodeURIComponent(heading.id),
       });
     }

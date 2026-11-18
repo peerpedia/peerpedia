@@ -1,13 +1,40 @@
 {% extends 'base.html' %}
 {% block title %}Access tokens · Peerpedia{% endblock %}
-{% block content %}{% if not user.has_usable_password %}<div class="notice">Your account uses Google sign-in. <a href="{% url 'password_reset' %}">Add a password by email</a> before creating an access token.</div>{% endif %}
-<div class="form-layout"><h1>Access tokens</h1>
-<p class="lede">Connect your command-line client or local AI assistant.</p>
-<p>Tokens can submit public proposals on your behalf. They cannot accept submissions, manage your account, or use administrator tools.</p>
-{% if new_token %}<section class="notice"><h2>Copy your token now</h2><p>It will not be shown again. Store it outside your paper folder.</p><pre style="white-space:pre-wrap;overflow-wrap:anywhere"><code id="new-token">{{ new_token }}</code></pre><p>Run <code>peerpedia login https://peerpedia.dev</code> and paste the token at the hidden prompt. Use your own server address for local testing.</p></section>{% endif %}
-<div class="form-panel"><h2>Create a token</h2><form method="post">{% csrf_token %}{% include 'includes/form.html' %}<button class="button">Create token</button></form></div>
-<h2>Your tokens</h2>
-{% for token in tokens %}<article class="review"><h3>{{ token.name }}</h3><p><code>{{ token.prefix }}…</code> · Proposals{% if token.can_publish %} and new papers{% endif %} · Expires {{ token.expires_at|date:'j M Y, H:i' }} UTC</p>
-{% if token.revoked_at %}<p>Revoked</p>{% elif token.expires_at <= now %}<p>Expired</p>{% else %}<form method="post" action="{% url 'revoke_token' token.pk %}">{% csrf_token %}<button class="button danger">Revoke {{ token.name }}</button></form>{% endif %}</article>{% empty %}<p>No access tokens yet.</p>{% endfor %}
+{% block content %}
+<div class="form-layout">
+  <header class="page-heading">
+    <h1>Access tokens</h1>
+    <p>Give a command-line client or AI assistant permission to propose changes to papers.</p>
+  </header>
+  {% if new_token %}
+    <section class="notice" role="status">
+      <h2>Copy your token now</h2>
+      <p>This is the only time you can see the full token. Store it outside your paper folder.</p>
+      <p><code id="new-token">{{ new_token }}</code></p>
+      <p>Run <code>peerpedia login {{ site_url }}</code> and paste your token when prompted.</p>
+    </section>
+  {% endif %}
+  <section class="settings-group">
+    <h2>Create a token</h2>
+    {% if user.has_usable_password %}
+      <form method="post">{% csrf_token %}{% include 'includes/form.html' %}<button class="button">Create token</button></form>
+    {% else %}
+      <p><a href="{% url 'password_reset' %}?next={{ request.path|urlencode }}">Add a password by email</a> to create a token.</p>
+    {% endif %}
+  </section>
+  <section class="settings-group">
+    <h2>Your tokens</h2>
+    {% for token in tokens %}
+      <article class="history-row">
+        <div>
+          <h3>{{ token.name }}</h3>
+          <p class="muted"><code>{{ token.prefix }}…</code> · Proposals{% if token.can_publish %} and new papers{% endif %} · {% if token.revoked_at %}Revoked{% elif token.expires_at <= now %}Expired{% else %}Expires {{ token.expires_at|date:'j M Y, H:i T' }}{% endif %}</p>
+        </div>
+        {% if not token.revoked_at and token.expires_at > now %}
+          <form method="post" action="{% url 'revoke_token' token.pk %}">{% csrf_token %}<button class="button secondary">Revoke {{ token.name }}</button></form>
+        {% endif %}
+      </article>
+    {% empty %}<p class="muted">No access tokens yet.</p>{% endfor %}
+  </section>
 </div>
 {% endblock %}

@@ -1,4 +1,6 @@
+/** @returns {void} */
 (() => {
+  document.body.classList.add("reader-interactive");
   const data = document.getElementById("reading-config");
   const config = data ? JSON.parse(data.textContent) : null;
   const csrf = document.querySelector("[name=csrfmiddlewaretoken]")?.value;
@@ -11,9 +13,10 @@
       );
     } catch (_) {}
   };
-  document.addEventListener("click", async (event) => {
+  /** @param {MouseEvent} event @returns {void} */
+  function handleReferenceClick(event) {
     const reference = event.target.closest(
-      "a[data-reference], a.bm-citation, .bm-bibliography a",
+      'a[data-reference], a.bm-citation, .bm-bibliography a, #paper-text a[href^="?chapter="], #paper-text a[href^="#"]:not(.bm-heading-link)',
     );
     if (reference) {
       rememberReturn();
@@ -48,7 +51,8 @@
     }
     document.getElementById("reference-copy-status").textContent = "";
     dialog.showModal();
-  });
+  }
+  document.addEventListener("click", handleReferenceClick);
   document.querySelectorAll("[data-copy-field]").forEach((button) => {
     button.addEventListener("click", async () => {
       const input = document.querySelector(

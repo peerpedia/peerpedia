@@ -1,18 +1,6 @@
-import { build } from "esbuild";
 import { readFile, writeFile, mkdir, cp } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
-const destination = "../static/vendor/editor";
-await mkdir(destination, { recursive: true });
-await build({
-  entryPoints: ["main.js"],
-  bundle: true,
-  minify: true,
-  format: "iife",
-  target: "es2020",
-  legalComments: "eof",
-  outfile: destination + "/editor.js",
-});
 const assets = "../static/vendor/bananamark";
 await mkdir(assets, { recursive: true });
 await cp(
@@ -41,5 +29,5 @@ for (const name of Object.keys(lock.packages).filter((name) =>
     }
   }
 }
-await writeFile(destination + "/LICENSES.txt", licenses.join("\n\n-----\n\n"));
-console.log("Built the local editor bundle and third-party licenses.");
+await writeFile(assets + "/LICENSES.txt", licenses.join("\n\n-----\n\n"));
+console.log("Copied BananaMark reader styles, fonts and third-party licenses.");

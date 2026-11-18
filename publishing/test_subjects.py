@@ -230,9 +230,9 @@ class SubjectTests(TestCase):
     connection.vendor == "postgresql", "Schema-upgrade integration uses isolated PostgreSQL"
 )
 class SubjectMigrationTests(TransactionTestCase):
-    def test_populated_v1_upgrade_preserves_hash_and_guards(self):
-        before = [("publishing", "0003_apipush")]
-        after = MigrationExecutor(connection).loader.graph.leaf_nodes("publishing")
+    def test_populated_v1_upgrade_preserves_hash_and_guards(self: "SubjectMigrationTests") -> None:
+        before = [("publishing", "0003_apipush"), ("accounts", "0002_accesstoken")]
+        after = MigrationExecutor(connection).loader.graph.leaf_nodes()
         executor = MigrationExecutor(connection)
         executor.migrate(before)
         try:

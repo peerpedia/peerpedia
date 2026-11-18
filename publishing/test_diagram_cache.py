@@ -11,12 +11,12 @@ class RendererTransportTests(SimpleTestCase):
         following = bananamark.request(source="After the Unicode request.")
         self.assertIn("After the Unicode request.", following["pages"][0]["html"])
 
-    def test_transport_failure_preserves_actionable_error(self):
+    def test_transport_failure_preserves_actionable_error(self: "RendererTransportTests") -> None:
         with (
             patch.object(bananamark, "_process", None),
             patch("subprocess.Popen", side_effect=OSError("missing node")),
         ):
-            with self.assertRaisesMessage(ValidationError, "Your draft can still be saved"):
+            with self.assertRaisesMessage(ValidationError, "The article renderer is unavailable"):
                 bananamark._request('{"source":"uncached transport test"}', "")
 
     def test_invalid_math_exposes_the_original_line(self):

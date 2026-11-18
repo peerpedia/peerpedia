@@ -1,6 +1,7 @@
 import io
 import uuid
 from unittest.mock import patch
+from urllib.parse import parse_qs, urlsplit
 from django.core.exceptions import ValidationError
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.core.management import call_command, CommandError
@@ -18,11 +19,10 @@ from .test_support import consenting_user
 
 @override_settings(PASSWORD_HASHERS=["django.contrib.auth.hashers.MD5PasswordHasher"])
 class LicensingTests(TestCase):
-    def setUp(self):
+    def setUp(self: "LicensingTests") -> None:
         self.owner = consenting_user("owner", "owner@example.org", "password", email_verified=True)
-        self.new = User.objects.create_user(
-            "new", "new@example.org", "password", email_verified=True
-        )
+        self.new = User.objects.create_user("new", "new@example.org", "password")
+        self.new.emailaddress_set.create(email=self.new.email, primary=True, verified=True)
 
     def accept(self, **data):
         self.client.force_login(self.new)
@@ -206,31 +206,17 @@ class LicensingTests(TestCase):
         self.assertEqual(downloaded.content, paper.current.markdown.encode())
         self.assertContains(self.client.get(reverse("paper", args=[paper.pk])), "CC BY-NC-ND 4.0")
 
-    def test_editor_confirmation_cannot_skip_rights_or_license(self):
-        from .models import Draft
+    def test_agreement_returns_to_the_requested_upload_form(self: "LicensingTests") -> None:
+        paper = publish(self.owner, document())
+        self.client.force_login(self.new)
+        for url in (reverse("publish"), reverse("propose", args=[paper.pk])):
+            for response in (self.client.get(url), self.client.post(url)):
+                destination = urlsplit(response.url)
+                self.assertEqual(destination.path, reverse("agreements"))
+                self.assertEqual(parse_qs(destination.query), {"next": [url]})
+        self.assertEqual(paper.submissions.count(), 1)
 
-        self.client.force_login(self.owner)
-        draft = Draft.objects.create(
-            owner=self.owner,
-            data={k: v for k, v in document().items() if k not in {"license", "markdown"}},
-            markdown="# Note",
-        )
-        response = self.client.post(
-            reverse("draft_review", args=[draft.pk]), {"revision": draft.revision}
-        )
-        token = response.context["token"]
-        self.client.post(reverse("draft_submit", args=[draft.pk]), {"token": token})
-        self.assertFalse(Paper.objects.exists())
-        self.client.post(
-            reverse("draft_submit", args=[draft.pk]),
-            {"token": token, "rights_confirmed": "on", "license": "CC0-1.0"},
-        )
-        self.assertEqual(Paper.objects.get().current.license_code, "CC0-1.0")
-
-    def test_comments_require_agreement_but_are_not_cc_licensed(self):
-        from .discussion_actions import create
-        from .passages import blocks
-
+    def test_comments_require_agreement_but_are_not_cc_licensed(self: "LicensingTests") -> None:
         paper = publish(self.owner, document())
         self.client.force_login(self.new)
         result = self.client.post(
@@ -238,17 +224,6 @@ class LicensingTests(TestCase):
         )
         self.assertEqual(result.status_code, 302)
         self.assertIn("/agreements/", result.url)
-        block = blocks(paper.current.markdown)[0]
-        with self.assertRaisesMessage(ValidationError, "agreement"):
-            create(
-                self.new,
-                {
-                    "spans": [{"block": block["id"], "start": 0, "end": 4}],
-                    "score": 5,
-                    "text": "Text",
-                },
-                paper.current_id,
-            )
         self.assertContains(
             self.client.get(reverse("terms")),
             "No general Creative Commons license is assigned to comments",

@@ -1,11 +1,18 @@
 from django.contrib.auth.models import AbstractUser
 from django.db import models
+from django.db.models import F
 from django.db.models.functions import Lower
 
 
 class User(AbstractUser):
     email = models.EmailField(unique=True)
-    email_verified = models.BooleanField(default=False)
+
+    @property
+    def email_verified(self: "User") -> bool:
+        return (
+            bool(self.pk)
+            and self.emailaddress_set.filter(email__iexact=F("user__email"), verified=True).exists()
+        )
 
     class Meta:
         constraints = [

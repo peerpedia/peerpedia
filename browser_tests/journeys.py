@@ -7,17 +7,19 @@ import json
 from pathlib import Path
 import re
 import time
+import zipfile
 from concurrent.futures import ThreadPoolExecutor
 from urllib.parse import urlsplit
 from django.contrib.staticfiles.testing import StaticLiveServerTestCase
 from django.core import mail
 from django.db import connections
 from django.test import override_settings
-from playwright.sync_api import expect, sync_playwright
+from django.urls import reverse
+from playwright.sync_api import Route, expect, sync_playwright
 from accounts.models import User
 from django_otp.oath import totp
 from django_otp.plugins.otp_totp.models import TOTPDevice
-from publishing.models import Draft, Paper, Review, Submission, PassageComment
+from publishing.models import Draft, Paper, Review, Submission
 from publishing.services import publish, propose
 
 PASSWORD = "Browser-Only-Password-938!"
@@ -84,12 +86,12 @@ class BrowserJourneys(StaticLiveServerTestCase):
         finally:
             self.context.close()
 
-    def login(self, username="owner", password=PASSWORD):
+    def login(self: "BrowserJourneys", username: str = "owner", password: str = PASSWORD) -> None:
         self.page.goto(self.live_server_url + "/accounts/login/")
         self.page.get_by_label("Username or email").fill(username)
         self.page.get_by_label("Password:", exact=True).fill(password)
         self.page.get_by_role("button", name="Sign in", exact=True).click()
-        expect(self.page.get_by_role("button", name="Sign out")).to_be_visible()
+        expect(self.page.get_by_role("link", name=re.compile(r"^Account(?:,|$)"))).to_be_visible()
 
     def fixture_paper(self, source=SOURCE, **extra):
         return self.database_call(
@@ -121,26 +123,22 @@ class BrowserJourneys(StaticLiveServerTestCase):
         with ThreadPoolExecutor(max_workers=1) as pool:
             return pool.submit(call).result()
 
-    def upload(self, source=SOURCE, proposal=False):
-        expect(self.page.locator(".cm-content")).to_be_visible()
-        self.page.locator("#editor-files > summary").click()
+    def upload(self: "BrowserJourneys", source: str = SOURCE, proposal: bool = False) -> None:
         if proposal:
-            self.page.once("dialog", lambda dialog: dialog.accept())
-        self.page.locator("#import-draft").set_input_files(
+            self.page.get_by_text("Paper details", exact=True).click()
+            expect(self.page.get_by_label("Title:", exact=True)).to_have_value("Browser paper")
+            expect(self.page.get_by_label("Authors:", exact=True)).to_have_value("Ada Example")
+            expect(self.page.get_by_label("Primary subject:", exact=True)).to_have_value("math.NT")
+            self.page.get_by_label("What changed?", exact=True).fill("Correct the proof.")
+        else:
+            self.page.get_by_label("Title:", exact=True).fill("Browser paper")
+            self.page.get_by_label("Authors:", exact=True).fill("Ada Example")
+            self.page.get_by_label("Abstract:", exact=True).fill("A private-to-metadata abstract.")
+            self.page.get_by_label("Primary subject:", exact=True).select_option("math.NT")
+        self.page.get_by_label("Markdown document:", exact=True).set_input_files(
             {"name": "paper.md", "mimeType": "text/markdown", "buffer": source.encode()}
         )
-        expect(self.page.locator("#save-status")).to_have_text("Saved")
-        if not self.page.locator("#paper-details").evaluate("el => el.open"):
-            self.page.locator("#paper-details > summary").click()
-        self.page.get_by_label("Title:", exact=True).fill("Browser paper")
-        self.page.get_by_label("Authors:", exact=True).fill("Ada Example")
-        self.page.get_by_label("Abstract:", exact=True).fill("A private-to-metadata abstract.")
-        self.page.get_by_label("Primary subject:", exact=True).select_option("math.NT")
-        if proposal:
-            self.page.get_by_label("What changed?", exact=True).fill("Correct the proof.")
-        self.page.get_by_role(
-            "button", name="Review & submit PR" if proposal else "Review & publish", exact=True
-        ).click()
+        self.page.get_by_role("button", name=re.compile("^Preview ")).click()
 
     def assert_math(self):
         expect(self.page.locator(".katex-mathml")).to_have_count(2)
@@ -170,13 +168,13 @@ class BrowserJourneys(StaticLiveServerTestCase):
         })""")
         self.assertLessEqual(layout["width"], layout["viewport"] + 1, str(layout))
 
-    def test_reader_chapter_edit_import_and_reference_controls(self):
+    def test_chapter_citations_and_source_handoff(self: "BrowserJourneys") -> None:
         from publishing.test_chapters import course
 
         paper = self.database_call(lambda: publish(self.owner, course()))
         self.login()
         self.page.goto(self.live_server_url + paper.current.read_url + "?chapter=intro")
-        self.page.get_by_role("link", name="Paper details", exact=True).click()
+        self.page.get_by_role("link", name="Abstract & reviews", exact=True).click()
         expect(self.page.locator(".paper-metadata")).to_be_visible()
         self.page.go_back()
         for title, suffix in [
@@ -188,74 +186,40 @@ class BrowserJourneys(StaticLiveServerTestCase):
                 self.live_server_url + paper.current.read_url + suffix
             )
             self.page.get_by_role("button", name="Close reference tools", exact=True).click()
-        pencil = self.page.get_by_role("link", name="Edit chapter", exact=True)
-        expect(pencil).to_have_class(re.compile("section-edit.*ui-icon-button"))
-        evidence = Path(os.environ["PEERPEDIA_BROWSER_ARTIFACTS"]) / "chapter-scope"
-        evidence.mkdir(parents=True, exist_ok=True)
-        self.page.screenshot(path=str(evidence / "reader-pencil.png"))
-        pencil.click()
-        expect(self.page.locator(".section-scope")).to_contain_text("Introduction · Chapter draft")
-        expect(self.page.locator("#chapter-panel")).not_to_be_visible()
-        expect(self.page.get_by_role("button", name="Chapters", exact=True)).not_to_be_visible()
-        expect(self.page.locator(".cm-content")).not_to_contain_text("Every example has a proof.")
-        self.page.locator(".cm-content").fill(
-            "# Clearer introduction\n\n## Motivation\n\nA clearer explanation."
+        expect(self.page.get_by_role("link", name="Propose a change", exact=True)).to_have_count(0)
+        self.page.get_by_role("link", name="Abstract & reviews", exact=True).click()
+        self.page.get_by_role("link", name="Propose a change", exact=True).click()
+        expect(self.page.locator('input[type="file"]')).to_have_count(0)
+        expect(self.page.get_by_role("link", name="Open CLI guide", exact=True)).to_have_attribute(
+            "href", "/help/cli/"
         )
-        expect(self.page.locator("#draft-preview")).to_contain_text("Clearer introduction")
-        expect(self.page.locator("#save-status")).to_have_text("Saved")
-        self.page.reload()
-        expect(self.page.locator(".cm-content")).to_contain_text("# Clearer introduction")
-        self.page.locator("#editor-files > summary").click()
-        self.page.once("dialog", lambda dialog: dialog.accept())
-        self.page.locator("#import-draft").set_input_files(
-            {
-                "name": "intro.md",
-                "mimeType": "text/markdown",
-                "buffer": b"# Imported introduction\n\n## Motivation\n\nNew text.",
-            }
-        )
-        expect(self.page.locator("#draft-preview")).to_contain_text("Imported introduction")
-        expect(self.page.locator("#save-status")).to_have_text("Saved")
-        self.page.locator("#editor-files > summary").click()
-        for width in [1365, 900, 390]:
-            self.page.set_viewport_size({"width": width, "height": 900})
-            self.assertGreater(self.page.locator("#workspace").bounding_box()["height"], 450)
-            self.assert_no_page_overflow()
-        self.page.set_viewport_size({"width": 1365, "height": 900})
-        self.page.screenshot(path=str(evidence / "chapter-only-editor.png"))
-        self.page.locator("#paper-details > summary").click()
-        self.page.get_by_label("What changed?", exact=True).fill("Improve the introduction")
-        self.page.get_by_role("button", name="Review & submit PR", exact=True).click()
-        expect(self.page.get_by_role("link", name="Paper details", exact=True)).to_have_attribute(
-            "href", paper.get_absolute_url()
-        )
-        self.page.get_by_label("I have authority to submit", exact=False).check()
-        self.page.get_by_role("button", name="Submit PR", exact=True).click()
-        expect(self.page.locator(".submission-heading .status")).to_have_text("Pending")
-        pages = self.database_call(
-            lambda: Submission.objects.filter(paper=paper).latest("created_at").chapters
-        )
-        self.assertEqual(pages[0]["id"], "intro")
-        scope = self.database_call(
-            lambda: Submission.objects.filter(paper=paper).latest("created_at").pr_commit.section
-        )
-        self.assertEqual(scope["kind"], "chapter")
-        self.assertEqual(pages[0]["title"], "Imported introduction")
-        self.assertEqual(pages[1]["markdown"], course()["chapters"][1]["markdown"])
+        with self.page.expect_download() as download:
+            self.page.get_by_role("link", name="Download source files", exact=True).click()
+        document = course()
+        with zipfile.ZipFile(download.value.path()) as archive:
+            manifest = json.loads(archive.read("paper.json"))
+            self.assertEqual([entry["id"] for entry in manifest["chapters"]], ["intro", "proof"])
+            for entry, chapter in zip(manifest["chapters"], document["chapters"], strict=True):
+                self.assertEqual(archive.read(entry["file"]).decode(), chapter["markdown"])
+            self.assertEqual(
+                archive.read(manifest["bibliography"]).decode(), document["bibliography"]
+            )
+        self.assertEqual(self.database_call(Submission.objects.count), 1)
 
-    def test_author_license_choice_requires_human_agreement(self):
+    def test_author_license_choice_requires_human_agreement(self: "BrowserJourneys") -> None:
         from accounts.models import User
         from publishing.models import AgreementAcceptance
         from publishing.licensing import VERSION
 
-        new_user = self.database_call(
-            lambda: User.objects.create_user(
-                "license-author", "license@example.org", PASSWORD, email_verified=True
-            )
-        )
+        def create_verified_author() -> User:
+            user = User.objects.create_user("license-author", "license@example.org", PASSWORD)
+            user.emailaddress_set.create(email=user.email, verified=True, primary=True)
+            return user
+
+        new_user = self.database_call(create_verified_author)
         self.login("license-author")
         self.page.goto(self.live_server_url + "/publish/")
-        expect(self.page.get_by_role("heading", name="Before you contribute")).to_be_visible()
+        expect(self.page.get_by_role("heading", name="Contribution agreement")).to_be_visible()
         self.assertFalse(
             self.database_call(lambda: AgreementAcceptance.objects.filter(user=new_user).exists())
         )
@@ -269,21 +233,15 @@ class BrowserJourneys(StaticLiveServerTestCase):
         expect(self.page.get_by_label("Content license:", exact=True)).to_have_value("")
         self.page.get_by_label("Content license:", exact=True).select_option("CC-BY-NC-ND-4.0")
         self.page.get_by_label("I have authority to submit", exact=False).check()
-        self.page.get_by_role("button", name="Publish initial submission", exact=True).click()
-        expect(self.page.get_by_role("link", name="CC BY-NC-ND 4.0", exact=True)).to_be_visible()
+        self.page.get_by_role("button", name="Publish paper", exact=True).click()
         paper = self.database_call(lambda: Paper.objects.get(owner=new_user))
         self.assertEqual(self.database_call(lambda: paper.current.license_code), "CC-BY-NC-ND-4.0")
-        self.page.get_by_role("link", name="Paper details", exact=True).click()
-        self.page.get_by_role("link", name="Edit paper", exact=True).click()
-        self.page.locator(".cm-content").fill(REVISED)
-        expect(self.page.locator("#save-status")).to_have_text("Saved")
-        self.page.locator("#paper-details > summary").click()
-        self.page.get_by_label("What changed?", exact=True).fill("Correct the proof.")
-        self.page.get_by_role("button", name="Review & submit PR", exact=True).click()
+        self.page.get_by_role("link", name="Propose a change", exact=True).click()
+        self.upload(REVISED, proposal=True)
         expect(self.page.get_by_role("link", name="CC BY-NC-ND 4.0", exact=True)).to_be_visible()
         expect(self.page.get_by_label("Content license:", exact=True)).to_have_count(0)
         self.page.get_by_label("I have authority to submit", exact=False).check()
-        self.page.get_by_role("button", name="Submit PR", exact=True).click()
+        self.page.get_by_role("button", name="Submit proposal", exact=True).click()
         self.assertEqual(
             self.database_call(lambda: Submission.objects.filter(paper=paper).count()), 2
         )
@@ -291,60 +249,83 @@ class BrowserJourneys(StaticLiveServerTestCase):
         self.page.goto(self.live_server_url + "/licenses/")
         self.assert_no_page_overflow()
 
-    def test_upload_preview_publish_reader_and_download(self):
+    def test_upload_preview_publish_reader_and_download(self: "BrowserJourneys") -> None:
         self.login()
-        self.page.get_by_role("link", name="My drafts", exact=True).click()
-        self.page.get_by_role("link", name="Write a new note", exact=True).click()
+        self.page.set_viewport_size({"width": 390, "height": 844})
+        self.page.get_by_role("navigation", name="Main navigation").get_by_role(
+            "link", name="Upload paper", exact=True
+        ).click()
+        expect(self.page).to_have_url(self.live_server_url + "/publish/")
+        self.assert_no_page_overflow()
         self.upload()
-        expect(self.page.get_by_role("heading", name="Review your paper")).to_be_visible()
+        expect(self.page.get_by_role("heading", name="Preview paper")).to_be_visible()
         self.assertEqual(self.database_call(Paper.objects.count), 0)
         self.assert_math()
+        self.assert_no_page_overflow()
+        self.page.get_by_role("button", name="Edit upload").click()
+        expect(self.page.get_by_label("Title:", exact=True)).to_have_value("Browser paper")
+        expect(self.page.get_by_text("paper.md", exact=True)).to_be_visible()
+        self.page.get_by_role("button", name="Preview paper").click()
+        self.assert_math()
         self.page.get_by_label("Content license:", exact=True).select_option("CC-BY-4.0")
-        self.page.get_by_label("I have authority to submit", exact=False).check()
-        self.page.get_by_role("button", name="Publish initial submission", exact=True).click()
+        consent = self.page.get_by_label("I have authority to submit", exact=False)
+        expect(consent).not_to_be_checked()
+        self.page.get_by_role("button", name="Publish paper", exact=True).click()
+        expect(consent).to_be_focused()
+        self.assertEqual(self.database_call(Paper.objects.count), 0)
+        consent.check()
+        self.page.get_by_role("button", name="Publish paper", exact=True).click()
         expect(self.page.get_by_role("heading", name="Browser paper", exact=True)).to_be_visible()
         self.assertEqual(self.database_call(Paper.objects.count), 1)
         short_hash = self.database_call(lambda: Paper.objects.get().current.public_id)
-        self.page.get_by_role("link", name="Paper details", exact=True).click()
         metadata_url = self.page.url
         public_id = self.database_call(lambda: Paper.objects.get().public_id)
         self.assertTrue(metadata_url.endswith(f"/papers/{public_id}/"))
+        self.page.get_by_text("Publication details", exact=True).click()
         with self.page.expect_download() as event:
             self.page.get_by_role("link", name="Download Markdown", exact=True).click()
         self.assertEqual(Path(event.value.path()).read_bytes(), SOURCE.encode())
         self.page.get_by_role("link", name="Read paper", exact=True).click()
         expect(self.page).to_have_url(self.live_server_url + f"/submissions/{short_hash}/read/")
         self.assert_math()
-        expect(self.page.locator(".site-header, .site-footer")).to_have_count(0)
-        expect(self.page.get_by_role("link", name="Peerpedia home")).to_be_visible()
-        expect(self.page.get_by_role("link", name=public_id, exact=True)).to_be_visible()
-        expect(self.page.get_by_role("button", name="Discussions", exact=True)).to_be_visible()
+        expect(self.page.locator(".site-header")).to_be_visible()
+        expect(self.page.get_by_role("link", name="Peerpedia home")).to_have_attribute("href", "/")
+        expect(self.page.get_by_role("link", name="Abstract & reviews")).to_have_attribute(
+            "href", f"/papers/{public_id}/"
+        )
+        expect(self.page.get_by_role("button", name="Discussions", exact=True)).to_have_count(0)
         self.page.go_back()
         expect(self.page.get_by_role("heading", name="Abstract", exact=True)).to_be_visible()
+        metadata = self.page.locator(".publication-details")
+        if not metadata.evaluate("element => element.open"):
+            metadata.locator("summary").click()
         self.page.get_by_role("link", name="History", exact=True).click()
         expect(self.page.locator(".history-row code").filter(has_text=short_hash)).to_be_visible()
 
-    def test_proposal_diff_conversation_acceptance_and_preserved_history(self):
+    def test_proposal_diff_conversation_acceptance_and_preserved_history(
+        self: "BrowserJourneys",
+    ) -> None:
         paper = self.fixture_paper()
         original_id = paper.current_id
         self.login("contributor")
-        self.page.goto(f"{self.live_server_url}/papers/{paper.pk}/")
-        self.page.get_by_role("link", name="Edit paper", exact=True).click()
+        self.page.goto(self.live_server_url + paper.get_absolute_url())
+        self.page.get_by_role("link", name="Propose a change", exact=True).click()
+        expect(self.page).to_have_url(self.live_server_url + reverse("propose", args=[paper.pk]))
         self.upload(REVISED, proposal=True)
         expect(self.page.get_by_role("region", name="Markdown source differences")).to_contain_text(
             "+Corrected proof."
         )
         self.assertEqual(self.database_call(Submission.objects.count), 1)
         self.page.get_by_label("I have authority to submit", exact=False).check()
-        self.page.get_by_role("button", name="Submit PR", exact=True).click()
+        self.page.get_by_role("button", name="Submit proposal", exact=True).click()
         expect(self.page.locator(".submission-heading .status")).to_have_text("Pending")
+        self.database_call(paper.refresh_from_db)
+        self.assertEqual(paper.current_id, original_id)
         submission_url = self.page.url
+        self.page.get_by_text("Version details", exact=True).click()
         frozen_hash = self.page.locator(".hash-info dd code").first.inner_text()
-        expect(self.page.get_by_role("button", name="Accept submission")).to_have_count(0)
-        expect(
-            self.page.get_by_role("region", name="Markdown source differences")
-        ).not_to_be_visible()
-        self.page.get_by_text("View Markdown changes", exact=True).click()
+        expect(self.page.get_by_role("button", name="Accept proposal")).to_have_count(0)
+        expect(self.page.get_by_role("region", name="Markdown source differences")).to_be_visible()
         expect(self.page.locator(".source-diff .deletion")).to_contain_text(
             ["---", "-Original proof."]
         )
@@ -356,11 +337,13 @@ class BrowserJourneys(StaticLiveServerTestCase):
         expect(self.page.locator("#conversation .review")).to_contain_text(
             "Please check the corrected proof."
         )
+        self.page.get_by_role("link", name=re.compile(r"^Account(?:,|$)")).click()
         self.page.get_by_role("button", name="Sign out").click()
         self.login()
         self.page.goto(submission_url)
-        self.page.get_by_role("button", name="Accept submission").click()
+        self.page.get_by_role("button", name="Accept proposal").click()
         expect(self.page.locator(".submission-heading .status")).to_have_text("Accepted")
+        self.page.get_by_text("Version details", exact=True).click()
         expect(self.page.locator(".hash-info dd code").first).to_have_text(frozen_hash)
         self.database_call(paper.refresh_from_db)
         self.assertNotEqual(paper.current_id, original_id)
@@ -372,10 +355,17 @@ class BrowserJourneys(StaticLiveServerTestCase):
         self.page.goto(f"{self.live_server_url}/papers/{paper.pk}/read/")
         expect(self.page.locator(".markdown-body")).to_contain_text("Corrected proof.")
 
-    def test_review_required_text_edit_and_browse_rating(self):
+    def test_review_required_text_edit_and_browse_rating(self: "BrowserJourneys") -> None:
         paper = self.fixture_paper()
-        self.login("contributor")
-        self.page.goto(f"{self.live_server_url}/papers/{paper.pk}/")
+        self.page.goto(self.live_server_url + paper.get_absolute_url())
+        self.page.get_by_role("link", name="Sign in to write a review").click()
+        self.page.get_by_label("Username or email").fill("contributor")
+        self.page.get_by_label("Password:", exact=True).fill(PASSWORD)
+        self.page.get_by_role("button", name="Sign in", exact=True).click()
+        expect(self.page).to_have_url(
+            self.live_server_url + paper.get_absolute_url() + "?compose=1#reviews"
+        )
+        expect(self.page.get_by_label("Your review:", exact=True)).to_be_visible()
         for score in range(1, 6):
             self.page.locator(".paper-star").nth(score - 1).hover()
             for index in range(5):
@@ -397,6 +387,7 @@ class BrowserJourneys(StaticLiveServerTestCase):
         self.page.get_by_label("Your review:", exact=True).fill("A useful and clear proof.")
         self.page.get_by_role("button", name="Publish review").click()
         expect(self.page.locator(".rating-summary")).to_contain_text("5.0")
+        self.page.get_by_text("Edit your review", exact=True).click()
         self.page.get_by_label("5 stars", exact=True).press("ArrowLeft")
         expect(self.page.get_by_label("4 stars", exact=True)).to_be_checked()
         self.page.get_by_label("Your review:", exact=True).fill(
@@ -406,12 +397,13 @@ class BrowserJourneys(StaticLiveServerTestCase):
         expect(self.page.locator("#reviews .review")).to_have_count(1)
         expect(self.page.locator(".rating-summary")).to_contain_text("4.0")
         self.assertEqual(self.database_call(Review.objects.count), 1)
-        self.page.get_by_role("link", name="Browse", exact=True).click()
+        self.page.get_by_role("link", name="Peerpedia home", exact=True).click()
+        self.page.get_by_text("Filters", exact=True).click()
         self.page.get_by_label("Sort by").select_option("rating")
-        self.page.get_by_role("button", name="Apply", exact=True).click()
+        self.page.get_by_role("button", name="Search", exact=True).click()
         expect(self.page.locator(".paper-row .rating-cell")).to_contain_text("4.0")
 
-    def test_administration_navigation_and_readonly_history(self):
+    def test_administration_navigation_and_readonly_history(self: "BrowserJourneys") -> None:
         paper = self.fixture_paper()
         self.database_call(
             lambda: User.objects.filter(pk=self.owner.pk).update(is_staff=True, is_superuser=True)
@@ -438,9 +430,10 @@ class BrowserJourneys(StaticLiveServerTestCase):
         expect(self.page.locator(".auth-panel li code")).to_have_count(8)
         self.page.get_by_role("link", name="I saved my codes · Continue", exact=True).click()
         self.page.set_viewport_size({"width": 1365, "height": 900})
+        self.page.get_by_role("link", name=re.compile(r"^Account(?:,|$)")).click()
         self.page.get_by_role("link", name="Admin", exact=True).click()
-        expect(self.page.get_by_role("heading", name="To a better academia")).to_be_visible()
-        expect(self.page.get_by_role("link", name=re.compile("Reported comments"))).to_be_visible()
+        expect(self.page.get_by_role("heading", name="Administration", exact=True)).to_be_visible()
+        expect(self.page.get_by_role("link", name=re.compile("Paper reviews"))).to_be_visible()
         self.page.get_by_role("link", name=re.compile("Paper snapshots")).click()
         expect(self.page.get_by_role("link", name="Browser paper", exact=True)).to_be_visible()
         self.page.get_by_role("link", name="Browser paper", exact=True).click()
@@ -456,369 +449,19 @@ class BrowserJourneys(StaticLiveServerTestCase):
             )
         )
         self.page.get_by_role("link", name="Peerpedia home", exact=True).click()
-        expect(self.page.get_by_role("heading", name="To a better academia")).to_be_visible()
+        expect(self.page.get_by_role("heading", name="Papers", exact=True)).to_be_visible()
 
-    def test_new_note_from_navigation_to_initial_publication(self):
-        self.login()
-        self.page.get_by_role("link", name="New note", exact=True).click()
-        source = self.page.locator(".cm-content")
-        expect(source).to_be_visible()
-        expect(self.page.locator(".cm-placeholder")).to_be_visible()
-        # Hints are not draft content; an untouched draft cannot publish.
-        self.assertEqual(self.database_call(lambda: Draft.objects.get().markdown), "")
-        self.page.get_by_role("button", name="Review & publish", exact=True).click()
-        expect(self.page.get_by_role("dialog")).to_be_visible()
-        self.page.get_by_role("dialog").get_by_role("button", name=re.compile("^Title")).click()
-        expect(self.page.get_by_label("Title:", exact=True)).to_be_focused()
-        expect(self.page.get_by_label("Title:", exact=True)).to_have_attribute(
-            "aria-invalid", "true"
-        )
-        self.page.set_viewport_size({"width": 390, "height": 844})
-        self.assert_no_page_overflow()
-        self.page.get_by_label("Title:", exact=True).fill("A note written online")
-        self.page.get_by_label("Authors:", exact=True).fill("Ada Example")
-        self.page.get_by_label("Abstract:", exact=True).fill("Written without an uploaded file.")
-        self.page.get_by_label("Primary subject:", exact=True).select_option("math.NT")
-        expect(self.page.get_by_label("What changed?", exact=True)).to_have_count(0)
-        self.page.get_by_role("button", name="Done", exact=True).click()
-        self.page.get_by_role("button", name="Review & publish", exact=True).click()
-        expect(self.page.get_by_role("dialog")).to_contain_text("Write your note")
-        self.page.get_by_role("dialog").get_by_role(
-            "button", name=re.compile("^Paper text")
-        ).click()
-        source.fill(SOURCE)
-        expect(self.page.locator("#save-status")).to_have_text("Saved")
-        self.assert_no_page_overflow()
-        self.page.get_by_role("link", name="My drafts", exact=True).click()
-        self.assertEqual(self.database_call(Paper.objects.count), 0)
-        self.page.get_by_role("link", name="A note written online", exact=True).click()
-        expect(self.page.locator(".cm-content")).to_contain_text("Original proof.")
-        self.page.set_viewport_size({"width": 1365, "height": 900})
-        expect(self.page.locator("#draft-preview")).to_contain_text("Original proof.")
-        self.page.get_by_role("button", name="Review & publish", exact=True).click()
-        expect(
-            self.page.get_by_role("heading", name="Review your paper", exact=True)
-        ).to_be_visible()
-        self.assertEqual(self.database_call(Paper.objects.count), 0)
-        self.page.get_by_role("button", name="Publish initial submission", exact=True).click()
-        expect(self.page.get_by_role("dialog")).to_contain_text("Choose the license")
-        self.page.get_by_role("dialog").get_by_role(
-            "button", name=re.compile("^Content license")
-        ).click()
-        self.page.get_by_label("Content license:", exact=True).select_option("CC-BY-4.0")
-        self.page.get_by_label("I have authority to submit", exact=False).check()
-        self.page.get_by_role("button", name="Publish initial submission", exact=True).click()
-        expect(
-            self.page.get_by_role("heading", name="A note written online", exact=True)
-        ).to_be_visible()
-        paper = self.database_call(lambda: Paper.objects.select_related("current__agreement").get())
-        self.assertEqual(paper.current.markdown, SOURCE)
-        self.assertEqual(paper.current.explanation, "Initial publication.")
-        self.assertEqual(paper.current.license_code, "CC-BY-4.0")
-        self.assertEqual(paper.current.hash, paper.current.calculate_hash())
-
-    def test_publication_checklist_errors_and_visible_discard(self):
-        paper = self.fixture_paper()
-        self.login()
-        self.page.goto(self.live_server_url + f"/papers/{paper.pk}/edit/")
-        expect(self.page.get_by_role("button", name="Discard draft", exact=True)).to_be_visible()
-        expect(self.page.locator("#publication-checklist")).to_contain_text("What changed?")
-        self.page.get_by_role("button", name="Review & submit PR", exact=True).click()
-        popup = self.page.get_by_role("dialog")
-        expect(popup).to_contain_text("Describe your changes and why they help")
-        folder = Path(os.environ["PEERPEDIA_BROWSER_ARTIFACTS"]) / "publication-guidance"
-        folder.mkdir(parents=True, exist_ok=True)
-        self.page.screenshot(path=str(folder / "missing-description.png"))
-        popup.get_by_role("button", name=re.compile("^What changed")).click()
-        field = self.page.get_by_label("What changed?", exact=True)
-        expect(field).to_be_focused()
-        expect(field).to_have_attribute("aria-invalid", "true")
-        field.fill("Correct the proof and explain its assumptions.")
-        expect(field).not_to_have_attribute("aria-invalid", "true")
-        expect(self.page.locator("#publication-status")).to_have_text("Ready to review")
-        # Wrong combinations must get the same field guidance as missing values.
-        self.page.locator(".optional-subjects > summary").click()
-        self.page.locator('input[name="secondary_categories"][value="math.NT"]').check()
-        self.page.get_by_role("button", name="Review & submit PR", exact=True).click()
-        expect(popup).to_contain_text("Choose each subject only once")
-        popup.get_by_role("button", name=re.compile("^Cross-list subjects")).click()
-        self.page.locator('input[name="secondary_categories"][value="math.NT"]').uncheck()
-        self.page.get_by_role("button", name="Done", exact=True).click()
-        self.page.set_viewport_size({"width": 390, "height": 844})
-        expect(self.page.get_by_role("button", name="Discard draft", exact=True)).to_be_visible()
-        self.assert_no_page_overflow()
-        self.page.screenshot(path=str(folder / "mobile-editor.png"))
-        self.page.once("dialog", lambda prompt: prompt.accept())
-        self.page.get_by_role("button", name="Discard draft", exact=True).click()
-        expect(self.page.get_by_role("heading", name="My drafts", exact=True)).to_be_visible()
-        self.assertEqual(self.database_call(Draft.objects.count), 0)
-        self.assertEqual(
-            self.database_call(lambda: Paper.objects.get(pk=paper.pk).current.hash),
-            paper.current.hash,
-        )
-
-    def test_editor_autosave_preview_reload_and_submission(self):
-        paper = self.fixture_paper()
-        original_hash = paper.current.hash
-        self.login()
-        self.page.goto(self.live_server_url + f"/papers/{paper.pk}/edit/")
-        source = self.page.locator(".cm-content")
-        expect(source).to_be_visible()
-        revised = SOURCE.replace("Original proof.", "Autosaved proof with a new explanation.")
-        source.fill(revised)
-        expect(self.page.locator("#save-status")).to_have_text("Saved")
-        expect(self.page.locator("#draft-preview")).to_contain_text("Autosaved proof")
-        draft = self.database_call(lambda: Draft.objects.get(owner=self.owner, paper=paper))
-        self.assertEqual(draft.markdown, revised)
-        self.page.reload()
-        expect(self.page.locator(".cm-content")).to_contain_text("Autosaved proof")
-        self.page.locator("#paper-details > summary").click()
-        self.page.get_by_label("What changed?", exact=True).fill(
-            "Clarify the proof from the online editor."
-        )
-        self.page.get_by_role("button", name="Review & submit PR", exact=True).click()
-        expect(self.page.get_by_role("heading", name="Review your changes")).to_be_visible()
-        self.page.get_by_label("I have authority to submit", exact=False).check()
-        self.page.get_by_role("button", name="Submit PR", exact=True).click()
-        expect(
-            self.page.get_by_text("Clarify the proof from the online editor.", exact=True)
-        ).to_be_visible()
-        self.assertEqual(
-            self.database_call(lambda: Paper.objects.get(pk=paper.pk).current.hash), original_hash
-        )
-        self.assertEqual(
-            self.database_call(lambda: Draft.objects.get(pk=draft.pk).submitted.markdown), revised
-        )
-
-    def test_preview_coalesces_edits_and_ignores_obsolete_errors(self):
-        paper = self.fixture_paper()
-        self.login()
-        self.page.goto(self.live_server_url + f"/papers/{paper.pk}/edit/")
-        expect(self.page.locator("#preview-status")).to_contain_text("same renderer")
-        requests = []
-
-        def preview(route):
-            requests.append(route)
-            if len(requests) > 1:
-                route.continue_()
-
-        self.page.route("**/preview/", preview)
-        self.page.evaluate("""() => {
-            window.previewStatuses = [];
-            new MutationObserver(() => window.previewStatuses.push(document.querySelector('#preview-status').textContent))
-                .observe(document.querySelector('#preview-status'), { childList: true, subtree: true });
-        }""")
-        source = self.page.locator(".cm-content")
-        source.fill("# Old request\n\nOld text.")
-        self.page.wait_for_timeout(700)
-        self.assertEqual(len(requests), 1)
-        source.fill("# Latest request\n\nOnly the latest text should appear.")
-        self.page.wait_for_timeout(700)
-        self.assertEqual(len(requests), 1, "Only one preview request may be in flight")
-        requests[0].fulfill(
-            status=400,
-            content_type="application/json",
-            body=json.dumps(
-                {
-                    "error": "Obsolete formula error",
-                    "diagnostics": [{"line": 1, "message": "Obsolete formula error"}],
-                }
-            ),
-        )
-        expect(self.page.locator("#draft-preview")).to_contain_text(
-            "Only the latest text should appear."
-        )
-        expect(self.page.locator("#preview-status")).to_contain_text("same renderer")
-        self.assertEqual(len(requests), 2)
-        self.assertFalse(
-            any("Obsolete" in text for text in self.page.evaluate("window.previewStatuses"))
-        )
-        expect(self.page.locator(".cm-lintRange-error")).to_have_count(0)
-
-    def test_section_edit_creates_pending_entry_in_submissions(self):
-        self.assert_section_submission(chaptered=False)
-
-    def test_chapter_section_edit_creates_pending_entry_in_submissions(self):
-        self.assert_section_submission(chaptered=True)
-
-    def assert_section_submission(self, chaptered):
-        source = (
-            "# Browser paper\n\nIntroduction stays unchanged.\n\n"
-            "## Argument\n\nOriginal argument.\n\n"
-            "### Detail\n\nSupporting detail.\n\n"
-            "## Conclusion\n\nConclusion stays unchanged.\n"
-        )
-        chapters = [
-            {"id": "argument", "title": "Argument", "markdown": source},
-            {
-                "id": "exercises",
-                "title": "Exercises",
-                "markdown": "# Exercises\n\nTry it yourself.\n",
-            },
-        ]
-        if chaptered:
-            from publishing.documents import combined
-
-            original = combined(chapters)
-            paper = self.fixture_paper(original, chapters=chapters, bibliography="")
-        else:
-            original = source
-            paper = self.fixture_paper(source)
-        original_hash = paper.current.hash
-        explanation = "Clarify the argument through a section edit."
-        self.login("contributor")
-        self.page.goto(self.live_server_url + f"/papers/{paper.pk}/read/")
-        self.page.get_by_role("link", name=re.compile(r"^Edit section (1\.1 )?Argument$")).click()
-        section = self.page.locator(".cm-content")
-        expect(section).to_contain_text("Original argument.")
-        expect(section).not_to_contain_text("Conclusion stays unchanged.")
-        section.fill("## Argument\n\nRevised argument.\n\n### Detail\n\nSupporting detail.\n\n")
-        self.page.locator("#paper-details > summary").click()
-        self.page.get_by_label("What changed?", exact=True).fill(explanation)
-        self.page.get_by_role("button", name="Review & submit PR", exact=True).click()
-        expect(self.page.get_by_role("heading", name="Review your changes")).to_be_visible()
-        self.page.get_by_label("I have authority to submit", exact=False).check()
-        self.page.get_by_role("button", name="Submit PR", exact=True).click()
-        expect(self.page.get_by_text(explanation, exact=True)).to_be_visible()
-
-        draft = self.database_call(
-            lambda: Draft.objects.select_related("submitted__decision").get(
-                owner=self.contributor, paper=paper
-            )
-        )
-        self.assertIsNotNone(draft.submitted_id)
-        self.assertEqual(self.database_call(lambda: draft.submitted.status), "pending")
-        self.assertEqual(
-            draft.submitted.markdown, original.replace("Original argument.", "Revised argument.")
-        )
-        if chaptered:
-            self.assertEqual(draft.submitted.chapters[1], chapters[1])
-        self.assertEqual(
-            self.database_call(lambda: Paper.objects.get(pk=paper.pk).current.hash),
-            original_hash,
-        )
-
-        self.page.goto(self.live_server_url + f"/papers/{paper.pk}/")
-        self.page.get_by_role("link", name="Submissions", exact=True).click()
-        entry = self.page.locator(".history-row").filter(has_text=explanation)
-        expect(entry).to_contain_text("Pending")
-        expect(entry).to_contain_text("contributor")
-        expect(entry.get_by_role("link", name=explanation, exact=True)).to_have_attribute(
-            "href", draft.submitted.get_absolute_url()
-        )
-        entry.get_by_role("link", name=explanation, exact=True).click()
-        expect(self.page.get_by_text(explanation, exact=True)).to_be_visible()
-
-    def test_editor_two_tab_conflict_and_offline_recovery(self):
-        paper = self.fixture_paper()
-        self.login()
-        self.page.goto(self.live_server_url + f"/papers/{paper.pk}/edit/")
-        expect(self.page.locator(".cm-content")).to_be_visible()
-        draft_url = self.page.url
-        second = self.context.new_page()
-        second.goto(draft_url)
-        expect(second.locator(".cm-content")).to_be_visible()
-        self.page.locator(".cm-content").fill("# Browser paper\n\nFirst tab correction.")
-        expect(self.page.locator("#save-status")).to_have_text("Saved")
-        second.locator(".cm-content").fill("# Browser paper\n\nSecond tab correction.")
-        expect(second.locator("#conflict")).to_be_visible()
-        self.assertIn(
-            "First tab correction",
-            self.database_call(lambda: Draft.objects.get(owner=self.owner, paper=paper).markdown),
-        )
-        second.once("dialog", lambda dialog: dialog.accept())
-        second.get_by_role("button", name="Keep this copy", exact=True).click()
-        expect(second.locator("#save-status")).to_have_text("Saved")
-        self.assertIn(
-            "Second tab correction",
-            self.database_call(lambda: Draft.objects.get(owner=self.owner, paper=paper).markdown),
-        )
-        # Fail only this tab's save requests. The real recovery listener writes
-        # browser storage; the test never injects a fabricated recovery record.
-        second.route("**/save/", lambda route: route.abort())
-        second.locator(".cm-content").fill("# Browser paper\n\nRecover this unsaved explanation.")
-        expect(second.locator("#save-status")).to_have_text("Couldn’t save")
-        self.assertNotIn(
-            "Recover this",
-            self.database_call(lambda: Draft.objects.get(owner=self.owner, paper=paper).markdown),
-        )
-        second.unroute("**/save/")
-        second.once("dialog", lambda dialog: dialog.accept())
-        second.reload()
-        expect(second.locator("#recovery")).to_be_visible()
-        second.get_by_role("button", name="Restore recovery copy", exact=True).click()
-        expect(second.locator("#save-status")).to_have_text("Saved")
-        self.assertIn(
-            "Recover this unsaved explanation",
-            self.database_call(lambda: Draft.objects.get(owner=self.owner, paper=paper).markdown),
-        )
-        second.close()
-
-    def test_selected_sentence_discussion_reply_vote_and_history(self):
-        paper = self.fixture_paper()
-        self.login()
-        self.page.goto(self.live_server_url + f"/papers/{paper.pk}/read/")
-        block = self.page.locator('[data-passage-kind="text"]').filter(has_text="Original proof.")
-        expect(block).to_be_visible()
-        # Browser Selection is the actual input to the annotation UI. Select
-        # just a sentence, leaving adjacent text and equation outside it.
-        block.evaluate("""element => {
-            const text = [...element.childNodes].find(n => n.nodeType === Node.TEXT_NODE && n.textContent.includes('Original proof.'));
-            const start = text.textContent.indexOf('Original proof.');
-            const range = document.createRange(); range.setStart(text,start); range.setEnd(text,start+15);
-            const selection = window.getSelection(); selection.removeAllRanges(); selection.addRange(range);
-            document.dispatchEvent(new Event('selectionchange'));
-        }""")
-        self.page.locator("#passage-selection").click()
-        panel = self.page.locator("#discussion-panel")
-        expect(panel.locator("blockquote")).to_have_text("Original proof.")
-        panel.get_by_role("button", name="4 stars", exact=True).click()
-        panel.get_by_label("Rate this passage and explain why").fill(
-            "Please explain this implication."
-        )
-        panel.get_by_role("button", name="Post comment", exact=True).click()
-        root = panel.locator(".discussion-comment").filter(
-            has_text="Please explain this implication."
-        )
-        expect(root).to_be_visible()
-        root.get_by_role("button", name="Helpful: 0", exact=True).click()
-        expect(root.get_by_role("button", name="Helpful: 1", exact=True)).to_be_visible()
-        root.get_by_role("button", name="Reply", exact=True).click()
-        root.get_by_label("Reply to owner").fill("Here is a more detailed question.")
-        root.get_by_role("button", name="Post reply", exact=True).click()
-        expect(panel.get_by_text("Here is a more detailed question.", exact=True)).to_be_visible()
-        root.locator("summary").click()
-        root.get_by_role("button", name="Edit", exact=True).click()
-        root.get_by_label("Edit your comment").fill("Clarify the implication and its assumptions.")
-        root.get_by_role("button", name="Save changes", exact=True).click()
-        edited = panel.locator(".discussion-comment").filter(
-            has_text="Clarify the implication and its assumptions."
-        )
-        expect(edited).to_be_visible()
-        edited.locator("summary").click()
-        edited.get_by_role("button", name="History", exact=True).click()
-        expect(edited.locator(".discussion-history")).to_contain_text(
-            "Please explain this implication."
-        )
-        self.assertEqual(
-            self.database_call(
-                lambda: PassageComment.objects.filter(parent__isnull=True).get().passage.quote
-            ),
-            "Original proof.",
-        )
-        self.page.set_viewport_size({"width": 390, "height": 844})
-        self.assert_no_page_overflow()
-
-    def test_signup_verification_logout_and_password_recovery(self):
+    def test_signup_verification_logout_and_password_recovery(self: "BrowserJourneys") -> None:
         self.page.goto(self.live_server_url + "/")
-        self.page.get_by_role("link", name="Create account", exact=True).click()
+        self.page.get_by_role("link", name="Sign in", exact=True).click()
+        self.page.get_by_role("link", name="Create an account", exact=True).click()
         self.page.get_by_label("Username:", exact=True).fill("newreader")
         self.page.get_by_label("Email:", exact=True).fill("newreader@example.org")
         self.page.get_by_label("Password:", exact=True).fill(PASSWORD)
-        self.page.get_by_label("Password confirmation:", exact=True).fill(PASSWORD)
+        self.page.get_by_label("Password (again):", exact=True).fill(PASSWORD)
         self.page.get_by_role("button", name="Create account", exact=True).click()
         expect(self.page.get_by_role("heading", name="Check your inbox")).to_be_visible()
-        self.page.get_by_role("link", name="New note", exact=True).click()
+        self.page.get_by_role("link", name="Upload paper", exact=True).click()
         expect(self.page.get_by_role("heading", name="Check your inbox")).to_be_visible()
         self.assertEqual(len(mail.outbox), 1)
         verification = re.search(r"http://\S+", mail.outbox[-1].body).group()
@@ -828,6 +471,7 @@ class BrowserJourneys(StaticLiveServerTestCase):
         )
         self.page.get_by_role("button", name="Verify email", exact=True).click()
         expect(self.page.get_by_role("status")).to_contain_text("Email verified")
+        self.page.get_by_role("link", name=re.compile(r"^Account(?:,|$)")).click()
         self.page.get_by_role("button", name="Sign out", exact=True).click()
         self.page.get_by_role("link", name="Sign in", exact=True).click()
         self.page.get_by_role("link", name="Forgot your password?").click()
@@ -846,7 +490,7 @@ class BrowserJourneys(StaticLiveServerTestCase):
         self.page.goto(reset)
         expect(self.page.get_by_role("heading", name="This link has expired")).to_be_visible()
 
-    def test_mobile_search_reader_math_and_expandable_diff(self):
+    def test_mobile_search_reader_math_and_expandable_diff(self: "BrowserJourneys") -> None:
         paper = self.fixture_paper()
         change = self.database_call(
             lambda: propose(
@@ -874,18 +518,19 @@ class BrowserJourneys(StaticLiveServerTestCase):
             0
         )
         self.assert_no_page_overflow()
+        expect(self.page.get_by_role("link", name="Read paper")).to_have_count(0)
+        self.page.get_by_role("link", name="Browser paper", exact=True).click()
+        expect(self.page.get_by_role("heading", name="Abstract", exact=True)).to_be_visible()
         self.page.get_by_role("link", name="Read paper", exact=True).click()
         self.assert_math()
         self.assert_no_page_overflow()
         self.page.go_back()
+        expect(self.page.get_by_role("heading", name="Reviews", exact=False)).to_be_visible()
+        self.page.go_back()
         expect(self.page.get_by_role("searchbox", name="Search papers", exact=True)).to_have_value(
             "Ada"
         )
-        self.page.get_by_role("link", name="Browser paper", exact=True).click()
-        expect(self.page.get_by_role("heading", name="Abstract", exact=True)).to_be_visible()
-        self.assert_no_page_overflow()
         self.page.goto(f"{self.live_server_url}/submissions/{change.pk}/")
-        self.page.get_by_text("View Markdown changes", exact=True).click()
         expect(self.page.get_by_role("region", name="Markdown source differences")).to_be_visible()
         self.assert_no_page_overflow()
         self.page.goto(self.live_server_url + "/")
@@ -893,9 +538,11 @@ class BrowserJourneys(StaticLiveServerTestCase):
             "no-matching-paper"
         )
         self.page.get_by_role("button", name="Search", exact=True).click()
-        expect(self.page.get_by_role("heading", name="No papers found")).to_be_visible()
+        expect(
+            self.page.locator(".empty-inline").filter(has_text="No papers found")
+        ).to_be_visible()
 
-    def test_reader_contents_scroll_mobile_keyboard_and_icons(self):
+    def test_reader_contents_scroll_mobile_keyboard_and_icons(self: "BrowserJourneys") -> None:
         paragraph = "A paragraph long enough to give each section a real reading position.\n\n"
         source = "# Reading test\n\nIntroduction.\n\n## First section\n\n" + paragraph * 18
         source += "### A proof\n\n" + paragraph * 18 + "## Last section\n\n"
@@ -918,18 +565,26 @@ class BrowserJourneys(StaticLiveServerTestCase):
         reader_url = f"{self.live_server_url}/papers/{paper.pk}/read/"
         self.page.goto(reader_url)
         navigation = self.page.get_by_role("navigation", name="Table of contents")
+        toggle = self.page.locator(".reader-contents summary")
+        expect(navigation).to_be_hidden()
+        paper_box = self.page.locator("#paper-text").bounding_box()
+        toggle.click()
         expect(navigation).to_be_visible()
+        self.assertEqual(self.page.locator("#paper-text").bounding_box(), paper_box)
         expect(navigation.get_by_role("link")).to_have_count(3)
         first = navigation.get_by_role("link", name="1 First section", exact=True)
         first.click()
-        expect(first).to_have_attribute("aria-current", "location")
+        expect(navigation).to_be_hidden()
+        expect(self.page.locator('[data-section="first-section"]')).to_have_attribute(
+            "aria-current", "location"
+        )
         self.page.locator("#a-proof").evaluate("element => element.scrollIntoView()")
-        expect(navigation.get_by_role("link", name="A proof", exact=True)).to_have_attribute(
+        expect(self.page.locator('[data-section="a-proof"]')).to_have_attribute(
             "aria-current", "location"
         )
         self.page.reload()
         # Reload restores the scroll position, which may differ from the URL fragment.
-        expect(navigation.get_by_role("link", name="A proof", exact=True)).to_have_attribute(
+        expect(self.page.locator('[data-section="a-proof"]')).to_have_attribute(
             "aria-current", "location"
         )
         self.assertTrue(
@@ -962,14 +617,22 @@ class BrowserJourneys(StaticLiveServerTestCase):
         self.page.set_viewport_size({"width": 320, "height": 740})
         self.assert_no_page_overflow()
         self.page.emulate_media(media="print")
-        expect(self.page.locator(".reader-sidebar")).not_to_be_visible()
+        expect(toggle).not_to_be_visible()
         self.page.emulate_media(media="screen")
-        no_script = self.browser.new_context(java_script_enabled=False)
+        no_script = self.browser.new_context(
+            java_script_enabled=False, viewport={"width": 320, "height": 740}
+        )
         try:
             page = no_script.new_page()
             page.goto(reader_url)
+            outline = page.get_by_role("navigation", name="Table of contents")
+            expect(outline).to_be_hidden()
+            page.locator(".reader-contents summary").click()
+            expect(outline).to_be_visible()
             page.get_by_role("link", name="2 Last section", exact=True).click()
-            expect(page).to_have_url(reader_url + "#last-section")
+            expect(page).to_have_url(
+                self.live_server_url + paper.current.read_url + "#last-section"
+            )
             expect(page.locator("#last-section")).to_be_in_viewport()
         finally:
             no_script.close()
@@ -1007,7 +670,7 @@ class BrowserJourneys(StaticLiveServerTestCase):
         result = self.page.locator("#example-table .help-sample-result").bounding_box()
         self.assertGreaterEqual(result["y"], source["y"] + source["height"])
 
-    def test_diagrams_reader_preview_and_error_recovery(self):
+    def test_diagrams_in_reader_and_upload_preview(self: "BrowserJourneys") -> None:
         source = r"""# Diagrams
 
 $$
@@ -1055,18 +718,14 @@ C \arrow[r, "k"'] & D
         self.assert_no_page_overflow()
         self.page.set_viewport_size({"width": 1365, "height": 900})
         self.login()
-        self.page.goto(f"{self.live_server_url}/papers/{paper.pk}/edit/")
-        expect(self.page.locator(".cm-content")).to_be_visible()
-        expect(self.page.locator(".bm-tikz-rendered svg")).to_have_count(2, timeout=60000)
-        self.page.locator(".cm-content").fill(
-            "```tikz\n\\begin{tikzpicture}\\notARealCommand\\end{tikzpicture}\n```"
-        )
-        expect(self.page.locator("#preview-status")).to_contain_text(
-            "TikZ compilation failed", timeout=60000
-        )
-        expect(self.page.locator("#save-status")).to_have_text("Saved")
-        self.page.locator(".cm-content").fill(source)
-        expect(self.page.locator(".bm-tikz-rendered svg")).to_have_count(2, timeout=60000)
+        self.page.goto(self.live_server_url + "/publish/")
+        self.upload(source.replace(r"\draw[blue, thick]", r"\invalidcommand"))
+        expect(self.page.get_by_role("alert")).to_contain_text("TikZ")
+        expect(self.page.get_by_role("button", name="Publish paper", exact=True)).to_have_count(0)
+        self.upload(source)
+        expect(self.page.get_by_role("heading", name="Preview paper")).to_be_visible()
+        expect(self.page.locator(".bm-tikz-rendered svg")).to_have_count(2)
+        self.assertEqual(compiler_requests, [])
 
     def test_diagram_output_removes_active_content(self):
         source = r"""```tikz
@@ -1082,25 +741,45 @@ C \arrow[r, "k"'] & D
         expect(output.locator("script,foreignObject,iframe,image,[onload]")).to_have_count(0)
         self.assertIsNone(self.page.evaluate("window.pwned"))
 
-    def test_diagram_timeout_does_not_block_editor(self):
-        good = r"""```tikz
-\begin{tikzpicture}\draw (0,0)--(1,1);\end{tikzpicture}
-```"""
-        paper = self.fixture_paper(good)
+    def test_account_recovers_its_private_archived_source(self: "BrowserJourneys") -> None:
         self.login()
-        self.page.goto(f"{self.live_server_url}/papers/{paper.pk}/edit/")
-        expect(self.page.locator(".bm-tikz-rendered svg")).to_have_count(1)
-        self.page.locator(".cm-content").fill("```tikz\n\\def\\forever{\\forever}\\forever\n```")
-        expect(self.page.locator("#save-status")).to_have_text("Saved")
-        expect(self.page.locator("#preview-status")).to_contain_text(
-            "took more than", timeout=60000
+        self.page.get_by_role("link", name=re.compile(r"^Account(?:,|$)")).click()
+        archive_link = self.page.get_by_role("link", name="Export old drafts", exact=True)
+        expect(archive_link).to_have_count(0)
+        draft = self.database_call(
+            lambda: Draft.objects.create(
+                owner=self.owner, data={"title": "Unpublished proof"}, markdown=SOURCE
+            )
         )
-        self.page.locator(".cm-content").fill(good)
-        expect(self.page.locator("#preview-status")).to_contain_text("same renderer", timeout=60000)
-        expect(self.page.locator(".bm-tikz-rendered svg")).to_have_count(1)
+        local_backup = json.dumps({"markdown": REVISED, "revision": 2})
+        for user, contents in [(self.owner, local_backup), (self.contributor, "another account")]:
+            self.page.evaluate(
+                "([key, contents]) => localStorage.setItem(key, contents)",
+                [f"peerpedia:draft:{user.pk}:{draft.pk}:tab-1", contents],
+            )
+        self.page.reload()
+        expect(
+            self.page.get_by_role("navigation", name="Main navigation").get_by_role(
+                "link", name="Export old drafts", exact=True
+            )
+        ).to_have_count(0)
+        archive_link.click()
+        expect(self.page.get_by_role("heading", name="Unpublished proof")).to_be_visible()
+        with self.page.expect_download() as download:
+            self.page.get_by_role("link", name="Download ZIP").click()
+        with zipfile.ZipFile(download.value.path()) as archive:
+            self.assertEqual(archive.read("paper.md"), SOURCE.encode())
+            self.assertEqual(json.loads(archive.read("paper.json"))["title"], "Unpublished proof")
+        backups = self.page.get_by_role("link", name=re.compile("Download browser backup"))
+        expect(backups).to_have_count(1)
+        with self.page.expect_download() as local_download:
+            backups.click()
+        self.assertEqual(Path(local_download.value.path()).read_bytes(), local_backup.encode())
+        self.assertEqual(self.database_call(Submission.objects.count), 0)
 
-    def test_access_token_creation_one_time_display_and_revocation(self):
+    def test_access_token_creation_one_time_display_and_revocation(self: "BrowserJourneys") -> None:
         self.login()
+        self.page.get_by_role("link", name=re.compile(r"^Account(?:,|$)")).click()
         self.page.get_by_role("link", name="Access tokens", exact=True).click()
         self.page.get_by_label("Name:", exact=True).fill("Local assistant")
         self.page.get_by_label("Confirm your password:", exact=True).fill(PASSWORD)
@@ -1123,10 +802,9 @@ C \arrow[r, "k"'] & D
             401,
         )
 
-    def test_subject_upload_cross_list_filter_and_mobile(self):
+    def test_subject_upload_cross_list_filter_and_mobile(self: "BrowserJourneys") -> None:
         self.login()
         self.page.goto(self.live_server_url + "/publish/")
-        self.page.locator("#paper-details > summary").click()
         self.page.get_by_text("Cross-list subjects (optional)", exact=True).click()
         self.page.get_by_label("Find a cross-list subject").fill("hep-th")
         expect(self.page.get_by_label("math.GR — Group Theory", exact=True)).not_to_be_visible()
@@ -1136,11 +814,13 @@ C \arrow[r, "k"'] & D
             self.page.get_by_label("hep-th — High Energy Physics - Theory", exact=True)
         ).to_be_visible()
         self.upload()
-        expect(self.page.locator("main")).to_contain_text("Primary subject · math.NT")
-        expect(self.page.locator("main")).to_contain_text("Cross-lists · hep-th")
+        subjects = self.page.locator(".subject-tags")
+        expect(subjects.get_by_role("link", name=re.compile("math.NT.*Primary"))).to_be_visible()
+        expect(subjects.get_by_role("link", name=re.compile("hep-th"))).to_be_visible()
         self.page.get_by_label("Content license:", exact=True).select_option("CC-BY-4.0")
         self.page.get_by_label("I have authority to submit", exact=False).check()
-        self.page.get_by_role("button", name="Publish initial submission", exact=True).click()
+        self.page.get_by_role("button", name="Publish paper", exact=True).click()
+        self.page.get_by_text("Publication details", exact=True).click()
         expect(
             self.page.get_by_role("link", name="hep-th — High Energy Physics - Theory", exact=True)
         ).to_be_visible()
@@ -1157,8 +837,10 @@ C \arrow[r, "k"'] & D
         expect(self.page.get_by_role("link", name="Browser paper", exact=True)).to_be_visible()
         self.assert_no_page_overflow()
         self.page.get_by_label("Subject", exact=True).select_option("math.PR")
-        self.page.get_by_role("button", name="Apply", exact=True).click()
-        expect(self.page.get_by_role("heading", name="No papers found")).to_be_visible()
+        self.page.get_by_role("button", name="Search", exact=True).click()
+        expect(
+            self.page.locator(".empty-inline").filter(has_text="No papers found")
+        ).to_be_visible()
 
     @override_settings(
         GOOGLE_LOGIN_ENABLED=True,
@@ -1174,7 +856,7 @@ C \arrow[r, "k"'] & D
             }
         },
     )
-    def test_google_signin_button_privacy_and_account_settings(self):
+    def test_google_signin_button_privacy_and_account_settings(self: "BrowserJourneys") -> None:
         from urllib.parse import parse_qs
 
         # Intercept the first hop: Chromium does not route every hop in a redirected
@@ -1211,8 +893,8 @@ C \arrow[r, "k"'] & D
             self.page.get_by_role("heading", name="Sign-in could not be completed")
         ).to_be_visible()
         self.login("owner")
-        self.page.get_by_role("link", name="Account", exact=True).click()
-        expect(self.page.get_by_role("heading", name="Sign-in options")).to_be_visible()
+        self.page.get_by_role("link", name=re.compile(r"^Account(?:,|$)")).click()
+        expect(self.page.get_by_role("heading", name="Account", exact=True)).to_be_visible()
         self.page.get_by_label("Confirm your password").fill("wrong-password")
         self.page.get_by_role("button", name="Connect Google").click()
         expect(
@@ -1221,19 +903,22 @@ C \arrow[r, "k"'] & D
         self.page.goto(self.live_server_url + "/privacy/")
         expect(self.page.get_by_role("heading", name="Privacy", exact=True)).to_be_visible()
 
-    def test_dated_snapshot_citation_remains_pinned_after_revision(self):
+    def test_dated_snapshot_citation_remains_pinned_after_revision(self: "BrowserJourneys") -> None:
         from publishing.services import decide
         from publishing.tests import document
 
         paper = self.fixture_paper()
         first = paper.current
         self.page.goto(self.live_server_url + "/")
+        self.page.get_by_role("link", name="Browser paper", exact=True).click()
         link = self.page.get_by_role("link", name="Read paper")
         expect(link).to_have_attribute("href", first.read_url)
         link.click()
         expect(self.page).to_have_url(self.live_server_url + first.read_url)
-        expect(self.page.locator(".reader-snapshot")).to_contain_text(first.public_id)
+        self.page.locator(".reader-snapshot summary").click()
+        expect(self.page.get_by_role("link", name="Snapshot " + first.public_id)).to_be_visible()
         expect(self.page.locator(".reader-snapshot")).to_contain_text("Latest accepted")
+        self.page.locator(".reader-snapshot summary").click()
         self.page.get_by_role("button", name="Copy reference to Browser paper", exact=True).click()
         expect(self.page.locator("#reference-permalink")).to_have_value(
             self.live_server_url + first.read_url
@@ -1271,74 +956,40 @@ C \arrow[r, "k"'] & D
         self.page.set_viewport_size({"width": 390, "height": 844})
         self.assert_no_page_overflow()
         self.page.screenshot(path=str(folder / "mobile-reader.png"), full_page=True)
-        self.page.set_viewport_size({"width": 1365, "height": 900})
-        self.login()
-        self.page.get_by_role("link", name="New note", exact=True).click()
-        self.page.get_by_role("button", name="Insert reference", exact=True).click()
-        self.page.locator("#link-query").fill("Revised title")
-        self.page.get_by_role("button", name="Search Peerpedia", exact=True).click()
-        expect(self.page.locator("#link-results")).to_contain_text(revised.public_id)
-        self.page.get_by_role("button", name="Cite frozen version", exact=True).click()
-        if not self.page.locator("#chapter-panel").is_visible():
-            self.page.get_by_role("button", name="Chapters", exact=True).click()
-        self.page.get_by_role("button", name="Bibliography", exact=True).click()
-        expect(self.page.locator("#bib-source")).to_have_value(
-            re.compile(re.escape("Peerpedia snapshot " + revised.public_id))
-        )
-        expect(self.page.locator("#bib-source")).to_have_value(
-            re.compile(re.escape(revised.read_url))
-        )
 
-    def test_chapter_editor_references_publication_and_progress(self):
+    def test_long_phone_contents_can_be_closed_after_scrolling(self: "BrowserJourneys") -> None:
+        from publishing.documents import combined
+
+        chapters = [
+            {"id": f"part-{n}", "title": f"Part {n}", "markdown": f"# Part {n}\n\nBody.\n"}
+            for n in range(1, 17)
+        ]
+        paper = self.fixture_paper(combined(chapters), chapters=chapters)
+        self.page.set_viewport_size({"width": 390, "height": 844})
+        self.page.goto(self.live_server_url + paper.current.read_url)
+        toggle = self.page.locator(".reader-contents summary")
+        navigation = self.page.get_by_role("navigation", name="Chapters", exact=True)
+        expect(navigation).to_be_hidden()
+        toggle.click()
+        expect(toggle).to_have_accessible_name("Close contents")
+        self.assertLessEqual(
+            self.page.locator(".reader-outline").bounding_box()["height"], 844 * 0.25
+        )
+        last_chapter = navigation.get_by_role("link", name="16. Part 16", exact=True)
+        last_chapter.scroll_into_view_if_needed()
+        expect(toggle).to_be_in_viewport()
+        toggle.click()
+        expect(navigation).to_be_hidden()
+        toggle.click()
+        last_chapter.click()
+        expect(self.page.locator(".chapter-heading")).to_contain_text("Chapter 16 of 16")
+        expect(navigation).to_be_hidden()
+
+    def test_cross_chapter_references_and_reading_progress(self: "BrowserJourneys") -> None:
         from publishing.test_chapters import course
 
         paper = self.database_call(lambda: publish(self.owner, course()))
         self.login()
-        self.page.goto(self.live_server_url + f"/papers/{paper.pk}/edit/?chapter=proof")
-        expect(self.page.locator("#active-chapter")).to_have_text("A proof")
-        self.page.locator("#chapter-list").get_by_role("button", name="1. Introduction").click()
-        expect(self.page.locator(".cm-content")).to_contain_text("unique passage")
-        self.page.locator(".cm-content").fill(
-            "# Introduction\n\nA revised introduction. See @eq:one and [@wen]."
-        )
-        expect(self.page.locator("#save-status")).to_have_text("Saved")
-        self.page.get_by_role("button", name="Add chapter", exact=True).click()
-        self.page.locator(".cm-content").fill(
-            "# Exercises\n\nExplain the result in your own words.\n\n```math {@eq:warmup}\ny = 2\n```\n\nSee "
-        )
-        expect(self.page.locator("#save-status")).to_have_text("Saved")
-        expect(self.page.locator("#draft-preview .katex-tag")).to_have_text("(3.1)")
-        self.page.get_by_role("button", name="Insert reference", exact=True).click()
-        self.page.locator("#link-results").get_by_role("button", name="(3.1)", exact=True).click()
-        expect(self.page.locator(".cm-content")).to_contain_text("@eq:warmup")
-        expect(self.page.locator('#draft-preview a[href="#eq:warmup"]')).to_have_text("(3.1)")
-        expect(self.page.locator("#save-status")).to_have_text("Saved")
-        self.page.locator("#editor-files > summary").click()
-        with self.page.expect_download() as download:
-            self.page.get_by_role("button", name="Download all files", exact=True).click()
-        import zipfile
-
-        with zipfile.ZipFile(download.value.path()) as archive:
-            self.assertEqual(len(json.loads(archive.read("paper.json"))["chapters"]), 3)
-            self.assertIn("Quantum Field Theory", archive.read("references.yaml").decode())
-        self.page.reload()
-        expect(self.page.locator("#chapter-list button")).to_have_count(3)
-        if not self.page.locator("#chapter-panel").is_visible():
-            self.page.get_by_role("button", name="Chapters", exact=True).click()
-        self.page.get_by_role("button", name="Bibliography", exact=True).click()
-        expect(self.page.locator("#bib-source")).to_have_value(re.compile("Quantum Field Theory"))
-        self.page.locator("#bib-dialog").get_by_role("button", name="Done", exact=True).click()
-        self.page.locator("#paper-details > summary").click()
-        self.page.get_by_label("What changed?", exact=True).fill(
-            "Add exercises and improve the introduction."
-        )
-        self.page.get_by_role("button", name="Review & submit PR", exact=True).click()
-        expect(
-            self.page.get_by_role("heading", name="Review your changes", exact=True)
-        ).to_be_visible()
-        self.page.get_by_label("I have authority to submit", exact=False).check()
-        self.page.get_by_role("button", name="Submit PR", exact=True).click()
-        expect(self.page.locator(".chapter-diffs")).to_contain_text("Exercises")
         self.page.goto(self.live_server_url + f"/papers/{paper.pk}/read/?chapter=intro")
         self.page.get_by_role("link", name="(2.1)", exact=True).click()
         expect(self.page).to_have_url(re.compile(r"chapter=proof#eq(?::|%3A)one"))
@@ -1346,7 +997,7 @@ C \arrow[r, "k"'] & D
         pending_progress = []
         progress_url = self.live_server_url + f"/papers/{paper.pk}/progress/"
 
-        def hold_progress(route):
+        def hold_progress(route: Route) -> None:
             if route.request.method == "GET":
                 pending_progress.append(route)
             else:
@@ -1365,4 +1016,8 @@ C \arrow[r, "k"'] & D
         self.page.reload()
         expect(self.page.locator('[data-chapter-state="intro"]')).to_have_text("✓")
         self.page.set_viewport_size({"width": 390, "height": 844})
+        chapters = self.page.get_by_role("navigation", name="Chapters", exact=True)
+        expect(chapters).to_be_hidden()
+        self.page.locator(".reader-contents summary").click()
+        expect(chapters.get_by_role("link", name=re.compile("Introduction"))).to_contain_text("✓")
         self.assert_no_page_overflow()

@@ -1,56 +1,49 @@
 from publishing.test_support import consenting_user
+import hashlib
 import json
 import uuid
 from datetime import timedelta
+from typing import Any
 from django.db import DatabaseError, transaction
+from django.http import HttpResponse
 from django.test import TestCase, Client, override_settings
 from django.urls import reverse
 from django.utils import timezone
+from django.utils.html import strip_tags
 from accounts.tokens import issue_token
 from .models import (
-    Passage,
-    PassageComment,
-    PassageCommentRevision,
-    PassagePRLink,
+    ApiPush,
     Submission,
     SubmissionSource,
     Notification,
     Review,
 )
-from .passages import validate
 from .services import publish, decide
 from .notifications import notify
 from .tests import document
 
 
-@override_settings(PASSWORD_HASHERS=["django.contrib.auth.hashers.MD5PasswordHasher"])
+@override_settings(
+    PASSWORD_HASHERS=["django.contrib.auth.hashers.MD5PasswordHasher"],
+)
 class FeedbackTests(TestCase):
-    def setUp(self):
+    def setUp(self: "FeedbackTests") -> None:
         self.owner = consenting_user("owner", "owner@example.org", email_verified=True)
         self.reader = consenting_user("reader", "reader@example.org", email_verified=True)
         self.third = consenting_user("third", "third@example.org", email_verified=True)
         self.paper = publish(self.owner, document())
         self.base = self.paper.current
-        spans, quote, key = validate(self.base.markdown, [{"block": "b1", "start": 0, "end": 11}])
-        self.anchor = Passage.objects.create(
-            submission=self.base, spans=spans, quote=quote, key=key
-        )
-        self.thread = PassageComment.objects.create(
-            passage=self.anchor, user=self.reader, score=3, text="Explain this equation."
-        )
-        PassageCommentRevision.objects.create(
-            comment=self.thread, number=1, text=self.thread.text, score=3
-        )
         _, self.token = issue_token(self.third, "Tests")
         self.payload = {
             **document(markdown="# A clearer paper\n"),
             "paper_id": str(self.paper.pk),
             "base_hash": self.base.hash,
-            "discussion_ids": [str(self.thread.pk)],
             "ai_assisted": True,
         }
 
-    def push(self, data=None, key=None):
+    def push(
+        self: "FeedbackTests", data: dict[str, Any] | None = None, key: uuid.UUID | None = None
+    ) -> HttpResponse:
         return self.client.post(
             "/api/v1/push/",
             json.dumps(data or self.payload),
@@ -59,50 +52,35 @@ class FeedbackTests(TestCase):
             HTTP_IDEMPOTENCY_KEY=str(key or uuid.uuid4()),
         )
 
-    def post_comment(self, action, pk, data):
-        return self.client.post(
-            reverse("passage_" + action, args=[pk]),
-            json.dumps(data),
-            content_type="application/json",
-        )
-
-    def test_public_read_only_endpoints_and_hidden_content(self):
-        Review.objects.create(paper=self.paper, user=self.owner, score=4, text="Overall review.")
-        self.client.force_login(self.reader)
-        urls = [
+    def test_retired_feedback_urls_return_404(self: "FeedbackTests") -> None:
+        target = uuid.uuid4()
+        for url in (
             f"/api/v1/papers/{self.paper.pk}/feedback/",
             f"/api/v1/submissions/{self.base.pk}/feedback/",
-            f"/api/v1/passages/{self.anchor.pk}/",
-            f"/api/v1/discussion-comments/{self.thread.pk}/replies/",
-            f"/api/v1/discussion-comments/{self.thread.pk}/history/",
-            f"/api/v1/papers/{self.paper.pk}/reviews/",
-        ]
-        for url in urls:
-            self.assertEqual(self.client.get(url).status_code, 200)
-            rejected = self.client.post(url, {}, HTTP_AUTHORIZATION="Bearer " + self.token)
-            self.assertEqual(rejected.status_code, 405)
-            self.assertEqual(rejected["Allow"], "GET")
-        detail = self.client.get(urls[2]).json()
-        self.assertFalse(detail["threads"][0]["can_edit"])
-        self.assertEqual(detail["own_prs"], [])
-        feedback = self.client.get(urls[0]).json()["passages"][0]
-        self.assertEqual(feedback["original_hash"], self.base.hash)
-        self.assertEqual(
-            feedback["original_spans"], [{"block": "b1", "kind": "text", "start": 0, "end": 11}]
+            f"/api/v1/passages/{target}/",
+            f"/api/v1/discussion-comments/{target}/replies/",
+            f"/api/v1/discussion-comments/{target}/history/",
+        ):
+            with self.subTest(url=url):
+                self.assertEqual(self.client.get(url).status_code, 404)
+
+    def test_public_read_only_reviews_and_hidden_content(self: "FeedbackTests") -> None:
+        Review.objects.create(paper=self.paper, user=self.owner, score=4, text="Overall review.")
+        Review.objects.create(
+            paper=self.paper, user=self.reader, score=1, text="Hidden review.", is_hidden=True
         )
-        self.thread.is_hidden = True
-        self.thread.save()
-        self.assertEqual(
-            self.client.get(urls[2]).json()["threads"][0]["text"],
-            "Comment hidden by an administrator.",
-        )
-        self.assertEqual(self.client.get(urls[4]).status_code, 404)
+        url = f"/api/v1/papers/{self.paper.pk}/reviews/"
+        result = self.client.get(url).json()
+        self.assertEqual(result["summary"], {"average": 4, "count": 1})
+        self.assertEqual([row["text"] for row in result["reviews"]], ["Overall review."])
+        rejected = self.client.post(url, {}, HTTP_AUTHORIZATION="Bearer " + self.token)
+        self.assertEqual(rejected.status_code, 405)
+        self.assertEqual(rejected["Allow"], "GET")
         self.paper.is_hidden = True
         self.paper.save()
-        for url in urls:
-            self.assertEqual(self.client.get(url).status_code, 404)
+        self.assertEqual(self.client.get(url).status_code, 404)
 
-    def test_linked_cli_snapshots_idempotency_attribution_and_acceptance(self):
+    def test_cli_snapshots_idempotency_attribution_and_acceptance(self: "FeedbackTests") -> None:
         key = uuid.uuid4()
         first = self.push(key=key)
         self.assertEqual(first.status_code, 201, first.content)
@@ -112,7 +90,6 @@ class FeedbackTests(TestCase):
         self.assertTrue(record["via_cli"])
         self.assertTrue(record["ai_assisted"])
         self.assertEqual(SubmissionSource.objects.count(), 1)
-        self.assertEqual(PassagePRLink.objects.count(), 1)
         source = SubmissionSource.objects.get()
         self.assertEqual(source.submission.calculate_hash(), record["hash"])
         with self.assertRaises(DatabaseError), transaction.atomic():
@@ -131,41 +108,51 @@ class FeedbackTests(TestCase):
         self.assertEqual(SubmissionSource.objects.count(), 2)
         pr_info = self.client.get(f"/api/v1/prs/{pr}/").json()
         self.assertEqual(pr_info["head_hash"], second.json()["hash"])
-        self.assertEqual(pr_info["discussion_ids"], [str(self.thread.pk)])
+        self.assertNotIn("discussion_ids", pr_info)
         self.assertEqual(len(pr_info["snapshots"]), 2)
         before = Notification.objects.get(user=self.owner, kind="proposal")
         self.assertEqual(before.count, 2)
-        self.assertTrue(Notification.objects.filter(user=self.reader, kind="linked_fix").exists())
         decide(self.owner, second.json()["manifest"]["submission_id"], "accepted")
-        self.assertTrue(Notification.objects.filter(user=self.reader, kind="decision").exists())
-        self.thread.refresh_from_db()
-        self.assertFalse(self.thread.resolved)
+        self.assertTrue(Notification.objects.filter(user=self.third, kind="decision").exists())
         # Retrying the old key after acceptance still returns the same frozen receipt.
         self.assertEqual(self.push(key=key).json()["hash"], record["hash"])
 
-    def test_invalid_links_and_flags_create_nothing(self):
+    def test_retired_links_and_invalid_flags_create_nothing(self: "FeedbackTests") -> None:
         for change in [
             {"discussion_ids": [str(uuid.uuid4())]},
             {"discussion_ids": ["invalid"]},
             {"ai_assisted": "yes"},
             {"expected_head": "0" * 64},
-            {"discussion_ids": [str(self.thread.pk)] * 2},
+            {"discussion_ids": None},
         ]:
             response = self.push({**self.payload, **change})
             self.assertEqual(response.status_code, 400, response.content)
         self.assertEqual(Submission.objects.count(), 1)
         self.assertEqual(SubmissionSource.objects.count(), 0)
         self.assertEqual(Notification.objects.count(), 0)
-        foreign = publish(self.reader, document())
-        self.assertEqual(
-            self.push(
-                {**self.payload, "paper_id": str(foreign.pk), "base_hash": foreign.current.hash}
-            ).status_code,
-            400,
-        )
+        self.assertEqual(self.push({**self.payload, "discussion_ids": []}).status_code, 201)
 
-    def test_notification_grouping_ownership_read_races_and_hidden_papers(self):
-        notify([self.reader.pk, self.owner.pk], self.owner, self.paper, "reply", thread=self.thread)
+    def test_old_linked_push_can_recover_its_existing_receipt(self: "FeedbackTests") -> None:
+        record = self.push().json()
+        payload = {**self.payload, "discussion_ids": [str(uuid.uuid4())]}
+        fingerprint = hashlib.sha256(
+            json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode()
+        ).hexdigest()
+        receipt = ApiPush.objects.create(
+            user=self.third,
+            key=uuid.uuid4(),
+            request_hash=fingerprint,
+            submission_id=record["manifest"]["submission_id"],
+        )
+        retry = self.push(payload, key=receipt.key)
+        self.assertEqual(retry.status_code, 200)
+        self.assertEqual(retry.json()["hash"], record["hash"])
+        self.assertEqual(Submission.objects.count(), 2)
+
+    def test_notification_grouping_ownership_read_races_and_hidden_papers(
+        self: "FeedbackTests",
+    ) -> None:
+        notify([self.reader.pk, self.owner.pk], self.owner, self.paper, "review")
         item = Notification.objects.get()
         self.assertEqual(item.user, self.reader)
         self.client.force_login(self.third)
@@ -175,9 +162,13 @@ class FeedbackTests(TestCase):
         )
         self.client.force_login(self.reader)
         page = self.client.get(reverse("inbox"))
-        self.assertContains(page, "Inbox, 1 unread")
+        self.assertContains(page, "Unread (1)")
+        account = self.client.get(reverse("socialaccount_connections"))
+        self.assertIn("Account, 1 unread", strip_tags(account.content.decode()))
+        self.assertContains(account, 'aria-label="Inbox, 1 unread"')
+        self.assertContains(account, reverse("access_tokens"))
         cutoff = page.context["seen_before"]
-        notify([self.reader.pk], self.owner, self.paper, "reply", thread=self.thread)
+        notify([self.reader.pk], self.owner, self.paper, "review")
         self.client.post(reverse("inbox_open", args=[item.pk]), {"revision": 1})
         item.refresh_from_db()
         self.assertTrue(item.unread)
@@ -189,10 +180,10 @@ class FeedbackTests(TestCase):
         response = self.client.post(
             reverse("inbox_open", args=[item.pk]), {"revision": item.revision}
         )
-        self.assertIn("?discussion=", response.url)
+        self.assertEqual(response.url, self.paper.get_absolute_url() + "#reviews")
         item.refresh_from_db()
         self.assertFalse(item.unread)
-        notify([self.reader.pk], self.owner, self.paper, "reply", thread=self.thread)
+        notify([self.reader.pk], self.owner, self.paper, "review")
         item.refresh_from_db()
         self.assertEqual(item.count, 1)
         self.client.post(reverse("inbox_read"), {"seen_before": timezone.now().isoformat()})
@@ -210,19 +201,13 @@ class FeedbackTests(TestCase):
         self.assertNotContains(self.client.get(reverse("inbox")), "A test paper")
         self.assertEqual(self.client.get(reverse("inbox")).context["unread_notifications"], 0)
 
-    def test_notification_triggers_and_no_self_or_duplicate_vote_alerts(self):
-        self.client.force_login(self.owner)
-        reply = self.post_comment("reply", self.thread.pk, {"text": "Here is an explanation."})
-        self.assertEqual(reply.status_code, 201)
-        self.assertTrue(Notification.objects.filter(user=self.reader, kind="reply").exists())
-        self.assertFalse(Notification.objects.filter(user=self.owner).exists())
-        self.post_comment("vote", self.thread.pk, {"value": 1})
-        self.post_comment("vote", self.thread.pk, {"value": 1})
-        self.assertEqual(Notification.objects.get(user=self.reader, kind="vote").count, 1)
-        self.client.force_login(self.reader)
-        self.post_comment("resolve", self.thread.pk, {"resolved": True})
-        self.assertTrue(Notification.objects.filter(user=self.owner, kind="resolved").exists())
-        self.assertFalse(Notification.objects.filter(user=self.reader, kind="resolved").exists())
+    def test_inbox_requires_session_and_csrf(self: "FeedbackTests") -> None:
+        self.assertEqual(
+            self.client.get(
+                reverse("inbox"), HTTP_AUTHORIZATION="Bearer " + self.token
+            ).status_code,
+            302,
+        )
         strict = Client(enforce_csrf_checks=True)
         strict.force_login(self.reader)
         self.assertEqual(
@@ -230,27 +215,4 @@ class FeedbackTests(TestCase):
                 reverse("inbox_read"), {"seen_before": timezone.now().isoformat()}
             ).status_code,
             403,
-        )
-
-    def test_report_alert_is_staff_only_and_inbox_not_exposed_to_tokens(self):
-        self.owner.is_staff = True
-        self.owner.save()
-        self.client.force_login(self.third)
-        self.post_comment("report", self.thread.pk, {"reason": "Please review."})
-        alert = Notification.objects.get(kind="report")
-        self.assertEqual(alert.user, self.owner)
-        self.client.logout()
-        self.assertEqual(
-            self.client.get(
-                reverse("inbox"), HTTP_AUTHORIZATION="Bearer " + self.token
-            ).status_code,
-            302,
-        )
-        self.client.force_login(self.owner)
-        self.owner.is_staff = False
-        self.owner.save()
-        self.assertNotContains(self.client.get(reverse("inbox")), "A comment needs moderation")
-        self.assertEqual(
-            self.client.post(reverse("inbox_open", args=[alert.pk]), {"revision": 1}).status_code,
-            404,
         )

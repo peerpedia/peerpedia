@@ -7,7 +7,7 @@
 <script defer src="{% static 'reading.js' %}"></script>
 {% endblock %}
 {% block guide_heading %}Writing and formatting{% endblock %}
-{% block guide_intro %}Start with ordinary text. Add headings, mathematics, and references as you need them. Each example shows its source and the result produced by the same renderer used for papers.{% endblock %}
+{% block guide_intro %}<p class="lede">Start with ordinary text. Add headings, mathematics, and references as you need them. Each example shows its source and the result produced by the same renderer used for papers.</p>{% endblock %}
 {% block guide_tabs %}{% include 'publishing/includes/help_tabs.html' with current='writing' %}{% endblock %}
 {% block guide_contents %}
 <a href="#start">A first example</a>
@@ -25,11 +25,11 @@
   <h2>A first example</h2>
   <p>Markdown is text with simple formatting marks. A line starting with <code>##</code> becomes a section heading. Blank lines separate paragraphs. A pair of asterisks on either side makes words bold.</p>
   {% help_example "basics" %}
-  <p>Use <code>###</code> for a subsection. Put the paper’s title in <strong>Paper details</strong>, so you do not need to repeat it at the top of the text.</p>
+  <p>Use <code>###</code> for a subsection. Put the paper’s title in the upload form or <code>paper.json</code>, so you do not need to repeat it at the top of the text.</p>
   <p>To link to a web page, write <code>[link text](https://example.org)</code>. To display code, put it between lines containing three backticks. Adding a language name after the opening backticks tells the reader what kind of code it is.</p>
   {% help_example "link" %}
   {% help_example "code" %}
-  <p>For instructions on saving and publishing, return to <a href="{% url 'help' %}#publish">Publish your first note</a>.</p>
+  <p>To preview and publish your file, follow <a href="{% url 'help' %}#publish">Upload a paper</a>.</p>
 </section>
 <section id="math">
   <h2>Write mathematics</h2>
@@ -41,41 +41,35 @@
   <h3>Align several lines</h3>
   <p>Use <code>\begin{aligned}</code> and <code>\end{aligned}</code> inside a display formula or a <code>math</code> code block. Put <code>&amp;</code> before the symbols to align and <code>\\</code> between rows. A numbered block receives one number for the whole group.</p>
   {% help_example "aligned" %}
-  <p>The editor’s <strong>Insert block</strong> menu inserts these wrappers for you. The next sections show how blocks also create references, statements, and captions.</p>
 </section>
 <section id="chapters">
   <h2>Add chapters</h2>
   <p>Use a chapter when you want a new reading page, and a heading when you want a section within that page. A short note can stay on one page.</p>
-  <p>Open <strong>Chapters</strong> in the editor and choose <strong>Add chapter</strong>. Write its name in the first Markdown heading, such as <code># Introduction</code>. Changing that heading also updates the chapter list. The up and down arrows change its place in the course.</p>
+  <p>List chapter files in reading order in <code>paper.json</code>. The <a href="{% url 'help_cli' %}#chapters">CLI chapter example</a> shows the fields to use.</p>
   <div class="help-example"><h3>Example course structure</h3><ol><li><strong>Symmetry</strong> introduces groups through rotations.</li><li><strong>Examples</strong> works through small groups.</li><li><strong>Exercises</strong> gives readers something to try.</li></ol></div>
-  <p>Use the pencil icon beside a chapter while reading to edit only that chapter. Its draft and preview show that chapter alone. Submitting proposes a PR that preserves the other chapters. Use <strong>Edit paper</strong> to change several chapters or their order.</p>
-  <p>All chapters belong to the same paper. They are published together and share one bibliography. Use <strong>Files → Download all files</strong> to keep a local copy of the complete draft.</p>
+  <p>All chapters belong to the same paper and share one bibliography. Use <code>peerpedia clone</code> to download the complete working copy.</p>
 </section>
 <section id="references">
   <h2>Link to sections and equations</h2>
   <p>A cross-reference is a link to a particular part of a paper. Rather than writing “see the equation above,” give the equation a label and refer to that label. Peerpedia fills in the displayed number and makes it clickable.</p>
-  <h3>Let the editor insert the link</h3>
-  <p>Place the cursor where you want the reference. Choose <strong>Insert reference</strong>, then <strong>In this paper</strong>. Select the chapter, section, equation, or statement you need. Chapters and headings appear automatically. To refer to a numbered equation or statement, give it a label first. Type <code>@</code> to complete a label.</p>
   <h3>Write a label yourself</h3>
   <p>A label is a name you choose, such as <code>eq:area</code>. Put it inside <code>{@…}</code> on the item you want to link to. Write <code>@</code> followed by the same name wherever you want to refer to it.</p>
   {% help_example "references" %}
   <p>The last sentence becomes links to the section and the numbered equation. The same syntax works across chapters. Use each label only once in the paper and keep it when moving or revising the text, so existing references continue to work.</p>
   <h3>Link to another Peerpedia paper</h3>
-  <p>Choose <strong>Insert reference → Search Peerpedia</strong>. Find the work, then choose the whole work or a target within it. The inserted reference points to a fixed version, so a later edit does not silently change what you cited.</p>
   <p>While reading, the link icon beside a chapter or section heading opens its reference window. Use the two overlapping squares beside an entry to copy it. Choose the ordinary link for sharing, or the Markdown reference for use in a Peerpedia note.</p>
 </section>
 <section id="blocks">
   <h2>State a theorem or proof</h2>
-  <p>Use a named block to set a statement apart from the surrounding explanation. For example, choose <strong>theorem</strong> from <strong>Insert block</strong>, then replace the sample text. A theorem can have a label just like an equation.</p>
+  <p>Wrap the theorem and proof in named blocks as shown below. Give the theorem a label to refer to it elsewhere.</p>
   {% help_example "theorem" %}
-  <p>The statement receives a number and can be linked. The proof is not numbered. The menu also offers lemma, proposition, corollary, definition, example, and remark blocks.</p>
+  <p>The statement receives a number and can be linked. The proof is not numbered. Other supported blocks include lemma, proposition, corollary, definition, example, and remark blocks.</p>
 </section>
 <section id="citations">
   <h2>Cite another work</h2>
-  <p>A bibliography collects the books, papers, and other sources you cite. Open <strong>Bibliography</strong> in the editor sidebar to edit the bibliography shared by all chapters.</p>
-  <p>Expand <strong>Add a reference</strong> to enter a title, authors, year, and link. Choose a short <strong>citation key</strong>, a name you will use to refer to that source. You can also import a YAML file or paste BananaMark bibliography entries. A <code>bibliography</code> code block in an article uses the same format.</p>
+  <p>Write references in a fenced <code>bibliography</code> block, or use a shared YAML file for a chaptered paper.</p>
   <h3>A complete example</h3>
-  <p>The example below has two parts. Put the YAML entry in <strong>Bibliography</strong> and the Markdown sentence in your chapter. Its citation key is <code>euclidElements</code>.</p>
+  <p>The example below has two parts. Put the YAML entry in your bibliography and the Markdown sentence in your chapter. Its citation key is <code>euclidElements</code>.</p>
   <p>Then write a citation in the chapter by putting the key after <code>@</code> inside square brackets.</p>
   {% help_example "citation" %}
   <p>The reader sees an author–year citation linking to the full entry. The shared bibliography appears at the end of the last chapter.</p>
@@ -103,13 +97,13 @@
   {% help_example "tikzpicture" %}
   <h3>If a drawing does not appear</h3>
   <p>Preview and publication use the same server compiler and cache. A new drawing may take a moment; an unchanged drawing reuses the cached result. Compilation errors must be corrected before publication.</p>
-  <p>Read the error beside the source if compilation fails. Start with the example above, then add your changes gradually. Basic TikZ commands and bundled libraries are supported. External files, image uploads, and arbitrary LaTeX packages are not supported.</p>
+  <p>If a diagram fails to compile during upload, check the error beside the Markdown file field. Start with the example above, then add your changes gradually. Basic TikZ commands and bundled libraries are supported. External files, image uploads, and arbitrary LaTeX packages are not supported.</p>
   <p>Keep each drawing under 32 KB and the paper under 32 distinct drawings. Very slow drawings can time out. To show LaTeX code as text without drawing it, use a <code>latex</code> code block instead.</p>
 </section>
 <section id="check">
   <h2>Check before submitting</h2>
-  <ul><li>Read the preview as a reader would. Check each chapter, equation, and diagram.</li><li>Open cross-references and check their destinations. Correct missing or repeated labels.</li><li>Check bibliography entries and make sure each citation supports its claim.</li><li>Use Review &amp; publish for a new paper, or Review &amp; submit PR for a revision. Check the title, authors, abstract, subject, and license as well as the text.</li></ul>
-  <p>A paper can have up to 64 chapters. The combined Markdown and bibliography must fit within 1 MB. Formula errors and missing or duplicate reference labels must be corrected before submission. You can still save an incomplete draft.</p>
+  <ul><li>Read the preview as a reader would. Check each chapter, equation, and diagram.</li><li>Open cross-references and check their destinations. Correct missing or repeated labels.</li><li>Check bibliography entries and make sure each citation supports its claim.</li><li>Check the title, authors, abstract, subject, and license as well as the text.</li></ul>
+  <p>A paper can have up to 64 chapters. The combined Markdown and bibliography must fit within 1 MB. Formula errors and missing or duplicate reference labels must be corrected before submission.</p>
 </section>
 {% include 'includes/reference_tools.html' %}
 {% endblock %}

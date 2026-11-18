@@ -7,7 +7,9 @@ import selectors
 import subprocess
 import threading
 import time
+from copy import deepcopy
 from functools import lru_cache
+from typing import Any
 from urllib.request import Request, ProxyHandler, build_opener
 from django.conf import settings
 from django.core.exceptions import ValidationError
@@ -29,7 +31,7 @@ atexit.register(close)
 
 
 @lru_cache(maxsize=24)
-def _request(payload, endpoint):
+def _request(payload: str, endpoint: str) -> dict[str, Any]:
     global _process, _owner
     try:
         if endpoint:
@@ -79,9 +81,7 @@ def _request(payload, endpoint):
             raise OSError("Rendered document is too large")
         result = json.loads(raw)
     except (OSError, ValueError) as error:
-        raise ValidationError(
-            "The article renderer is unavailable. Your draft can still be saved."
-        ) from error
+        raise ValidationError("The article renderer is unavailable. Try again shortly.") from error
     if "error" in result:
         error = result["error"]
         raise ValidationError(
@@ -97,10 +97,6 @@ def _request(payload, endpoint):
     return result["result"]
 
 
-def request(**data):
+def request(**data: Any) -> dict[str, Any]:
     data.setdefault("staticUrl", settings.STATIC_URL)
-    return json.loads(json.dumps(_request(json.dumps(data), settings.BANANAMARK_URL)))
-
-
-def structure(source):
-    return request(action="structure", source=source, numberSections=False)["pages"][0]
+    return deepcopy(_request(json.dumps(data), settings.BANANAMARK_URL))

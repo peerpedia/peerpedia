@@ -1,339 +1,168 @@
-from publishing.test_support import consenting_user
+import io
 import json
-from django.core.exceptions import PermissionDenied, ValidationError
-from django.db import DatabaseError, transaction
-from django.test import TestCase, Client, override_settings
-from django.urls import reverse
-from accounts.models import User
-from .models import Draft, Submission, Comment, PullRequestCommit
-from .services import publish, propose, decide
-from .tests import document
+import zipfile
 from concurrent.futures import ThreadPoolExecutor
 from threading import Barrier
 from unittest import skipUnless
-from django.db import connection, connections
+
+from django.core.exceptions import PermissionDenied, ValidationError
+from django.core.files.uploadedfile import SimpleUploadedFile
+from django.db import connection, connections, DatabaseError, transaction
 from django.db.migrations.executor import MigrationExecutor
-from django.test import TransactionTestCase
+from django.test import TestCase, TransactionTestCase, override_settings
+from django.urls import reverse
+from django_otp.oath import totp
+from django_otp.plugins.otp_totp.models import TOTPDevice
+
+from accounts.models import User
+from .models import Draft, Submission, Comment, PullRequestCommit
+from .services import publish, propose, decide
+from .test_support import consenting_user
+from .tests import document
 
 
 @override_settings(PASSWORD_HASHERS=["django.contrib.auth.hashers.MD5PasswordHasher"])
-class DraftTests(TestCase):
+class ArchiveTests(TestCase):
     @classmethod
-    def setUpTestData(cls):
-        cls.owner = consenting_user(
-            "writer", "writer@example.org", "test-password", email_verified=True
-        )
-        cls.other = consenting_user(
-            "reader", "reader@example.org", "test-password", email_verified=True
-        )
+    def setUpTestData(cls: type["ArchiveTests"]) -> None:
+        cls.owner = consenting_user("writer", email_verified=True)
+        cls.other = consenting_user("reader", email_verified=True)
         cls.paper = publish(cls.owner, document())
 
-    def setUp(self):
+    def setUp(self: "ArchiveTests") -> None:
         self.client.force_login(self.owner)
 
-    def begin(self, paper=True):
-        response = self.client.post(
-            reverse("edit_paper", args=[self.paper.pk]) if paper else reverse("write")
+    def test_scoped_draft_exports_saved_text_without_requiring_valid_markdown(
+        self: "ArchiveTests",
+    ) -> None:
+        draft = Draft.objects.create(
+            owner=self.owner,
+            paper=self.paper,
+            base=self.paper.current,
+            scope_key="intro:proof",
+            section={"chapter": "intro", "label": "Proof"},
+            data={"title": "Unfinished proof", "explanation": "Rework the boundary case."},
+            markdown="  ## 证明\r\n\n```math\nx",
+            bibliography="unfinished: [",
         )
-        self.assertEqual(response.status_code, 302)
-        return Draft.objects.get(pk=response.url.split("/")[2])
-
-    def save(self, draft, **changes):
-        body = {"revision": draft.revision, "data": draft.data, "markdown": draft.markdown}
-        body.update(changes)
-        return self.client.post(
-            reverse("draft_save", args=[draft.pk]),
-            json.dumps(body),
-            content_type="application/json",
-        )
-
-    def reviewed(self, draft):
-        response = self.client.post(
-            reverse("draft_review", args=[draft.pk]), {"revision": draft.revision}
-        )
-        self.assertEqual(response.status_code, 200)
-        return response.context["token"]
-
-    def prepared(self, paper=True):
-        draft = self.begin(paper)
-        changes = document(markdown="# Corrected\n\nA new proof. $x^2$")
-        response = self.save(
-            draft,
-            data={k: v for k, v in changes.items() if k != "markdown"},
-            markdown=changes["markdown"],
-        )
-        self.assertEqual(response.status_code, 200, response.content)
-        draft.refresh_from_db()
-        return draft
-
-    def test_get_does_not_create_and_start_is_idempotent_for_paper(self):
-        self.assertEqual(
-            self.client.get(reverse("edit_paper", args=[self.paper.pk])).status_code, 200
-        )
-        self.assertFalse(Draft.objects.exists())
-        first = self.begin()
-        second = self.begin()
-        self.assertEqual(first.pk, second.pk)
-        self.assertEqual(first.markdown, self.paper.current.markdown)
-        self.assertFalse(
-            self.client.get(reverse("editor", args=[first.pk]))
-            .context["form"]["explanation"]
-            .is_hidden
-        )
-        self.assertEqual(
-            self.client.get(
-                reverse("edit_paper", args=[self.paper.pk]) + "?section=section-proof"
-            ).url,
-            reverse("editor", args=[first.pk]) + "?section=section-proof",
-        )
-
-    def test_drafts_are_private_in_every_route_including_admin(self):
-        draft = self.prepared()
-        for user in [self.other]:
-            user.is_staff = True
-            user.is_superuser = True
-            user.save()
-            self.client.force_login(user)
-            from django_otp.oath import totp
-            from django_otp.plugins.otp_totp.models import TOTPDevice
-
-            device = TOTPDevice.objects.create(user=user, name="Test authenticator")
-            self.client.post(
-                reverse("staff_mfa"), {"action": "verify", "code": f"{totp(device.bin_key):06d}"}
-            )
-            for route in ["editor", "draft_rebase"]:
-                self.assertEqual(self.client.get(reverse(route, args=[draft.pk])).status_code, 404)
-            for route in ["draft_save", "draft_preview", "draft_review", "draft_discard"]:
-                response = self.client.post(
-                    reverse(route, args=[draft.pk]),
-                    json.dumps({"revision": 1, "markdown": "secret", "data": {}}),
-                    content_type="application/json",
-                )
-                self.assertEqual(response.status_code, 404, (route, response.content))
-            self.assertNotContains(self.client.get(reverse("drafts")), "Corrected")
-        self.client.logout()
-        self.assertEqual(self.client.get(reverse("editor", args=[draft.pk])).status_code, 302)
-        self.assertNotContains(self.client.get(reverse("browse")), "Corrected")
-
-    def test_unverified_and_csrf_protected(self):
-        draft = self.begin()
-        csrf_client = Client(enforce_csrf_checks=True)
-        csrf_client.force_login(self.owner)
-        self.assertEqual(
-            csrf_client.post(reverse("draft_save", args=[draft.pk]), {}).status_code, 403
-        )
-        self.owner.email_verified = False
-        self.owner.save()
-        self.assertEqual(self.save(draft).status_code, 302)
-
-    def test_saves_preserve_unicode_whitespace_and_conflicts(self):
-        draft = self.begin()
-        source = "\n# 数学\n\n  $x$\n"
-        result = self.save(draft, markdown=source)
+        old_url = f"/drafts/{draft.pk}/"
+        self.assertRedirects(self.client.get(old_url), reverse("drafts"))
+        listing = self.client.get(reverse("drafts"))
+        self.assertContains(listing, draft.title)
+        self.assertContains(listing, f"peerpedia:draft:{self.owner.pk}:{draft.pk}:")
+        result = self.client.get(reverse("draft_export", args=[draft.pk]))
         self.assertEqual(result.status_code, 200)
-        self.assertEqual(result["Cache-Control"], "no-store, private")
-        conflict = self.save(draft, markdown="overwrite")
-        self.assertEqual(conflict.status_code, 409)
-        self.assertEqual(conflict.json()["draft"]["markdown"], source)
-        draft.refresh_from_db()
-        self.assertEqual(draft.markdown, source)
-        self.assertEqual(self.paper.current.markdown, document()["markdown"])
+        self.assertIn("private", result["Cache-Control"])
+        with zipfile.ZipFile(io.BytesIO(result.content)) as bundle:
+            self.assertEqual(bundle.read("paper.md"), draft.markdown.encode())
+            self.assertEqual(bundle.read("references.yaml"), draft.bibliography.encode())
+            details = json.loads(bundle.read("draft.json"))
+        self.assertEqual(details["data"], draft.data)
+        self.assertEqual(details["section"], draft.section)
+        self.assertEqual(details["base"], str(draft.base_id))
+        self.assertEqual(details["scope_key"], draft.scope_key)
 
-    def test_invalid_and_oversized_data(self):
-        draft = self.begin()
-        for changes in [
-            {"markdown": "x" * (1024 * 1024 + 1)},
-            {"markdown": "\x00"},
-            {"markdown": "\ud800"},
-            {"data": {"title": "\ud800"}},
-            {"data": {"title": "x" * 251}},
-            {"data": {"authors": []}},
-        ]:
-            self.assertEqual(self.save(draft, **changes).status_code, 400)
-        self.assertEqual(
-            self.client.post(
-                reverse("draft_save", args=[draft.pk]), "[]", content_type="application/json"
-            ).status_code,
-            400,
+    def test_chapter_export_includes_all_saved_sources_and_metadata(self: "ArchiveTests") -> None:
+        draft = Draft.objects.create(
+            owner=self.owner,
+            chapters=[
+                {"id": "first", "markdown": "Unfinished…"},
+                {"id": "second", "title": "", "markdown": ""},
+            ],
+            markdown="Original saved Markdown",
+            bibliography="alpha:",
+            data={"authors": "A\nB"},
         )
+        result = self.client.get(reverse("draft_export", args=[draft.pk]))
+        with zipfile.ZipFile(io.BytesIO(result.content)) as bundle:
+            self.assertEqual(bundle.read("paper.md").decode(), draft.markdown)
+            self.assertEqual(bundle.read("chapters/first.md").decode(), "Unfinished…")
+            self.assertEqual(bundle.read("chapters/second.md"), b"")
+            self.assertEqual(bundle.read("references.yaml"), b"alpha:")
+            self.assertEqual(json.loads(bundle.read("paper.json"))["authors"], "A\nB")
 
-    def test_invalid_syntax_is_saved_even_when_renderer_is_unavailable(self):
-        from unittest.mock import patch
-
-        draft = self.begin()
-        with patch(
-            "publishing.bananamark.request", side_effect=AssertionError("saving must not render")
-        ):
-            self.assertEqual(self.save(draft, markdown="![x](x.png) $unclosed").status_code, 200)
-        response = self.client.post(
-            reverse("draft_preview", args=[draft.pk]),
-            json.dumps({"markdown": "![x](x.png)"}),
-            content_type="application/json",
+    def test_archive_is_private_read_only_and_respects_hidden_papers(self: "ArchiveTests") -> None:
+        draft = Draft.objects.create(
+            owner=self.owner, paper=self.paper, data={"title": "Private draft"}
         )
-        self.assertEqual(response.status_code, 400)
-
-    def test_preview_safely_renders_without_saving(self):
-        draft = self.begin()
-        source = "# Heading\n\n<script>alert(1)</script>\n\n[x](javascript:alert(1))\n\n$x$"
-        response = self.client.post(
-            reverse("draft_preview", args=[draft.pk]),
-            json.dumps({"revision": 1, "markdown": source}),
-            content_type="application/json",
-        )
-        self.assertEqual(response.status_code, 400)
-        self.assertIn("HTML tag", response.json()["error"])
-        self.assertEqual(response.json()["diagnostics"][0]["line"], 3)
-        draft.refresh_from_db()
-        self.assertEqual(draft.revision, 1)
-
-    def test_submission_review_is_bound_to_revision_and_retry_is_idempotent(self):
-        draft = self.prepared()
-        token = self.reviewed(draft)
-        self.assertEqual(self.save(draft, markdown="A later change").status_code, 200)
-        response = self.client.post(
-            reverse("draft_submit", args=[draft.pk]),
-            {"token": token, "license": "CC-BY-4.0", "rights_confirmed": "on"},
-        )
-        self.assertEqual(response.url, reverse("editor", args=[draft.pk]))
-        self.assertEqual(Submission.objects.count(), 1)
-        draft.refresh_from_db()
-        token = self.reviewed(draft)
-        first = self.client.post(
-            reverse("draft_submit", args=[draft.pk]),
-            {"token": token, "license": "CC-BY-4.0", "rights_confirmed": "on"},
-        )
-        again = self.client.post(
-            reverse("draft_submit", args=[draft.pk]),
-            {"token": token, "license": "CC-BY-4.0", "rights_confirmed": "on"},
-        )
-        self.assertEqual(first.url, again.url)
-        self.assertEqual(Submission.objects.count(), 2)
-        draft.refresh_from_db()
-        self.assertEqual(draft.submitted.status, "pending")
-        self.assertEqual(draft.markdown, "")
-        self.assertNotContains(self.client.get(reverse("drafts")), "A test paper")
-        self.assertEqual(self.save(draft, markdown="post-publication change").status_code, 409)
-        self.assertEqual(draft.submitted.hash, draft.submitted.calculate_hash())
-
-    def test_new_paper_is_accepted_and_owner_revision_needs_acceptance(self):
-        draft = self.prepared(False)
-        token = self.reviewed(draft)
+        export = reverse("draft_export", args=[draft.pk])
+        self.assertEqual(self.client.post(export).status_code, 405)
+        for action in ("save", "preview", "review", "submit", "rebase", "discard"):
+            self.assertEqual(self.client.post(f"/drafts/{draft.pk}/{action}/").status_code, 404)
+        self.other.is_superuser = self.other.is_staff = True
+        self.other.save()
+        self.client.force_login(self.other)
+        device = TOTPDevice.objects.create(user=self.other, name="Staff verification")
         self.client.post(
-            reverse("draft_submit", args=[draft.pk]),
-            {"token": token, "license": "CC-BY-4.0", "rights_confirmed": "on"},
+            reverse("staff_mfa"), {"action": "verify", "code": f"{totp(device.bin_key):06d}"}
         )
-        draft.refresh_from_db()
-        self.assertEqual(draft.submitted.status, "accepted")
-        self.assertEqual(draft.submitted.paper.owner, self.owner)
-
-    def test_stale_draft_rebase_preserves_text_and_blocks_old_preview(self):
-        draft = self.prepared()
-        token = self.reviewed(draft)
-        old = draft.markdown
-        update = propose(
-            self.other,
-            self.paper.pk,
-            self.paper.current_id,
-            document(markdown="Accepted elsewhere"),
-        )
-        decide(self.owner, update.pk, "accepted")
-        self.client.post(
-            reverse("draft_submit", args=[draft.pk]),
-            {"token": token, "license": "CC-BY-4.0", "rights_confirmed": "on"},
-        )
-        draft.refresh_from_db()
-        self.assertIsNone(draft.submitted_id)
-        review = self.client.post(
-            reverse("draft_review", args=[draft.pk]), {"revision": draft.revision}
-        )
-        self.assertEqual(review.status_code, 302)
-        rebase = self.client.post(
-            reverse("draft_rebase", args=[draft.pk]),
-            json.dumps({"revision": draft.revision, "latest": str(update.pk)}),
-            content_type="application/json",
-        )
-        self.assertEqual(rebase.status_code, 200)
-        draft.refresh_from_db()
-        self.assertEqual(draft.base_id, update.pk)
-        self.assertEqual(draft.markdown, old)
-        token = self.reviewed(draft)
-        self.client.post(
-            reverse("draft_submit", args=[draft.pk]),
-            {"token": token, "license": "CC-BY-4.0", "rights_confirmed": "on"},
-        )
-        draft.refresh_from_db()
-        self.assertEqual(draft.submitted.base_id, update.pk)
-
-    def test_missing_revision_description_has_actionable_editor_errors(self):
-        draft = self.begin()
-        response = self.client.post(
-            reverse("draft_review", args=[draft.pk]), {"revision": draft.revision}, follow=True
-        )
-        issues = response.context["initial"]["publication_issues"]
-        issue = next(item for item in issues if item["field"] == "explanation")
-        self.assertEqual(issue["label"], "What changed?")
-        self.assertIn("For example", issue["message"])
-        self.assertContains(response, "publication-problems")
-        draft.refresh_from_db()
-        self.assertIsNone(draft.submitted_id)
-
-    def test_failed_confirmation_keeps_license_choice_on_review_page(self):
-        draft = self.prepared(paper=False)
-        token = self.reviewed(draft)
-        response = self.client.post(
-            reverse("draft_submit", args=[draft.pk]), {"token": token, "license": "CC0-1.0"}
-        )
-        self.assertEqual(response.status_code, 200)
-        self.assertTemplateUsed(response, "publishing/draft_review.html")
-        self.assertEqual(response.context["consent_form"]["license"].value(), "CC0-1.0")
-        self.assertIn("rights_confirmed", response.context["consent_form"].errors)
-        draft.refresh_from_db()
-        self.assertIsNone(draft.submitted_id)
-
-    def test_discard_json_preserves_newer_draft_and_accepts_current_revision(self):
-        draft = self.begin()
-        self.save(draft, markdown="Private changes")
-        response = self.client.post(
-            reverse("draft_discard", args=[draft.pk]),
-            {"revision": 1},
-            HTTP_ACCEPT="application/json",
-        )
-        self.assertEqual(response.status_code, 409)
-        self.assertTrue(Draft.objects.filter(pk=draft.pk).exists())
-        draft.refresh_from_db()
-        response = self.client.post(
-            reverse("draft_discard", args=[draft.pk]),
-            {"revision": draft.revision},
-            HTTP_ACCEPT="application/json",
-        )
-        self.assertEqual(response.json()["url"], reverse("drafts"))
-        self.assertFalse(Draft.objects.filter(pk=draft.pk).exists())
-        self.assertTrue(Submission.objects.filter(pk=self.paper.current_id).exists())
-
-    def test_old_rebase_and_discard_cannot_overwrite_newer_save(self):
-        draft = self.begin()
-        self.save(draft, markdown="Keep this")
-        response = self.client.post(reverse("draft_discard", args=[draft.pk]), {"revision": 1})
-        self.assertEqual(response.status_code, 302)
-        self.assertTrue(Draft.objects.filter(pk=draft.pk).exists())
-        self.assertEqual(
-            self.client.post(
-                reverse("draft_rebase", args=[draft.pk]),
-                json.dumps({"revision": 1, "latest": str(self.paper.current_id)}),
-                content_type="application/json",
-            ).status_code,
-            409,
-        )
-
-    def test_hidden_paper_blocks_draft_access(self):
-        draft = self.begin()
+        self.assertNotContains(self.client.get(reverse("drafts")), draft.title)
+        self.assertEqual(self.client.get(export).status_code, 404)
+        self.assertEqual(self.client.get(f"/drafts/{draft.pk}/").status_code, 404)
+        self.client.force_login(self.owner)
         self.paper.is_hidden = True
-        self.paper.save()
-        self.assertEqual(self.client.get(reverse("editor", args=[draft.pk])).status_code, 404)
-        self.assertEqual(self.save(draft).status_code, 404)
-        self.assertNotContains(self.client.get(reverse("drafts")), self.paper.current.title)
+        self.paper.save(update_fields=["is_hidden"])
+        self.assertNotContains(self.client.get(reverse("drafts")), draft.title)
+        self.assertEqual(self.client.get(export).status_code, 404)
+        self.client.logout()
+        self.assertEqual(self.client.get(export).status_code, 302)
 
-    def test_multi_snapshot_pr_preserves_hashes_and_conversation(self):
+    def test_old_edit_links_lead_to_upload_or_existing_pr(self: "ArchiveTests") -> None:
+        first = propose(self.other, self.paper.pk, self.paper.current_id, document())
+        for old, target in (
+            ("/write/", reverse("publish")),
+            (
+                f"/papers/{self.paper.pk}/edit/?scope=proof",
+                reverse("propose", args=[self.paper.pk]),
+            ),
+            (
+                f"/prs/{first.pr_commit.request_id}/edit/",
+                reverse("pull_request", args=[first.pr_commit.request_id]),
+            ),
+        ):
+            self.assertRedirects(self.client.get(old), target, fetch_redirect_response=False)
+            self.assertRedirects(self.client.post(old), target, fetch_redirect_response=False)
+        self.assertFalse(Draft.objects.exists())
+
+    def test_file_upload_prefills_revision_and_rejects_multiple_files(self: "ArchiveTests") -> None:
+        revision = reverse("propose", args=[self.paper.pk])
+        page = self.client.get(revision)
+        self.assertContains(page, 'enctype="multipart/form-data"')
+        self.assertEqual(page.context["form"]["authors"].value(), self.paper.current.authors)
+        self.assertEqual(page.context["form"]["base"].value(), str(self.paper.current_id))
+        files = [SimpleUploadedFile("a.md", b"A"), SimpleUploadedFile("b.md", b"B")]
+        result = self.client.post(
+            revision, {**document(), "base": self.paper.current_id, "file": files}
+        )
+        self.assertContains(result, "Upload one Markdown file")
+        self.assertNotIn("token", result.context)
+        empty = self.client.post(reverse("publish"), {})
+        self.assertIn("file", empty.context["form"].errors)
+
+    def test_shared_bibliography_requires_cli_even_without_chapters(self: "ArchiveTests") -> None:
+        paper = publish(
+            self.owner,
+            document(
+                bibliography="item:\n  type: book\n  author: Doe\n  title: Example\n  year: 2000\n"
+            ),
+        )
+        url = reverse("propose", args=[paper.pk])
+        page = self.client.get(url)
+        self.assertContains(page, paper.current.download_url)
+        self.assertContains(page, reverse("help_cli"))
+        self.assertNotContains(page, 'type="file"')
+        forced = self.client.post(
+            url,
+            {
+                **document(),
+                "base": paper.current_id,
+                "file": SimpleUploadedFile("paper.md", b"Replacement"),
+            },
+        )
+        self.assertEqual(forced.status_code, 409)
+        self.assertEqual(paper.submissions.count(), 1)
+
+    def test_multi_snapshot_pr_preserves_hashes_and_conversation(self: "ArchiveTests") -> None:
         first = propose(
             self.owner,
             self.paper.pk,
@@ -343,24 +172,17 @@ class DraftTests(TestCase):
         original_hash = first.hash
         pr = first.pr_commit.request
         Comment.objects.create(submission=first, user=self.other, text="Please expand the proof.")
-        response = self.client.post(reverse("edit_pr", args=[pr.pk]))
-        draft = Draft.objects.get(pk=response.url.split("/")[2])
-        self.assertEqual(draft.markdown, "First proposed text")
-        self.save(
-            draft,
-            data={**draft.data, "explanation": "Expanded proof"},
-            markdown="Second proposed text",
+        second = propose(
+            self.owner,
+            self.paper.pk,
+            self.paper.current_id,
+            document(markdown="Second proposed text", explanation="Expanded proof"),
+            pull_request_id=pr.pk,
+            expected_head=first.pk,
         )
-        draft.refresh_from_db()
-        token = self.reviewed(draft)
-        self.client.post(
-            reverse("draft_submit", args=[draft.pk]),
-            {"token": token, "license": "CC-BY-4.0", "rights_confirmed": "on"},
-        )
-        draft.refresh_from_db()
         pr.refresh_from_db()
         first.refresh_from_db()
-        self.assertEqual(pr.head_id, draft.submitted_id)
+        self.assertEqual(pr.head_id, second.pk)
         self.assertEqual(first.status, "superseded")
         self.assertEqual(first.hash, original_hash)
         self.assertEqual(list(pr.commits.values_list("number", flat=True)), [1, 2])
@@ -384,7 +206,7 @@ class DraftTests(TestCase):
         with self.assertRaises(DatabaseError), transaction.atomic():
             PullRequestCommit.objects.filter(submission=first).update(number=9)
 
-    def test_only_contributor_can_append_and_expected_head_required(self):
+    def test_only_contributor_can_append_and_expected_head_required(self: "ArchiveTests") -> None:
         first = propose(self.owner, self.paper.pk, self.paper.current_id, document())
         pr = first.pr_commit.request
         with self.assertRaises(PermissionDenied):
@@ -416,52 +238,19 @@ class DraftTests(TestCase):
         self.assertEqual(second.status, "pending")
 
 
-@skipUnless(connection.vendor == "postgresql", "Concurrent draft and PR writes require PostgreSQL")
+@skipUnless(connection.vendor == "postgresql", "Concurrent PR writes require PostgreSQL")
 @override_settings(PASSWORD_HASHERS=["django.contrib.auth.hashers.MD5PasswordHasher"])
-class DraftConcurrencyTests(TransactionTestCase):
-    def setUp(self):
+class PRConcurrencyTests(TransactionTestCase):
+    def setUp(self: "PRConcurrencyTests") -> None:
         self.owner = consenting_user("concurrent-writer", email_verified=True)
         self.paper = publish(self.owner, document())
 
-    def test_concurrent_saves_keep_one_copy_and_return_conflict(self):
-        clients = [Client(), Client()]
-        for client in clients:
-            client.force_login(self.owner)
-        draft = Draft.objects.create(
-            owner=self.owner, paper=self.paper, base=self.paper.current, data=document()
-        )
-        barrier = Barrier(2)
-
-        def write(index):
-            connections.close_all()
-            try:
-                barrier.wait(timeout=10)
-                return (
-                    clients[index]
-                    .post(
-                        reverse("draft_save", args=[draft.pk]),
-                        json.dumps(
-                            {"revision": 1, "data": document(), "markdown": f"copy {index}"}
-                        ),
-                        content_type="application/json",
-                    )
-                    .status_code
-                )
-            finally:
-                connections.close_all()
-
-        with ThreadPoolExecutor(max_workers=2) as pool:
-            results = list(pool.map(write, range(2)))
-        self.assertEqual(sorted(results), [200, 409])
-        draft.refresh_from_db()
-        self.assertEqual(draft.revision, 2)
-
-    def test_concurrent_pr_updates_cannot_fork_head(self):
+    def test_concurrent_pr_updates_cannot_fork_head(self: "PRConcurrencyTests") -> None:
         first = propose(self.owner, self.paper.pk, self.paper.current_id, document())
         pr = first.pr_commit.request
         barrier = Barrier(2)
 
-        def append(index):
+        def append(index: int) -> str:
             connections.close_all()
             try:
                 user = User.objects.get(pk=self.owner.pk)
@@ -489,9 +278,9 @@ class DraftConcurrencyTests(TransactionTestCase):
 
 @skipUnless(connection.vendor == "postgresql", "Schema migration test uses isolated PostgreSQL")
 class PRMigrationTests(TransactionTestCase):
-    def test_populated_history_is_grouped_without_rehashing(self):
-        before = [("publishing", "0004_submission_subjects")]
-        after = MigrationExecutor(connection).loader.graph.leaf_nodes("publishing")
+    def test_populated_history_is_grouped_without_rehashing(self: "PRMigrationTests") -> None:
+        before = [("publishing", "0004_submission_subjects"), ("accounts", "0002_accesstoken")]
+        after = MigrationExecutor(connection).loader.graph.leaf_nodes()
         MigrationExecutor(connection).migrate(before)
         try:
             apps = MigrationExecutor(connection).loader.project_state(before).apps

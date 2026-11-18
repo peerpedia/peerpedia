@@ -1,12 +1,40 @@
-{% extends 'base.html' %}{% load static %}
+{% extends "base.html" %}
+{% load static %}
 {% block head %}<script defer src="{% static 'subjects.js' %}"></script>{% endblock %}
-{% block title %}{% if paper %}Submit a change{% else %}Upload a paper{% endif %} · Peerpedia{% endblock %}
+{% block title %}{% if paper %}Propose a change{% else %}Upload a paper{% endif %} · Peerpedia{% endblock %}
 {% block content %}
-<div class="form-layout"><a class="breadcrumb" href="{% if paper %}{{ paper.get_absolute_url }}{% else %}{% url 'browse' %}{% endif %}">← {% if paper %}Back to paper{% else %}All papers{% endif %}</a>
-<div class="eyebrow">01 UPLOAD <span class="muted">/ 02 PREVIEW / 03 PUBLISH</span></div>
-<h1>{% if paper %}Submit a change{% else %}Upload a paper{% endif %}</h1>
-<p class="lede">Upload a Markdown file, or <a href="{% if paper %}{% url 'edit_paper' paper.pk %}{% else %}{% url 'write' %}{% endif %}">write online with a live preview</a>.</p>
-{% if paper %}<div class="notice"><strong>{{ paper.current.title }}</strong><p>Your proposal must be based on the latest accepted version: <code>{{ paper.current.public_id }}</code>.</p><a href="{{ paper.current.download_url }}">Download the latest Markdown →</a></div>{% else %}<p class="muted">You will be the corresponding author, with authority to accept proposed changes.</p>{% endif %}
-<form method="post" enctype="multipart/form-data" class="upload-form">{% csrf_token %}{% include 'includes/form.html' %}<p class="help">You can inspect everything before publishing. The online editor also supports private saved drafts.</p><button class="button">Preview {% if paper %}submission{% else %}paper{% endif %} →</button></form>
+<div class="form-layout">
+  <header class="page-heading">
+    <a class="breadcrumb" href="{% if paper %}{{ paper.get_absolute_url }}{% else %}{% url 'browse' %}{% endif %}">{% if paper %}← Paper details{% else %}← Papers{% endif %}</a>
+    <h1>{% if paper %}Propose a change{% else %}Upload a paper{% endif %}</h1>
+    {% if paper %}<p>{{ paper.current.title }}</p>{% endif %}
+  </header>
+  <div class="form-content">
+    {% if source_bundle %}
+      <p>This paper has chapter files or a shared bibliography. Use the CLI to submit all its files together.</p>
+      <div class="actions">
+        <a class="button" href="{% url 'help_cli' %}">Open CLI guide</a>
+        <a href="{{ paper.current.download_url }}">Download source files</a>
+      </div>
+    {% else %}
+      {% if paper %}<p>Start with the <a href="{{ paper.current.download_url }}">latest accepted Markdown</a> and upload your revised file.</p>{% endif %}
+      <form method="post" enctype="multipart/form-data" class="upload-form">
+        {% csrf_token %}
+        {% if previous_token %}<input type="hidden" name="token" value="{{ previous_token }}">{% endif %}
+        {% if form.non_field_errors %}<div class="notice error" role="alert">{{ form.non_field_errors }}</div>{% endif %}
+        {% include "includes/form_field.html" with field=form.file %}
+        {% include "includes/form_field.html" with field=form.explanation %}
+        {% include "includes/form_field.html" with field=form.base %}
+        {% if paper %}
+          <details class="disclosure" {% if form.errors or not form.primary_category.value %}open{% endif %}>
+            <summary>Paper details</summary>
+        {% endif %}
+        {% for field in form.paper_details %}{% include "includes/form_field.html" %}{% endfor %}
+        {% if paper %}</details>{% endif %}
+        <div class="actions"><button type="submit" class="button">Preview {% if paper %}proposal{% else %}paper{% endif %}</button></div>
+      </form>
+      {% if not paper %}<p class="help">For chapter files or a shared bibliography, <a href="{% url 'help_cli' %}">use the CLI</a>.</p>{% endif %}
+    {% endif %}
+  </div>
 </div>
 {% endblock %}

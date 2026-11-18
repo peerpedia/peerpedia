@@ -126,12 +126,11 @@ class APITests(TestCase):
         self.assertEqual(self.send({**self.data, "markdown": "\ud800"}).status_code, 400)
         self.assertEqual(Submission.objects.count(), 1)
 
-    def test_revoked_expired_disabled_and_unverified_tokens_are_denied(self):
+    def test_revoked_expired_disabled_and_unverified_tokens_are_denied(self: "APITests") -> None:
         for token_fields, user_fields in [
             ({"revoked_at": timezone.now()}, {}),
             ({"expires_at": timezone.now() - timedelta(seconds=1)}, {}),
             ({}, {"is_active": False}),
-            ({}, {"email_verified": False}),
         ]:
             token, raw = issue_token(self.other, "Restricted")
             for key, value in token_fields.items():
@@ -141,8 +140,14 @@ class APITests(TestCase):
                 setattr(self.other, key, value)
             self.other.save()
             self.assertEqual(self.send(token=raw).status_code, 401)
-            self.other.is_active = self.other.email_verified = True
+            self.other.is_active = True
             self.other.save()
+
+        _, raw = issue_token(self.other, "Unverified email")
+        self.other.emailaddress_set.update(verified=False)
+        self.assertEqual(self.send(token=raw).status_code, 401)
+        self.other.emailaddress_set.update(verified=True)
+        self.assertEqual(self.send(token=raw).status_code, 201)
 
     def test_hidden_content_including_retry_is_unavailable(self):
         key = uuid.uuid4()

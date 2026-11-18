@@ -1,0 +1,11 @@
+<header class="site-header"><div class="header-inner">
+    {% include 'includes/wordmark.html' %}
+    <nav aria-label="Main navigation">
+      <a href="{% url 'publish' %}" {% if request.resolver_match.url_name == 'publish' %}aria-current="page"{% endif %}>Upload paper</a>
+      {% if user.is_authenticated %}
+        <a href="{% url 'socialaccount_connections' %}" {% if unread_notifications %}aria-label="Account, {{ unread_notifications }} unread"{% endif %} {% if request.resolver_match.url_name == 'socialaccount_connections' %}aria-current="page"{% endif %}>Account{% if unread_notifications %}<span class="unread-count"><span class="sr-only">, </span>{{ unread_notifications }}<span class="sr-only"> unread</span></span>{% endif %}</a>
+      {% elif request.resolver_match.url_name != 'login' and request.resolver_match.url_name != 'signup' %}
+        <a href="{% url 'login' %}?next={{ request.get_full_path|urlencode }}">Sign in</a>
+      {% endif %}
+    </nav>
+  </div></header>

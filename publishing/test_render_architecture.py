@@ -1,13 +1,14 @@
 from io import StringIO
 from unittest.mock import patch
+from typing import Any
 from django.core.exceptions import ValidationError
 from django.core.management import call_command
 from django.db import connection
 from django.test import SimpleTestCase, TestCase, TransactionTestCase, override_settings
 from django.urls import reverse
 from . import bananamark
-from .artifacts import reader_links
-from .models import RenderedSubmission, Draft
+from .artifacts import load
+from .models import RenderedSubmission
 from .references import ReferenceDocument
 from .services import publish, propose
 from .test_support import consenting_user
@@ -15,7 +16,7 @@ from .test_chapters import course
 
 
 class DocumentRenderTests(SimpleTestCase):
-    def test_whole_review_renders_book_once(self):
+    def test_reading_multiple_chapters_renders_book_once(self: "DocumentRenderTests") -> None:
         pages = [
             {"id": str(i), "title": str(i), "markdown": f"# Chapter {i}\n\n$x={i}$"}
             for i in range(7)
@@ -27,13 +28,6 @@ class DocumentRenderTests(SimpleTestCase):
             self.assertEqual(render.call_count, 1)
             self.assertEqual(len(book.result["pages"]), 7)
 
-    def test_link_binding_does_not_rewrite_code(self):
-        html = '<code>href="?chapter=b"</code><a href="?chapter=b#thm:a">Theorem</a>'
-        self.assertEqual(
-            reader_links(html, "/snapshot/read/"),
-            '<code>href="?chapter=b"</code><a href="/snapshot/read/?chapter=b#thm:a">Theorem</a>',
-        )
-
 
 @override_settings(PASSWORD_HASHERS=["django.contrib.auth.hashers.MD5PasswordHasher"])
 class ReadingCopyTests(TestCase):
@@ -41,30 +35,62 @@ class ReadingCopyTests(TestCase):
         self.user = consenting_user("writer", "writer@example.org", "test", email_verified=True)
         self.paper = publish(self.user, course())
 
-    def test_reading_references_and_passages_work_without_renderer(self):
-        self.assertEqual(RenderedSubmission.objects.count(), 1)
-        bananamark._request.cache_clear()
+    def test_native_reading_copy_and_chapter_links_work_without_renderer(
+        self: "ReadingCopyTests",
+    ) -> None:
+        snapshot = self.paper.current
+        page = load(snapshot)["pages"][0]
+        self.assertEqual(set(page), {"id", "title", "html", "headings"})
+        self.assertNotIn("snapshot_links", page)
         with patch(
-            "publishing.bananamark._request",
-            side_effect=AssertionError("Renderer must not be called"),
+            "publishing.bananamark.request", side_effect=AssertionError("Unexpected render")
         ):
-            response = self.client.get(self.paper.current.read_url)
-            self.assertContains(response, self.paper.current.read_url + "?chapter=proof#eq:one")
+            response = self.client.get(snapshot.read_url)
+            self.assertEqual(response.context["body"], page["html"])
+            self.assertContains(response, 'href="?chapter=proof#eq:one"')
             self.assertContains(response, 'aria-label="Copy reference to Motivation"')
             self.assertContains(response, 'data-reference="@sec:motivation"')
-            self.assertEqual(
-                self.client.get(reverse("passage_index", args=[self.paper.current_id])).status_code,
-                200,
+            self.assertContains(
+                response, f'data-reference-url="{snapshot.read_url}?chapter=intro#motivation"'
             )
-            refs = self.client.get(
-                reverse("reference_search"), {"submission": self.paper.current_id}
-            )
-            self.assertEqual(refs.status_code, 200)
-            self.assertTrue(
-                all(
-                    t["url"].startswith(self.paper.current.read_url) for t in refs.json()["targets"]
-                )
-            )
+
+    def test_explicit_refresh_reselects_a_cached_renderer_version(
+        self: "ReadingCopyTests",
+    ) -> None:
+        snapshot = self.paper.current
+        current = load(snapshot)
+        archived = {**current, "warnings": ["Older build"]}
+        RenderedSubmission.objects.create(
+            submission=snapshot,
+            source_hash=snapshot.hash,
+            renderer_version="a" * 64,
+            result=archived,
+        )
+        with patch(
+            "publishing.bananamark.request", side_effect=AssertionError("Unexpected render")
+        ):
+            self.assertEqual(load(snapshot), archived)
+            self.assertEqual(load(snapshot, refresh=True), current)
+            self.assertEqual(load(snapshot), current)
+        self.assertEqual(RenderedSubmission.objects.filter(submission=snapshot).count(), 2)
+
+    def test_existing_snapshot_with_bound_links_keeps_its_frozen_body(
+        self: "ReadingCopyTests",
+    ) -> None:
+        snapshot = self.paper.current
+        artifact = RenderedSubmission.objects.get(submission=snapshot)
+        page = artifact.result["pages"][0]
+        page["html"] = (
+            f'<p data-passage="b0"><a href="{snapshot.read_url}?chapter=proof#eq:one">Old proof</a></p>'
+        )
+        page["blocks"] = [{"id": "b0", "text": "Old proof", "chapter": "intro"}]
+        artifact.save(update_fields=["result"])
+        with patch(
+            "publishing.bananamark.request", side_effect=AssertionError("Unexpected render")
+        ):
+            response = self.client.get(reverse("read_submission", args=[snapshot.pk]))
+            self.assertContains(response, page["html"])
+            self.assertEqual(response.context["body"], page["html"])
 
     def test_missing_copy_gets_retryable_response_during_outage(self):
         RenderedSubmission.objects.all().delete()
@@ -152,69 +178,18 @@ class RenderTransactionTests(TransactionTestCase):
             proposal = propose(self.user, paper.pk, paper.current_id, course(explanation="Improve"))
         self.assertTrue(RenderedSubmission.objects.filter(submission=proposal).exists())
 
-    def test_draft_review_and_submit_compile_before_lock_and_recheck_revision(self):
-        response = self.client.post(reverse("edit_paper", args=[self.paper.pk]))
-        draft = Draft.objects.get(pk=response.url.split("/")[2])
-        draft.data["explanation"] = "Improve"
-        draft.save(update_fields=["data"])
-        original = bananamark.request
-
-        def checked(**kwargs):
-            self.assertFalse(connection.in_atomic_block)
-            return original(**kwargs)
-
-        with (
-            patch("publishing.references.request", side_effect=checked),
-            patch("publishing.bananamark.request", side_effect=checked),
-        ):
-            response = self.client.post(
-                reverse("draft_review", args=[draft.pk]), {"revision": draft.revision}
-            )
-            self.assertEqual(response.status_code, 200)
-            token = response.context["token"]
-
-        original_revision = draft.revision
-
-        # Simulate a save arriving while the submission is being compiled.
-        def changed(**kwargs):
-            self.assertFalse(connection.in_atomic_block)
-            Draft.objects.filter(pk=draft.pk).update(revision=draft.revision + 1)
-            return original(**kwargs)
-
-        with patch("publishing.bananamark.request", side_effect=changed):
-            response = self.client.post(
-                reverse("draft_submit", args=[draft.pk]),
-                {"token": token, "rights_confirmed": "on"},
-            )
-        draft.refresh_from_db()
-        self.assertIsNone(draft.submitted_id)
-        self.assertEqual(draft.revision, original_revision + 1)
-        self.assertEqual(response.status_code, 302)
-
-    def test_api_commit_and_section_proposal_do_not_compile_under_locks(self):
+    def test_api_push_renders_before_writes(self: "RenderTransactionTests") -> None:
         import uuid
         from accounts.tokens import issue_token
-        from . import sections
         from .tests import document
 
-        source = "# Note\n\n## First\n\nOriginal.\n\n## Second\n\nUnchanged.\n"
-        paper = publish(self.user, document(markdown=source))
-        section = sections.sections(source)[0]
-        revised = sections.combine(source, section, "## First\n\nCorrected.\n\n")
         original = bananamark._request
 
-        def checked(*args):
+        def checked(payload: str, endpoint: str) -> dict[str, Any]:
             self.assertFalse(connection.in_atomic_block)
-            return original(*args)
+            return original(payload, endpoint)
 
         with patch("publishing.bananamark._request", side_effect=checked):
-            record = propose(
-                self.user,
-                paper.pk,
-                paper.current_id,
-                document(markdown=revised, explanation="Section correction"),
-                section=section,
-            )
             _, raw = issue_token(self.user, "Architecture test", can_publish=True)
             response = self.client.post(
                 "/api/v1/push/",
@@ -227,10 +202,11 @@ class RenderTransactionTests(TransactionTestCase):
                 HTTP_AUTHORIZATION="Bearer " + raw,
                 HTTP_IDEMPOTENCY_KEY=str(uuid.uuid4()),
             )
-        self.assertEqual(record.base_id, paper.current_id)
         self.assertEqual(response.status_code, 201)
 
-    def test_changed_base_after_compilation_rejects_proposal(self):
+    def test_changed_base_after_compilation_rejects_proposal(
+        self: "RenderTransactionTests",
+    ) -> None:
         from . import documents
         from .services import decide
         from .models import Submission
@@ -240,29 +216,15 @@ class RenderTransactionTests(TransactionTestCase):
         original = documents.prepare
         count = Submission.objects.count()
 
-        def concurrent_acceptance(*args, **kwargs):
-            result = original(*args, **kwargs)
+        def concurrent_acceptance(
+            data: dict[str, Any], base: Submission
+        ) -> documents.PreparedDocument:
+            result = original(data, base)
             decide(self.user, competitor.pk, "accepted")
             return result
 
-        with patch("publishing.documents.prepare", side_effect=concurrent_acceptance):
+        with patch("publishing.services.prepare", side_effect=concurrent_acceptance):
             with self.assertRaisesMessage(ValidationError, "newer accepted version"):
                 propose(self.user, self.paper.pk, base_id, course(explanation="Late edit"))
         self.assertEqual(Submission.objects.count(), count)
         self.assertEqual(RenderedSubmission.objects.count(), count)
-
-    def test_full_paper_rebase_comparison_remains_available(self):
-        from .services import decide
-
-        response = self.client.post(reverse("edit_paper", args=[self.paper.pk]))
-        draft = Draft.objects.get(pk=response.url.split("/")[2])
-        proposal = propose(
-            self.user,
-            self.paper.pk,
-            self.paper.current_id,
-            course(explanation="New accepted version"),
-        )
-        decide(self.user, proposal.pk, "accepted")
-        response = self.client.get(reverse("draft_rebase", args=[draft.pk]))
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.context["latest"].pk, proposal.pk)

@@ -24,7 +24,11 @@ urlpatterns = [
     path("security/", security, name="staff_mfa"),
     path("tokens/", tokens.token_settings, name="access_tokens"),
     path("tokens/<int:token_id>/revoke/", tokens.revoke_token, name="revoke_token"),
-    path("signup/", views.signup, name="signup"),
+    path(
+        "signup/",
+        limited("signup", limit=10, seconds=3600)(views.PeerSignupView.as_view()),
+        name="signup",
+    ),
     path(
         "login/",
         limited("login", limit=20, account_field="username")(views.PeerLoginView.as_view()),
@@ -56,7 +60,7 @@ urlpatterns = [
     ),
     path(
         "reset/<uidb64>/<token>/",
-        auth.PasswordResetConfirmView.as_view(template_name="accounts/password_reset_confirm.html"),
+        views.PeerPasswordResetConfirmView.as_view(),
         name="password_reset_confirm",
     ),
     path(

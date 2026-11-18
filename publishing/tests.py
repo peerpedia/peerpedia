@@ -62,7 +62,7 @@ class PublishingTests(TestCase):
         self.assertEqual(self.paper.current.contributor, self.owner)
         self.assertEqual(self.paper.current.hash, self.paper.current.calculate_hash())
 
-    def test_anonymous_can_read_every_public_view(self):
+    def test_anonymous_can_read_every_public_view(self: "PublishingTests") -> None:
         s = self.proposal()
         for url in [
             reverse("browse"),
@@ -75,20 +75,46 @@ class PublishingTests(TestCase):
             reverse("compare", args=[self.paper.pk]),
         ]:
             with self.subTest(url=url):
-                self.assertEqual(self.client.get(url).status_code, 200)
+                self.assertEqual(self.client.get(url, follow=True).status_code, 200)
 
-    def test_browse_has_no_abstract_and_separate_read_link(self):
+    def test_catalogue_links_only_to_paper_overview(self: "PublishingTests") -> None:
         response = self.client.get(reverse("browse"))
         self.assertNotContains(response, self.paper.current.abstract)
         self.assertContains(response, self.paper.get_absolute_url())
-        self.assertContains(response, self.paper.read_url)
+        self.assertNotContains(response, self.paper.read_url)
+        overview = self.client.get(self.paper.get_absolute_url())
+        self.assertContains(overview, self.paper.current.abstract)
+        self.assertContains(overview, f'href="{self.paper.read_url}"', count=1)
 
-    def test_reader_has_no_platform_chrome(self):
-        response = self.client.get(reverse("read_paper", args=[self.paper.pk]))
+    def test_reader_shares_home_link_and_omits_passage_controls(self: "PublishingTests") -> None:
+        response = self.client.get(reverse("read_paper", args=[self.paper.pk]), follow=True)
         self.assertContains(response, 'id="a-test-paper"')
-        self.assertContains(response, 'data-passage-text="A test paper"')
-        for forbidden in ["site-header", "site-footer", "Go back", "Sign in"]:
-            self.assertNotContains(response, forbidden)
+        self.assertContains(response, "A test paper")
+        for marker in (
+            "data-passage-text",
+            "passage-selection",
+            "discussions-open",
+            "discussion-panel",
+            "discussion-config",
+            "discussions.css",
+            "discussions.js",
+        ):
+            self.assertNotContains(response, marker)
+        self.assertContains(response, 'aria-label="Peerpedia home"', count=1)
+        self.assertNotContains(response, "site-footer")
+
+    def test_retired_passage_endpoints_are_unavailable(self: "PublishingTests") -> None:
+        snapshot_id = self.paper.current_id
+        for url in (
+            f"/submissions/{snapshot_id}/discussions/",
+            f"/submissions/{snapshot_id}/passages/",
+            f"/discussion-comments/{snapshot_id}/reply/",
+            f"/api/v1/submissions/{snapshot_id}/feedback/",
+            f"/api/v1/passages/{snapshot_id}/",
+        ):
+            with self.subTest(url=url):
+                self.assertEqual(self.client.get(url).status_code, 404)
+                self.assertEqual(self.client.post(url, {}).status_code, 404)
 
     def test_owner_only_acceptance(self):
         s = self.proposal()
@@ -320,6 +346,33 @@ class PublishingTests(TestCase):
         )
         self.assertEqual(Paper.objects.count(), count + 1)
 
+    def test_edit_preview_keeps_the_source_and_allows_replacement(self: "PublishingTests") -> None:
+        self.login()
+        url = reverse("publish")
+        metadata = document(secondary_categories=["math.GR"])
+        preview = self.client.post(
+            url, {**metadata, "file": SimpleUploadedFile("first.md", b"Original Markdown")}
+        )
+        token = preview.context["token"]
+        edit = self.client.post(url, {"action": "edit", "token": token})
+        self.assertContains(edit, "first.md")
+        self.assertEqual(edit.context["form"]["secondary_categories"].value(), ["math.GR"])
+        revised = self.client.post(url, {**metadata, "token": token, "title": "Revised title"})
+        self.assertEqual(revised.context["data"]["markdown"], "Original Markdown")
+        self.assertEqual(revised.context["data"]["title"], "Revised title")
+        replaced = self.client.post(
+            url,
+            {
+                **metadata,
+                "token": revised.context["token"],
+                "file": SimpleUploadedFile("second.md", b"Replacement source"),
+            },
+        )
+        self.assertEqual(replaced.context["data"]["markdown"], "Replacement source")
+        self.assertEqual(Paper.objects.count(), 1)
+        self.login(self.other)
+        self.assertEqual(self.client.post(url, {"action": "edit", "token": token}).status_code, 400)
+
     def test_preview_token_is_bound_to_user_and_cannot_be_modified(self):
         self.login()
         data = document()
@@ -402,7 +455,7 @@ class PublishingTests(TestCase):
             with self.assertRaises(ValidationError):
                 render_markdown(source)
 
-    def test_reader_outline_unique_anchors_and_safe_labels(self):
+    def test_reader_outline_unique_anchors_and_safe_labels(self: "PublishingTests") -> None:
         source = "# Title\n\n## A *proof*\n\n### Detail\n\n## A proof\n\n## A proof-2\n\n## &lt;script&gt;bad()&lt;/script&gt;\n\n```md\n## Not a section\n```"
         body, contents = render_reader(source)
         self.assertEqual(
@@ -418,7 +471,7 @@ class PublishingTests(TestCase):
         self.assertEqual(len(contents), 5)
         self.assertNotIn("<script>", body)
         paper = publish(self.owner, document(markdown=source))
-        response = self.client.get(reverse("read_paper", args=[paper.pk]))
+        response = self.client.get(paper.current.read_url)
         self.assertContains(response, 'aria-label="Table of contents"')
         self.assertNotContains(response, "<script>bad()")
         self.assertContains(response, "&lt;script&gt;bad()&lt;/script&gt;")
