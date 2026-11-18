@@ -1,6 +1,5 @@
 // Annotate a parse5 HTML fragment without constructing a browser window or layout objects.
 import { load } from "cheerio";
-import { randomUUID } from "node:crypto";
 
 /** @typedef {import("domhandler").AnyNode} HtmlNode */
 /** @typedef {{name: string, text: string}} Reference */
@@ -33,10 +32,10 @@ function passageText(node) {
   return node.children.map(passageText).join("");
 }
 
-/** @typedef {{kind:"passage", index:number}|{kind:"section", line:number}} Marker */
 /** @param {string} html @param {Heading[]} headings @param {string} chapter
  * @param {string} prefix @param {(href:string)=>Reference|undefined} lookup @param {string[]} numberedMath
- * @returns {{parts: string[], markers: Marker[], blocks: Array<{kind:string,text:string,path:string[],ordinal:number,chapter:string}>, links: Map<string, Reference|undefined>}}
+ * @param {number} offset @param {{line:number,end:number}|undefined} section
+ * @returns {{html:string, blocks:Array<{id:string,kind:string,text:string,path:string[],ordinal:number,chapter:string}>}}
  */
 export function annotate(
   html,
@@ -45,14 +44,13 @@ export function annotate(
   prefix,
   lookup,
   numberedMath,
+  offset,
+  section,
 ) {
   const $ = load(html, {}, false);
-  const links = new Map();
-  const slot = randomUUID();
   for (const el of $("a[href]")) {
     const href = el.attribs.href;
     const label = lookup(href);
-    links.set(href, label);
     if (label) {
       el.attribs["data-reference"] = label.name;
       if ($(el).text() === label.text)
@@ -135,8 +133,9 @@ export function annotate(
     const key = JSON.stringify([sectionPath, kind]),
       ordinal = counts.get(key) || 0;
     counts.set(key, ordinal + 1);
-    blocks.push({ kind, text: value, path: sectionPath, ordinal, chapter });
-    el.attribs["data-passage"] = slot + "p" + (blocks.length - 1) + ";";
+    const id = "b" + (offset + blocks.length);
+    blocks.push({ id, kind, text: value, path: sectionPath, ordinal, chapter });
+    el.attribs["data-passage"] = id;
     el.attribs["data-passage-kind"] = kind;
     el.attribs["data-passage-text"] = value;
   }
@@ -162,26 +161,15 @@ export function annotate(
       }
     }
   }
-  // The opt-in annotated reader can also reuse its chapter for a section preview.
-  for (const el of $.root().children("[data-source-line]")) {
-    const line = Number(el.attribs["data-source-line"]);
-    if (Number.isSafeInteger(line) && line > 0)
-      $(el).before(slot + "s" + line + ";");
+  if (section) {
+    let visible = false;
+    for (const node of $.root().contents().toArray()) {
+      const line =
+        "attribs" in node && Number(node.attribs["data-source-line"]);
+      if (line === section.line) visible = true;
+      if (line >= section.end) visible = false;
+      if (!visible) $(node).remove();
+    }
   }
-  const serialized = escapeAttributes($.html());
-  const parts = [];
-  /** @type {Marker[]} */
-  const markers = [];
-  let cursor = 0;
-  for (const match of serialized.matchAll(
-    new RegExp(slot + "([ps])([0-9]+);", "g"),
-  )) {
-    parts.push(serialized.slice(cursor, match.index));
-    cursor = match.index + match[0].length;
-    const index = Number(match[2]);
-    if (match[1] === "s") markers.push({ kind: "section", line: index });
-    else markers.push({ kind: "passage", index });
-  }
-  parts.push(serialized.slice(cursor));
-  return { parts, markers, blocks, links };
+  return { html: escapeAttributes($.html()), blocks };
 }

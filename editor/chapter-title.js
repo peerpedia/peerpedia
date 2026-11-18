@@ -5,9 +5,11 @@ const dialect = defineDialect(dialectOptions);
 
 // Use the same grammar as the editor. Fenced examples and nested headings are
 // not chapter names, and incomplete equations must not prevent a draft save.
-/** @param {string} source @returns {string} */
-export function chapterTitle(source) {
-  const tree = dialect.language.language.parser.parse(source);
+/** @param {string} source @param {import("@lezer/common").Tree} [tree] @returns {string} */
+export function chapterTitle(
+  source,
+  tree = dialect.language.language.parser.parse(source),
+) {
   const headings = [];
   let depth = 0;
   tree.iterate({

@@ -7,26 +7,25 @@ import { createHash } from "node:crypto";
 import { LRUCache } from "lru-cache";
 import { annotate } from "./passage-html.mjs";
 import { dialectOptions, numbering } from "./dialect.js";
-import { headingText } from "./chapter-title.js";
+import { chapterTitle, headingText } from "./chapter-title.js";
 
 const dialect = defineDialect(dialectOptions);
 /** @typedef {{id: string, title?: string, markdown: string}} Page */
 /** @typedef {{pages?: Page[], source?: string, action?: string, bibliography?: string, reader?: string, prefix?: string,
  * passageComments?: boolean, diagrams?: boolean, staticUrl?: string, renderChapter?: string, diagramChapter?: string, numberSections?: boolean,
  * section?: {chapter:string, line:number, end:number}}} DocumentInput */
-/** @typedef {ReturnType<typeof annotate>} AnnotatedChapter */
+/** @typedef {ReturnType<typeof annotate>["blocks"]} Blocks */
 /** @typedef {ReturnType<typeof createBook>} Book */
 /** @typedef {ReturnType<Book["transform"]>} ResolvedDocument */
 /** @typedef {ReturnType<typeof createRenderer>} Renderer */
 /** @typedef {ReturnType<typeof tikz>} DiagramCompiler */
 /** @typedef {import("./passage-html.mjs").Reference} Reference */
 /** @typedef {import("./passage-html.mjs").Heading & {title:boolean,number:string}} PageHeading */
-/** @typedef {AnnotatedChapter & {headings: PageHeading[], diagramCount:number}} CompiledChapter */
-/** @typedef {{nativeHtml:true, html:string, headings: PageHeading[], diagramCount:number}} NativeChapter */
-/** @typedef {{id:string, title:string, html:string, nativeHtml?:boolean, headings:PageHeading[], blocks:Array<AnnotatedChapter["blocks"][number] & {id:string}>}} RenderedPage */
+/** @typedef {{html:string,headings:PageHeading[],blocks:Blocks,diagramCount:number}} CompiledChapter */
+/** @typedef {{id:string,title:string,html:string,nativeHtml?:boolean,headings:PageHeading[],blocks:Blocks}} RenderedPage */
 /** @typedef {{pages:RenderedPage[],targets:object[],entries:Record<string, object>,warnings:string[]}} RenderedDocument */
 
-/** @type {LRUCache<string, CompiledChapter|NativeChapter>} */
+/** @type {LRUCache<string, CompiledChapter>} */
 const chapters = new LRUCache({ max: 256, maxSize: 16 * 1024 * 1024 });
 
 /** @type {LRUCache<string, ReturnType<typeof sourceInfo>>} */
@@ -98,18 +97,8 @@ function sourceInfo(source) {
       }
     },
   });
-  let title = "Untitled chapter";
-  let firstRoot = true;
-  for (const heading of headings) {
-    if (!heading.root) continue;
-    const level = heading.level;
-    if (firstRoot || level === 1)
-      title = heading.label.slice(0, 250) || "Untitled chapter";
-    firstRoot = false;
-    if (level === 1) break;
-  }
   const info = {
-    title,
+    title: chapterTitle(source, tree),
     scan: { headings, references: [...references], images, numberedMath },
   };
   sources.set(source, info, {
@@ -124,50 +113,6 @@ function sourceInfo(source) {
 /** @param {string} html @returns {string} */
 function plain(html) {
   return load(html, {}, false).root().text();
-}
-
-/** @param {Map<string, Reference|undefined>} previous @param {(href:string)=>Reference|undefined} lookup @returns {boolean} */
-function sameLinks(previous, lookup) {
-  for (const [href, old] of previous) {
-    const current = lookup(href);
-    if (old?.name !== current?.name || old?.text !== current?.text)
-      return false;
-  }
-  return true;
-}
-
-/** @param {CompiledChapter} compiled @param {number} offset @param {string} id @param {string} title
- * @param {DocumentInput["section"]} section @returns {RenderedPage} */
-function assemble(compiled, offset, id, title, section) {
-  const blocks = [];
-  for (const [i, block] of compiled.blocks.entries())
-    blocks.push({ id: "b" + (offset + i), ...block, path: [...block.path] });
-
-  const chunks = [];
-  let visible = !section;
-  for (const [i, marker] of compiled.markers.entries()) {
-    if (visible) chunks.push(compiled.parts[i]);
-    if (marker.kind === "section" && section) {
-      if (marker.line === section.line) visible = true;
-      if (marker.line >= section.end) visible = false;
-    } else if (visible && marker.kind === "passage")
-      chunks.push(blocks[marker.index].id);
-  }
-  if (visible) chunks.push(compiled.parts.at(-1));
-  const headings = [];
-  for (const heading of compiled.headings)
-    if (
-      !section ||
-      (heading.line >= section.line && heading.line < section.end)
-    )
-      headings.push(structuredClone(heading));
-  return {
-    id,
-    title,
-    html: chunks.join(""),
-    headings,
-    blocks,
-  };
 }
 
 /** Select a section in BananaMark's resolved Markdown, before HTML generation.
@@ -218,7 +163,7 @@ function selectSection(doc, headings, section) {
 /** @param {Page} page @param {ResolvedDocument} resolved @param {Renderer} renderer
  * @param {DiagramCompiler|null} diagrams @param {number} previousDiagrams @param {string} prefix
  * @param {((href:string)=>Reference|undefined)|undefined} lookup
- * @param {DocumentInput["section"]} section @returns {Promise<CompiledChapter|NativeChapter>} */
+ * @param {DocumentInput["section"]} section @param {number} offset @returns {Promise<CompiledChapter>} */
 async function compileChapter(
   page,
   resolved,
@@ -228,6 +173,7 @@ async function compileChapter(
   prefix,
   lookup,
   section,
+  offset,
 ) {
   const info = { key: page.id, file: page.id + ".md", lang: "en" };
   const source = sourceInfo(page.markdown).scan;
@@ -259,8 +205,9 @@ async function compileChapter(
   for (const [n, heading] of result.headings.entries()) {
     const { id, level } = heading,
       title = resolved.meta.headingTitles[id];
+    const position = source.headings[selected.first + n];
     headings.push({
-      ...source.headings[selected.first + n],
+      ...position,
       level,
       id: prefix + id,
       number: resolved.meta.sectionNumbers[id] ?? "",
@@ -275,20 +222,25 @@ async function compileChapter(
             : plain(renderer.renderFragment(title, info)),
     });
   }
-  if (!lookup)
-    return { nativeHtml: true, html: result.html, headings, diagramCount };
-  return {
-    ...annotate(
-      result.html,
-      headings,
-      page.id,
-      prefix,
-      lookup,
-      source.numberedMath,
-    ),
+  if (!lookup) return { html: result.html, headings, blocks: [], diagramCount };
+  const marked = annotate(
+    result.html,
     headings,
-    diagramCount,
-  };
+    page.id,
+    prefix,
+    lookup,
+    source.numberedMath,
+    offset,
+    section,
+  );
+  const visibleHeadings = [];
+  for (const heading of headings)
+    if (
+      !section ||
+      (heading.line >= section.line && heading.line < section.end)
+    )
+      visibleHeadings.push(heading);
+  return { ...marked, headings: visibleHeadings, diagramCount };
 }
 
 /** @param {DocumentInput} input @returns {Promise<RenderedDocument|ReturnType<typeof scan>|{titles:string[]}>} */
@@ -399,7 +351,7 @@ export async function renderDocument(input) {
         workerIdleTimeout: 30000,
       })
     : null;
-  let labelIndex;
+  let labelIndex, referenceKey;
   try {
     for (const [i, page] of pages.entries()) {
       if (input.renderChapter && input.renderChapter !== page.id) continue;
@@ -408,7 +360,11 @@ export async function renderDocument(input) {
       const resolved = book.transform(handles[i]);
       if (annotations && !labelIndex) {
         labelIndex = new Map();
-        for (const label of book.labels()) {
+        const labels = book.labels();
+        referenceKey = createHash("sha256")
+          .update(JSON.stringify(labels))
+          .digest("hex");
+        for (const label of labels) {
           const address = url(label.page) + "#" + label.anchor;
           if (!labelIndex.has(address))
             labelIndex.set(address, { name: label.name, text: label.text });
@@ -433,7 +389,9 @@ export async function renderDocument(input) {
             page.markdown,
             resolved,
             annotations,
-            annotations ? null : section,
+            section,
+            referenceKey,
+            offset,
             reader,
             prefix,
             Boolean(compileDiagrams),
@@ -442,10 +400,7 @@ export async function renderDocument(input) {
         )
         .digest("hex");
       let compiled = chapters.get(key);
-      if (
-        !compiled ||
-        ("links" in compiled && !sameLinks(compiled.links, lookup))
-      ) {
+      if (!compiled) {
         compiled = await compileChapter(
           page,
           resolved,
@@ -455,38 +410,28 @@ export async function renderDocument(input) {
           prefix,
           annotations ? lookup : undefined,
           section,
+          offset,
         );
-        let size = Buffer.byteLength(JSON.stringify(compiled.headings));
-        if ("nativeHtml" in compiled) size += Buffer.byteLength(compiled.html);
-        else {
-          size += Buffer.byteLength(
-            JSON.stringify([
-              compiled.blocks,
-              compiled.markers,
-              [...compiled.links],
-            ]),
+        const size =
+          Buffer.byteLength(compiled.html) +
+          Buffer.byteLength(
+            JSON.stringify([compiled.headings, compiled.blocks]),
           );
-          for (const part of compiled.parts) size += Buffer.byteLength(part);
-        }
         chapters.set(key, compiled, { size });
       }
       validated.set(sourceKeys[i], true);
       diagramCount += compiled.diagramCount;
       if (diagramCount > 32)
         throw new Error("Keep each paper below 32 diagrams.");
-      if ("nativeHtml" in compiled) {
-        rendered.push({
-          id: page.id,
-          title: titles[i],
-          html: compiled.html,
-          headings: structuredClone(compiled.headings),
-          blocks: [],
-          nativeHtml: true,
-        });
-      } else {
-        rendered.push(assemble(compiled, offset, page.id, titles[i], section));
-        offset += compiled.blocks.length;
-      }
+      rendered.push({
+        id: page.id,
+        title: titles[i],
+        html: compiled.html,
+        headings: structuredClone(compiled.headings),
+        blocks: structuredClone(compiled.blocks),
+        ...(annotations ? {} : { nativeHtml: true }),
+      });
+      offset += compiled.blocks.length;
       for (const entry of resolved.meta.bibliography)
         entries[entry.key] = { ...entry, author: entry.citationLabel };
     }
