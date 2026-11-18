@@ -1,11 +1,17 @@
 """Canonical multi-page payloads. Legacy snapshots are never rewritten."""
 
+from __future__ import annotations
+
 import hashlib
 from copy import deepcopy
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 import re
 from django.conf import settings
 from django.core.exceptions import ValidationError
+
+if TYPE_CHECKING:
+    from .models import Submission
 
 ID = re.compile(r"[A-Za-z0-9_-]{1,64}\Z")
 MAX_CHAPTERS = 64
@@ -67,7 +73,9 @@ class PreparedDocument:
     section: object = None
 
 
-def prepare(data, base=None, section=None):
+def prepare(
+    data: dict, base: Submission | None = None, section: dict | None = None
+) -> PreparedDocument:
     """Reject old-client replacement of a multi-page document instead of losing pages."""
     data = deepcopy(data)
     if base and (base.chapters or base.bibliography) and "chapters" not in data:
@@ -89,6 +97,7 @@ def prepare(data, base=None, section=None):
         bibliography=bib,
         numberSections=bool(chapters),
         diagrams=True,
+        snapshotLinks=True,
     )
     titles = {page["id"]: page["title"] for page in result["pages"]}
     data["chapters"] = [

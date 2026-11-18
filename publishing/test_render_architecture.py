@@ -6,7 +6,7 @@ from django.db import connection
 from django.test import SimpleTestCase, TestCase, TransactionTestCase, override_settings
 from django.urls import reverse
 from . import bananamark
-from .artifacts import reader_links
+from .artifacts import reader_links, snapshot_page
 from .models import RenderedSubmission, Draft
 from .references import ReferenceDocument
 from .services import publish, propose
@@ -26,6 +26,26 @@ class DocumentRenderTests(SimpleTestCase):
                 self.assertIn("katex", book.render(page["id"])[0])
             self.assertEqual(render.call_count, 1)
             self.assertEqual(len(book.result["pages"]), 7)
+
+    def test_snapshot_offsets_match_parser_for_unicode_and_literal_links(
+        self: "DocumentRenderTests",
+    ) -> None:
+        source = (
+            "# 标题 🌱\n\n## A\n\n"
+            + '`href="?chapter=b"` [一](?chapter=b&arg=a\'b) and [二](?chapter=b).'
+            + "\n\n## B\n\n[三](?chapter=b#anchor)"
+        )
+        reader = "/paper/o'hare&co/"
+        for section in (None, {"chapter": "main", "line": 3, "end": 7}):
+            options = {"source": source, "section": section}
+            original = bananamark.request(**options)["pages"][0]
+            page = bananamark.request(**options, snapshotLinks=True)["pages"][0]
+            self.assertEqual(page["html"], original["html"])
+            self.assertEqual(len(page["snapshot_links"]), 2 if section else 3)
+            expected = reader_links(original["html"], reader)
+            with patch("publishing.artifacts.reader_links", side_effect=AssertionError):
+                bound = snapshot_page(page, reader)
+            self.assertEqual(bound, {**original, "html": expected})
 
     def test_link_binding_does_not_rewrite_code(self):
         html = '<code>href="?chapter=b"</code><a href="?chapter=b#thm:a">Theorem</a>'

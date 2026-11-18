@@ -6,7 +6,7 @@ from html import escape
 from html.parser import HTMLParser
 from functools import lru_cache
 from django.conf import settings
-from .models import RenderedSubmission
+from .models import RenderedSubmission, Submission
 
 
 @lru_cache(maxsize=1)
@@ -26,13 +26,27 @@ def renderer_version() -> str:
     return digest.hexdigest()
 
 
-def store(submission, result, version):
+def snapshot_page(page: dict, reader: str) -> dict:
+    page = dict(page)
+    bindings = page.pop("snapshot_links", None)
+    if bindings is None:  # Also accept an older render worker during an upgrade.
+        page["html"] = reader_links(page["html"], reader)
+    elif bindings:
+        source = page["html"].encode("utf-8")
+        chunks = []
+        cursor = 0
+        for start, width, href in bindings:
+            chunks.extend((source[cursor:start], escape(reader + href, quote=True).encode("utf-8")))
+            cursor = start + width
+        chunks.append(source[cursor:])
+        page["html"] = b"".join(chunks).decode("utf-8")
+    return page
+
+
+def store(submission: Submission, result: dict, version: str) -> dict:
     result = {
         **result,
-        "pages": [
-            {**page, "html": reader_links(page["html"], submission.read_url)}
-            for page in result["pages"]
-        ],
+        "pages": [snapshot_page(page, submission.read_url) for page in result["pages"]],
         "targets": [
             {**target, "url": submission.read_url + target["url"]} for target in result["targets"]
         ],
@@ -45,7 +59,7 @@ def store(submission, result, version):
     return artifact.result
 
 
-def load(submission, *, refresh=False):
+def load(submission: Submission, *, refresh: bool = False) -> dict:
     # Keep the last explicitly built version across BM upgrades. Rebuild with the
     # management command, never make ordinary reading depend on an upgrade.
     query = RenderedSubmission.objects.filter(submission=submission, source_hash=submission.hash)
@@ -62,6 +76,7 @@ def load(submission, *, refresh=False):
         bibliography=submission.bibliography,
         numberSections=bool(submission.chapters),
         diagrams=True,
+        snapshotLinks=True,
     )
     return store(submission, result, renderer_version())
 

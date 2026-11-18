@@ -4,14 +4,14 @@ import { tikz } from "bananamark-tikz";
 import { load } from "cheerio";
 import { createHash } from "node:crypto";
 import { LRUCache } from "lru-cache";
-import { annotate, escapeAttributes } from "./passage-html.mjs";
+import { annotate } from "./passage-html.mjs";
 import { dialectOptions, numbering } from "./dialect.js";
 import { chapterTitle } from "./chapter-title.js";
 
 const dialect = defineDialect(dialectOptions);
 /** @typedef {{id: string, title?: string, markdown: string}} Page */
 /** @typedef {{pages?: Page[], source?: string, action?: string, bibliography?: string, reader?: string, prefix?: string,
- * diagrams?: boolean, staticUrl?: string, renderChapter?: string, diagramChapter?: string, numberSections?: boolean,
+ * snapshotLinks?: boolean, diagrams?: boolean, staticUrl?: string, renderChapter?: string, diagramChapter?: string, numberSections?: boolean,
  * section?: {chapter:string, line:number, end:number}}} DocumentInput */
 /** @typedef {ReturnType<typeof annotate>} AnnotatedChapter */
 /** @typedef {ReturnType<typeof createBook>} Book */
@@ -21,7 +21,7 @@ const dialect = defineDialect(dialectOptions);
 /** @typedef {import("./passage-html.mjs").Reference} Reference */
 /** @typedef {import("./passage-html.mjs").Heading & {title:boolean,number:string}} PageHeading */
 /** @typedef {AnnotatedChapter & {headings: PageHeading[], diagramCount:number}} CompiledChapter */
-/** @typedef {{id:string, title:string, html:string, headings:PageHeading[], blocks:Array<AnnotatedChapter["blocks"][number] & {id:string}>}} RenderedPage */
+/** @typedef {{id:string, title:string, html:string, snapshot_links?: Array<[number,number,string]>, headings:PageHeading[], blocks:Array<AnnotatedChapter["blocks"][number] & {id:string}>}} RenderedPage */
 /** @typedef {{pages:RenderedPage[],targets:object[],entries:Record<string, object>,warnings:string[]}} RenderedDocument */
 
 /** @type {LRUCache<string, CompiledChapter>} */
@@ -97,21 +97,48 @@ function sameLinks(previous, lookup) {
   return true;
 }
 
-/** @param {CompiledChapter} compiled @param {number} offset @param {string} id @param {string} title @returns {RenderedPage} */
-function assemble(compiled, offset, id, title) {
-  const blocks = [],
-    chunks = [compiled.parts[0]];
-  for (const [i, block] of compiled.blocks.entries()) {
-    const blockId = "b" + (offset + i);
-    chunks.push(' data-passage="' + blockId + '"', compiled.parts[i + 1]);
-    blocks.push({ id: blockId, ...block, path: [...block.path] });
+/** @param {CompiledChapter} compiled @param {number} offset @param {string} id @param {string} title
+ * @param {DocumentInput["section"]} section @param {boolean} snapshotLinks @returns {RenderedPage} */
+function assemble(compiled, offset, id, title, section, snapshotLinks) {
+  const blocks = [];
+  for (const [i, block] of compiled.blocks.entries())
+    blocks.push({ id: "b" + (offset + i), ...block, path: [...block.path] });
+
+  const chunks = [];
+  /** @type {Array<[number,number,string]>} */
+  const bindings = [];
+  let visible = !section,
+    bytes = 0;
+  /** @param {string} fragment @returns {void} */
+  function append(fragment) {
+    chunks.push(fragment);
+    if (snapshotLinks) bytes += Buffer.byteLength(fragment);
   }
+  for (const [i, marker] of compiled.markers.entries()) {
+    if (visible) append(compiled.parts[i]);
+    if (marker.kind === "section" && section) {
+      if (marker.line === section.line) visible = true;
+      if (marker.line >= section.end) visible = false;
+    } else if (visible && marker.kind === "passage")
+      append(blocks[marker.index].id);
+    else if (visible && snapshotLinks && marker.kind === "link")
+      bindings.push([bytes, marker.width, marker.href]);
+  }
+  if (visible) append(compiled.parts.at(-1));
+  const headings = [];
+  for (const heading of compiled.headings)
+    if (
+      !section ||
+      (heading.line >= section.line && heading.line < section.end)
+    )
+      headings.push(structuredClone(heading));
   return {
     id,
     title,
     html: chunks.join(""),
-    headings: structuredClone(compiled.headings),
+    headings,
     blocks,
+    ...(snapshotLinks ? { snapshot_links: bindings } : {}),
   };
 }
 
@@ -325,6 +352,7 @@ export async function renderDocument(input) {
           JSON.stringify([
             compiled.headings,
             compiled.blocks,
+            compiled.markers,
             [...compiled.links],
           ]),
         );
@@ -334,7 +362,16 @@ export async function renderDocument(input) {
       diagramCount += compiled.diagramCount;
       if (diagramCount > 32)
         throw new Error("Keep each paper below 32 diagrams.");
-      rendered.push(assemble(compiled, offset, page.id, titles[i]));
+      rendered.push(
+        assemble(
+          compiled,
+          offset,
+          page.id,
+          titles[i],
+          input.section?.chapter === page.id ? input.section : undefined,
+          Boolean(input.snapshotLinks),
+        ),
+      );
       offset += compiled.blocks.length;
       for (const entry of resolved.meta.bibliography)
         entries[entry.key] = { ...entry, author: entry.citationLabel };
@@ -342,23 +379,11 @@ export async function renderDocument(input) {
   } finally {
     await diagrams?.close();
   }
-  if (input.section) {
-    const section = input.section,
-      page = rendered.find((p) => p.id === section.chapter);
-    const $ = load(page.html, {}, false);
-    let inside = false;
-    for (const node of $.root().contents().toArray()) {
-      const line = Number(
-        ("attribs" in node && node.attribs["data-source-line"]) || 0,
-      );
-      if (line === section.line) inside = true;
-      if (line >= section.end) inside = false;
-      if (!inside) $(node).remove();
-    }
-    page.html = escapeAttributes($.html());
-    page.headings = page.headings.filter(
-      (h) => h.line >= section.line && h.line < section.end,
-    );
+  if (input.section && !rendered.some(hasSectionChapter))
+    throw new Error("Section chapter was not rendered.");
+  /** @param {RenderedPage} page @returns {boolean} */
+  function hasSectionChapter(page) {
+    return page.id === input.section?.chapter;
   }
   const targets = [];
   const anchors = new Map();

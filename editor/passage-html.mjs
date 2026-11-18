@@ -33,9 +33,10 @@ function passageText(node) {
   return node.children.map(passageText).join("");
 }
 
+/** @typedef {{kind:"passage", index:number}|{kind:"section", line:number}|{kind:"link", href:string, width:number}} Marker */
 /** @param {string} html @param {Heading[]} headings @param {string} chapter
  * @param {string} prefix @param {(href:string)=>Reference|undefined} lookup @param {string[]} numberedMath
- * @returns {{parts: string[], blocks: Array<{kind:string,text:string,path:string[],ordinal:number,chapter:string}>, links: Map<string, Reference|undefined>}}
+ * @returns {{parts: string[], markers: Marker[], blocks: Array<{kind:string,text:string,path:string[],ordinal:number,chapter:string}>, links: Map<string, Reference|undefined>}}
  */
 export function annotate(
   html,
@@ -47,10 +48,16 @@ export function annotate(
 ) {
   const $ = load(html, {}, false);
   const links = new Map();
+  const slot = randomUUID();
+  const relativeLinks = [];
   for (const el of $("a[href]")) {
     const href = el.attribs.href;
     const label = lookup(href);
     links.set(href, label);
+    if (href.startsWith("?chapter=")) {
+      el.attribs.href = slot + "l" + relativeLinks.length + ";" + href;
+      relativeLinks.push(href);
+    }
     if (label) {
       el.attribs["data-reference"] = label.name;
       if ($(el).text() === label.text)
@@ -102,9 +109,6 @@ export function annotate(
     if (p.contents().length) $(li).prepend(p);
   }
 
-  // Split at our own attributes once. Assembly assigns the global block numbers,
-  // even if an edit in an earlier chapter has shifted every subsequent block.
-  const slot = randomUUID();
   const blocks = [],
     path = [],
     counts = new Map();
@@ -137,7 +141,7 @@ export function annotate(
       ordinal = counts.get(key) || 0;
     counts.set(key, ordinal + 1);
     blocks.push({ kind, text: value, path: sectionPath, ordinal, chapter });
-    el.attribs["data-passage"] = slot;
+    el.attribs["data-passage"] = slot + "p" + (blocks.length - 1) + ";";
     el.attribs["data-passage-kind"] = kind;
     el.attribs["data-passage-text"] = value;
   }
@@ -163,8 +167,34 @@ export function annotate(
       }
     }
   }
-  const parts = escapeAttributes($.html()).split(
-    ' data-passage="' + slot + '"',
-  );
-  return { parts, blocks, links };
+  // Record positions while this tree is available. A preview or frozen snapshot
+  // can then use the same serialized chapter without parsing it a second time.
+  for (const el of $.root().children("[data-source-line]")) {
+    const line = Number(el.attribs["data-source-line"]);
+    if (Number.isSafeInteger(line) && line > 0)
+      $(el).before(slot + "s" + line + ";");
+  }
+  const serialized = escapeAttributes($.html());
+  const parts = [];
+  /** @type {Marker[]} */
+  const markers = [];
+  let cursor = 0;
+  for (const match of serialized.matchAll(
+    new RegExp(slot + "([pls])([0-9]+);", "g"),
+  )) {
+    parts.push(serialized.slice(cursor, match.index));
+    cursor = match.index + match[0].length;
+    const index = Number(match[2]);
+    if (match[1] === "l") {
+      const end = serialized.indexOf('"', cursor);
+      markers.push({
+        kind: "link",
+        href: relativeLinks[index],
+        width: Buffer.byteLength(serialized.slice(cursor, end)),
+      });
+    } else if (match[1] === "s") markers.push({ kind: "section", line: index });
+    else markers.push({ kind: "passage", index });
+  }
+  parts.push(serialized.slice(cursor));
+  return { parts, markers, blocks, links };
 }
