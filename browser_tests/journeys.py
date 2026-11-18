@@ -15,7 +15,7 @@ from django.core import mail
 from django.db import connections
 from django.test import override_settings
 from django.urls import reverse
-from playwright.sync_api import Route, expect, sync_playwright
+from playwright.sync_api import expect, sync_playwright
 from accounts.models import User
 from django_otp.oath import totp
 from django_otp.plugins.otp_totp.models import TOTPDevice
@@ -994,30 +994,17 @@ C \arrow[r, "k"'] & D
         self.page.get_by_role("link", name="(2.1)", exact=True).click()
         expect(self.page).to_have_url(re.compile(r"chapter=proof#eq(?::|%3A)one"))
         expect(self.page.get_by_role("button", name="Back to where you were")).to_be_visible()
-        pending_progress = []
-        progress_url = self.live_server_url + f"/papers/{paper.pk}/progress/"
-
-        def hold_progress(route: Route) -> None:
-            if route.request.method == "GET":
-                pending_progress.append(route)
-            else:
-                route.continue_()
-
-        self.page.route(progress_url, hold_progress)
-        with self.page.expect_request(progress_url):
-            self.page.get_by_role("button", name="Back to where you were").click()
+        self.page.get_by_role("button", name="Back to where you were").click()
         expect(self.page).to_have_url(re.compile(r"chapter=intro$"))
-        expect(self.page.locator("#chapter-complete")).to_be_disabled()
-        pending_progress[0].continue_()
-        self.page.unroute(progress_url, hold_progress)
-        self.page.get_by_role("button", name="Mark complete and continue").click()
+        expect(self.page.get_by_role("button", name="Mark complete and continue")).to_have_count(0)
+        self.page.get_by_role("link", name="Next chapter").click()
         expect(self.page).to_have_url(re.compile(r"chapter=proof$"))
-        expect(self.page.locator('[data-chapter-state="intro"]')).to_have_text("✓")
-        self.page.reload()
-        expect(self.page.locator('[data-chapter-state="intro"]')).to_have_text("✓")
         self.page.set_viewport_size({"width": 390, "height": 844})
         chapters = self.page.get_by_role("navigation", name="Chapters", exact=True)
         expect(chapters).to_be_hidden()
         self.page.locator(".reader-contents summary").click()
-        expect(chapters.get_by_role("link", name=re.compile("Introduction"))).to_contain_text("✓")
+        expect(chapters.get_by_role("link", name="1. Introduction", exact=True)).to_be_visible()
+        self.page.locator(".reader-contents summary").click()
+        self.page.get_by_role("link", name="Previous chapter").click()
+        expect(self.page).to_have_url(re.compile(r"chapter=intro$"))
         self.assert_no_page_overflow()

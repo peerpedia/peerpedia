@@ -103,35 +103,15 @@
       }
     } catch (_) {}
   }
-  if (!config || !document.getElementById("chapter-complete")) return;
+  if (!config) return;
   const key = `peerpedia:reading:${config.user}:${config.paper}`;
-  let state = { chapter: "", position: 0, completed: {} },
-    ready = false,
-    timer,
-    saveQueue = Promise.resolve();
-  const chapter = config.chapters.find((p) => p.id === config.chapter);
-  const complete = document.getElementById("chapter-complete");
-  function decorate() {
-    document.querySelectorAll("[data-chapter-state]").forEach((el) => {
-      const page = config.chapters.find(
-        (p) => p.id === el.dataset.chapterState,
-      );
-      const saved = state.completed[page.id];
-      el.textContent = saved ? (saved === page.hash ? "✓" : "✓ Updated") : "";
-    });
-    complete.textContent = state.completed[chapter.id]
-      ? "Mark unread"
-      : "Mark complete and continue";
-  }
-  function store(extra = {}) {
-    const run = saveQueue.catch(() => {}).then(() => saveProgress(extra));
-    saveQueue = run;
-    return run;
-  }
-  async function saveProgress(extra) {
-    if (!ready) return;
-    state.chapter = chapter.id;
-    state.position = Math.min(
+  let ready = false;
+  let timer;
+  let saveQueue = Promise.resolve();
+
+  /** @returns {Promise<void>} */
+  async function savePosition() {
+    const position = Math.min(
       1,
       Math.max(
         0,
@@ -139,74 +119,65 @@
           Math.max(1, document.documentElement.scrollHeight - innerHeight),
       ),
     );
+    const state = { chapter: config.chapter, position };
     if (config.progress_url) {
-      const response = await fetch(config.progress_url, {
+      await fetch(config.progress_url, {
         method: "POST",
         headers: { "Content-Type": "application/json", "X-CSRFToken": csrf },
-        body: JSON.stringify({
-          submission: config.submission,
-          chapter: chapter.id,
-          position: state.position,
-          ...extra,
-        }),
+        body: JSON.stringify({ submission: config.submission, ...state }),
         keepalive: true,
       });
-      if (!response.ok) throw new Error("Could not save progress. Try again.");
-      state = await response.json();
     } else {
-      if ("complete" in extra) {
-        if (extra.complete) state.completed[chapter.id] = chapter.hash;
-        else delete state.completed[chapter.id];
-      }
-      try {
-        localStorage.setItem(key, JSON.stringify(state));
-      } catch (_) {}
+      localStorage.setItem(key, JSON.stringify(state));
     }
-    decorate();
   }
-  complete.addEventListener("click", async () => {
-    if (!ready) return;
-    const mark = !state.completed[chapter.id];
-    complete.disabled = true;
+
+  /** @returns {void} */
+  function ignoreStorageError() {}
+
+  /** @returns {void} */
+  function store() {
+    if (ready)
+      saveQueue = saveQueue.then(savePosition).catch(ignoreStorageError);
+  }
+
+  /** @returns {Promise<void>} */
+  async function resumeReading() {
     try {
-      await store({ complete: mark });
-      const next = document.getElementById("next-chapter");
-      if (mark && next) location.assign(next.href);
-    } catch (error) {
-      document.getElementById("reading-status").textContent = error.message;
-    } finally {
-      complete.disabled = false;
-    }
-  });
-  (async () => {
-    try {
+      let state;
       if (config.progress_url) {
         const response = await fetch(config.progress_url);
         if (!response.ok) throw new Error("Progress unavailable");
         state = await response.json();
-      } else state = JSON.parse(localStorage.getItem(key)) || state;
-      state.completed ||= {};
-      if (!config.explicit && !location.hash && state.chapter) {
-        const previous = config.chapters.find((p) => p.id === state.chapter);
-        if (previous && previous.id !== chapter.id) {
-          location.replace(previous.url + "&resume=1");
+      } else state = JSON.parse(localStorage.getItem(key));
+      if (!location.hash && state?.chapter) {
+        if (
+          !config.explicit &&
+          state.chapter !== config.chapter &&
+          Object.hasOwn(config.chapters, state.chapter)
+        ) {
+          location.replace(config.chapters[state.chapter] + "&resume=1");
           return;
         }
-      }
-      if (
-        (!config.explicit ||
-          new URLSearchParams(location.search).has("resume")) &&
-        !location.hash &&
-        state.chapter === chapter.id
-      ) {
-        const restore = () =>
-          scrollTo(
-            0,
-            state.position *
-              Math.max(1, document.documentElement.scrollHeight - innerHeight),
-          );
-        if (document.readyState === "complete") restore();
-        else window.addEventListener("load", restore, { once: true });
+        if (
+          state.chapter === config.chapter &&
+          (!config.explicit ||
+            new URLSearchParams(location.search).has("resume"))
+        ) {
+          /** @returns {void} */
+          function restore() {
+            scrollTo(
+              0,
+              state.position *
+                Math.max(
+                  1,
+                  document.documentElement.scrollHeight - innerHeight,
+                ),
+            );
+          }
+          if (document.readyState === "complete") restore();
+          else window.addEventListener("load", restore, { once: true });
+        }
       }
     } catch (_) {
       if (config.progress_url) {
@@ -216,19 +187,19 @@
       }
     }
     ready = true;
-    decorate();
-    complete.disabled = false;
-  })();
-  window.addEventListener(
-    "scroll",
-    () => {
-      clearTimeout(timer);
-      timer = setTimeout(() => store().catch(() => {}), 1200);
-    },
-    { passive: true },
-  );
-  window.addEventListener("pagehide", () => {
+  }
+
+  /** @returns {void} */
+  function scheduleSave() {
     clearTimeout(timer);
-    store().catch(() => {});
-  });
+    timer = setTimeout(store, 1200);
+  }
+  /** @returns {void} */
+  function saveOnExit() {
+    clearTimeout(timer);
+    store();
+  }
+  resumeReading();
+  window.addEventListener("scroll", scheduleSave, { passive: true });
+  window.addEventListener("pagehide", saveOnExit);
 })();

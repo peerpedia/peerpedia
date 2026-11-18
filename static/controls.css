@@ -14,11 +14,9 @@
 .reader .ui-icon-button { display: inline-flex; align-items: center; justify-content: center; width: 2rem; height: 2rem; vertical-align: middle; }
 .reader .ui-icon-button:hover { background: var(--soft); }
 .reader .markdown-body .copy-reference { margin-left: .25rem; color: var(--muted); }
-.reader .chapter-footer button { min-height: 44px; border-radius: 0; padding: .55rem .8rem; border: 1px solid var(--line); font-weight: 500; }
-.reader .chapter-footer button:hover { border-color: var(--accent); background: var(--soft); }
 .reader #reading-return { flex-basis: 100%; padding: .5rem 0; font-size: .8125rem; text-align: left; }
 .reader button:disabled { opacity: .5; cursor: wait; }
-.reader:not(.reader-interactive) :is(.copy-reference,#chapter-complete) { display: none; }
+.reader:not(.reader-interactive) .copy-reference { display: none; }
 .reader:not(.reader-interactive) .reader-toolbar { position: relative; }
 
 .reference-dialog {

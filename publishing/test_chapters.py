@@ -8,7 +8,7 @@ from .test_support import consenting_user
 from .tests import document
 from .services import publish, propose, decide
 from .models import Submission
-from .documents import combined, digest
+from .documents import combined
 from .references import ReferenceDocument
 
 CHAPTERS = [
@@ -114,7 +114,9 @@ class ChapterTests(TestCase):
             404,
         )
 
-    def test_progress_is_private_and_changed_chapter_keeps_old_hash(self):
+    def test_position_is_private_and_legacy_completion_flag_is_ignored(
+        self: "ChapterTests",
+    ) -> None:
         url = reverse("reading_progress", args=[self.paper.pk])
         response = self.client.post(
             url,
@@ -129,10 +131,11 @@ class ChapterTests(TestCase):
             content_type="application/json",
         )
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.json()["completed"]["intro"], digest(CHAPTERS[0]["markdown"]))
+        self.assertEqual(response.json(), {"chapter": "intro", "position": 0.4})
+        self.assertEqual(self.client.get(url).json(), response.json())
         other = consenting_user("reader2", "r@example.org", "test", email_verified=True)
         self.client.force_login(other)
-        self.assertEqual(self.client.get(url).json()["completed"], {})
+        self.assertEqual(self.client.get(url).json(), {"chapter": "", "position": 0})
         self.assertEqual(
             self.client.post(
                 url, "{}", content_type="application/json", HTTP_AUTHORIZATION="Bearer ignored"

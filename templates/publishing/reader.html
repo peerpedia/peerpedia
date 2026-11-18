@@ -31,7 +31,7 @@
                 <h2>Chapters</h2>
                 <ol>
                   {% for page in chapters %}
-                    <li><a href="{{ page.url }}" {% if page.selected %}aria-current="page"{% endif %}>{{ forloop.counter }}. {{ page.title }} <small data-chapter-state="{{ page.id }}"></small></a></li>
+                    <li><a href="{{ page.url }}" {% if page.selected %}aria-current="page"{% endif %}>{{ forloop.counter }}. {{ page.title }}</a></li>
                   {% endfor %}
                 </ol>
               </nav>
@@ -81,7 +81,6 @@
       {% if chapters %}
         <nav class="chapter-footer" aria-label="Chapter navigation">
           {% if previous_chapter %}<a href="{{ previous_chapter }}">← Previous chapter</a>{% endif %}
-          <button type="button" id="chapter-complete" disabled>Mark complete and continue</button>
           {% if next_chapter %}<a href="{{ next_chapter }}" id="next-chapter">Next chapter →</a>{% endif %}
           <span id="reading-status" role="status"></span>
         </nav>
@@ -92,6 +91,6 @@
   <div hidden>{% csrf_token %}</div>
   {% include "includes/reference_tools.html" %}
   {{ citation_config|json_script:"citation-config" }}
-  {{ reading_config|json_script:"reading-config" }}
+  {% if reading_config %}{{ reading_config|json_script:"reading-config" }}{% endif %}
 </body>
 </html>
