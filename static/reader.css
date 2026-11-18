@@ -36,6 +36,8 @@
 .markdown-body hr { border: 0; border-top: 1px solid var(--line); margin: 2em 0; }
 
 .reader {
+  --frame: 68rem;
+  --gutter: clamp(.75rem, 2.5vw, 2.5rem);
   --bm-link: var(--accent);
   --bm-accent-theorem: var(--accent);
   --bm-accent-definition: var(--accent);
@@ -62,7 +64,7 @@
 .reader #paper-text:focus { outline: none; }
 .reader-skip { position: fixed; top: .5rem; left: .5rem; z-index: 10; transform: translateY(-160%); background: var(--ground); padding: .6rem; }
 .reader-skip:focus { transform: translateY(0); }
-.reader-toolbar,.reader-layout { width: min(var(--measure), calc(100% - 2 * var(--gutter))); margin-inline: auto; }
+.reader-toolbar,.reader-layout { width: min(var(--frame), calc(100% - 2 * var(--gutter))); margin-inline: auto; }
 .reader-toolbar { position: sticky; top: 0; z-index: 3; background: var(--ground); display: flex; align-items: center; flex-wrap: wrap; justify-content: space-between; gap: 0 .6rem; min-height: 48px; border-bottom: 1px solid var(--line); }
 .reader-back,.reader-tools,.reader-cite { display: inline-flex; align-items: center; gap: .45rem; }
 .reader-back { text-decoration: none; min-height: 44px; }
