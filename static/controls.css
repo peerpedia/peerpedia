@@ -1,215 +1,48 @@
-/* Shared controls for reading, writing, and reference dialogs. */
-:root {
-  --control-ink:#23514b;
-  --control-muted:#68776f;
-  --control-border:#d9e2dc;
-  --control-hover:#edf3ef;
-  --control-active:#e3eee7;
-  --control-radius:7px;
-  --control-height:36px;
+/* Controls for the standalone reader. */
+.reader .ui-icon { width: 1rem; height: 1rem; flex: none; pointer-events: none; }
+.reader button {
+  border: 0;
+  border-radius: 0;
+  padding: 0;
+  color: var(--accent);
+  background: transparent;
+  font: inherit;
+  cursor: pointer;
 }
-.ui-icon { width:18px; height:18px; flex:none; vertical-align:middle; pointer-events:none; }
-:is(.editor-page,.reader) :focus-visible,.reference-dialog :focus-visible {
-  outline:2px solid #529082; outline-offset:3px;
-}
-.editor-page :is(.editor-controls button,.editor-controls summary,.file-button,.chapter-panel button,.chapter-tools button,.editor-banner button,.reference-dialog button),
-.reader :where(.reader-discussions,#reading-return,.chapter-footer button),
-.reference-dialog button {
-  box-sizing:border-box; display:inline-flex; align-items:center; justify-content:center; gap:8px;
-  min-height:var(--control-height); padding:7px 12px; border:1px solid var(--control-border);
-  border-radius:var(--control-radius); background:#fff; color:var(--control-ink);
-  font:500 13px/20px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
-  cursor:pointer; text-decoration:none; letter-spacing:normal; white-space:nowrap;
-}
-.editor-page :is(button,summary,.file-button):hover,.reader :where(.reader-discussions,#reading-return,.chapter-footer button):hover,.reference-dialog button:hover {
-  background:var(--control-hover); border-color:#bdcec2;
-}
-.editor-page button:disabled,.reader button:disabled { opacity:.4; cursor:not-allowed; }
-:is(.editor-page,.reader) [hidden] { display:none!important; }
-.editor-page .danger { color:#9a4742; }
-.editor-page .danger:hover { color:#8e332e; background:#fcf0ee; border-color:#e8c8c4; }
+.reader .reader-cite { min-height: 44px; }
+.reader .reader-cite:hover,#reading-return:hover { text-decoration: underline; text-underline-offset: .2em; }
+.reader .ui-icon-button { display: inline-flex; align-items: center; justify-content: center; width: 2rem; height: 2rem; vertical-align: middle; }
+.reader .ui-icon-button:hover { background: var(--soft); }
+.reader .markdown-body .copy-reference { margin-left: .25rem; color: var(--muted); }
+.reader .chapter-footer button { min-height: 44px; border-radius: 0; padding: .55rem .8rem; border: 1px solid var(--line); font-weight: 500; }
+.reader .chapter-footer button:hover { border-color: var(--accent); background: var(--soft); }
+.reader #reading-return { flex-basis: 100%; padding: .5rem 0; font-size: .8125rem; text-align: left; }
+.reader button:disabled { opacity: .5; cursor: wait; }
+.reader:not(.reader-interactive) :is(.copy-reference,#chapter-complete) { display: none; }
+.reader:not(.reader-interactive) .reader-toolbar { position: relative; }
 
-.button,.button.small {
-  display:inline-flex; align-items:center; justify-content:center; gap:8px;
-  min-height:var(--control-height); padding:7px 14px; border-radius:var(--control-radius);
-  border:1px solid var(--control-ink); background:var(--control-ink); color:white;
-  font:600 13px/20px system-ui; text-decoration:none;
+.reference-dialog {
+  width: min(32rem, calc(100% - 2rem));
+  max-height: 88dvh;
+  overflow-y: auto;
+  padding: clamp(1.25rem, 4vw, 2rem);
+  border: 1px solid var(--line);
+  color: var(--ink);
+  background: var(--ground);
+  font: .875rem/1.55 var(--sans);
 }
-.button.secondary { background:white; border-color:var(--control-border); color:var(--control-ink); }
-.button:hover { background:#193f3a; color:white; text-decoration:none; }
-.button.secondary:hover { background:var(--control-hover); color:var(--control-ink); }
-
-/* Compact icons share exactly the same hit area and baseline. */
-.markdown-body :is(.copy-reference,.section-edit),.reader :is(.reader-edit,.reader-copy-reference),
-.editor-page .ui-icon-button,.reference-dialog button.ui-icon-button {
-  box-sizing:border-box; display:inline-flex; width:32px; height:32px; min-height:32px;
-  padding:6px; align-items:center; justify-content:center; flex:none;
-  border:1px solid transparent; border-radius:var(--control-radius); background:transparent;
-  color:var(--control-muted); font:13px/1 system-ui; vertical-align:middle;
-  text-decoration:none; cursor:pointer; opacity:1;
+.reference-dialog::backdrop { background: rgb(28 34 44 / .32); }
+.reference-dialog form { float: right; }
+.reference-dialog h2 { margin: 0 0 .4rem; font: 1.75rem/1.25 var(--serif); }
+.reference-dialog p { color: var(--muted); margin: 0 0 1.25rem; }
+.reference-dialog label { display: block; margin: 1rem 0 .25rem; }
+.reference-copy-row { display: flex; gap: .35rem; align-items: center; }
+.reference-copy-row input { flex: 1; min-width: 0; padding: .55rem .65rem; border: 1px solid var(--line); color: var(--ink); background: var(--paper); font: .875rem/1.5 var(--sans); }
+.reference-dialog #reference-copy-status { margin: 1rem 0 0; color: var(--accent); }
+#reference-copy-status:empty { display: none; }
+@media (hover: hover) and (pointer: fine) {
+  .reader .markdown-body :is(h1,h2,h3,h4,h5,h6):not(:hover,:focus-within) .copy-reference { opacity: 0; }
 }
-.markdown-body :is(.copy-reference,.section-edit) { margin:0 0 0 6px; }
-.markdown-body :is(.copy-reference,.section-edit):hover,.reader :is(.reader-edit,.reader-copy-reference):hover,
-.editor-page .ui-icon-button:hover,.reference-dialog .ui-icon-button:hover {
-  color:var(--control-ink); border-color:var(--control-border); background:var(--control-hover);
+@media print {
+  .reader :is(.copy-reference,.reference-dialog) { display: none; }
 }
-.reader .reader-edit { top:39px; right:20px; margin:0; }
-.reader .reader-discussions { margin:0 24px 12px; }
-.reader #reading-return { min-height:36px; padding:7px 12px; border-radius:var(--control-radius); margin:4px 24px 12px; white-space:normal; text-align:left; }
-.reader .chapter-footer button,.editor-page .editor-header .button {
-  min-height:36px; padding:7px 14px; background:var(--control-ink); border:1px solid var(--control-ink);
-  border-radius:var(--control-radius); color:white; font:600 13px/20px system-ui;
-}
-.reader .chapter-footer button:hover,.editor-page .editor-header .button:hover { background:#193f3a; }
-.chapter-navigation a,.chapter-navigation a:visited { color:var(--control-ink); }
-.chapter-navigation a { min-height:36px; border:1px solid transparent; border-radius:var(--control-radius); }
-.chapter-navigation [aria-current=page] { color:#1b443a; background:var(--control-active); border-color:#d5e3d9; }
-.chapter-navigation a:hover { background:var(--control-hover); }
-
-/* Editor toolbar: view controls, file actions, then document details. */
-.editor-header { padding:12px 20px; gap:16px; }
-.editor-controls { gap:12px; padding:9px 20px; background:#f8faf7; min-height:56px; }
-.editor-page .pane-choices { display:flex; gap:2px; padding:3px; border:1px solid var(--control-border); border-radius:9px; background:#edf2ee; }
-.editor-page .pane-choices button { min-height:30px; padding:4px 10px; border-color:transparent; background:transparent; color:var(--control-muted); }
-.editor-page .pane-choices button[aria-pressed=true] { background:white; border-color:#d5dfd8; color:var(--control-ink); box-shadow:0 1px 2px #163b2310; }
-.editor-page .sync-choice { font:400 12px/20px system-ui; color:var(--control-muted); }
-.sync-choice input { accent-color:var(--control-ink); }
-.editor-page #paper-details { margin-left:auto; }
-.editor-page #paper-details>summary { padding:7px 12px; border:1px solid var(--control-border); }
-.editor-file-menu { position:relative; margin:0; padding:0; border:0; overflow:visible; }
-.editor-page .editor-file-menu>summary { margin:0; list-style:none; }
-.editor-file-menu>summary::-webkit-details-marker { display:none; }
-.editor-file-menu>summary>.ui-icon:last-child { width:14px; }
-.editor-file-items { position:absolute; top:calc(100% + 8px); left:0; z-index:30; width:220px; padding:6px; border:1px solid var(--control-border); border-radius:10px; background:white; box-shadow:0 8px 28px #24372f18; }
-.editor-page .editor-file-items :is(button,.file-button) { width:100%; margin:0; justify-content:flex-start; border-color:transparent; background:transparent; }
-.editor-page .editor-file-items :is(button,.file-button):hover { background:var(--control-hover); }
-
-/* Chapter lists are navigation, with a separate, evenly sized action row. */
-.editor-page .chapter-panel { width:216px; padding:20px 16px; background:#f7f9f5; border-color:var(--control-border); }
-.chapter-panel h2 { margin:0 0 16px; color:var(--control-muted); font:600 11px/16px system-ui; letter-spacing:.1em; text-transform:uppercase; }
-.chapter-panel ol { margin:0 0 16px; }
-.editor-page #chapter-list button {
-  display:flex; width:100%; min-height:40px; padding:10px; margin:3px 0; justify-content:flex-start;
-  text-align:left; white-space:normal; border:1px solid transparent; background:transparent;
-  color:var(--control-ink); font-weight:400;
-}
-.editor-page #chapter-list button:hover { background:var(--control-hover); }
-.editor-page #chapter-list [aria-current=true] { background:var(--control-active); border-color:#d5e3d9; font-weight:600; }
-.editor-page :is(#add-chapter,#edit-bibliography) { width:100%; justify-content:flex-start; }
-.chapter-actions { display:grid; grid-template-columns:repeat(4,1fr); gap:6px; margin:8px 0 24px; }
-.editor-page .chapter-actions .ui-icon-button { width:100%; height:36px; padding:8px; background:transparent; border-color:var(--control-border); }
-.chapter-tools { gap:10px; padding:10px 20px; min-height:56px; background:#fbfcfa; border-bottom:1px solid #e6ebe5; }
-.chapter-tools strong { flex:1; color:#42594c; font:600 13px/20px system-ui; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
-.chapter-tools label { position:relative; margin:0; }
-.chapter-tools label>.ui-icon { position:absolute; left:10px; color:var(--control-ink); pointer-events:none; }
-.chapter-tools .control-label { position:absolute; width:1px; height:1px; overflow:hidden; clip-path:inset(50%); }
-.chapter-tools select { box-sizing:border-box; min-height:36px; padding:7px 10px 7px 34px; border:1px solid var(--control-border); border-radius:var(--control-radius); background:white; color:var(--control-ink); font:500 13px/20px system-ui; max-width:190px; }
-#reference-warnings:empty { display:none; }
-
-.reference-dialog { box-sizing:border-box; max-height:85dvh; overflow:auto; padding:24px; border:1px solid var(--control-border); border-radius:12px; box-shadow:0 18px 70px #17332725; color:#293e34; background:#fffefa; }
-.reference-dialog>form[method=dialog] { display:flex; justify-content:flex-end; margin:0 0 8px; }
-.reference-dialog h2 { margin:0 0 12px; font:600 21px/1.4 system-ui; }
-.reference-dialog p,.reference-dialog label { font:14px/1.6 system-ui; }
-.reference-dialog input,.reference-dialog textarea { border:1px solid var(--control-border); border-radius:var(--control-radius); padding:10px 12px; color:#293e34; background:white; font:14px/1.5 system-ui; }
-.reference-dialog #bib-source { font:13px/1.6 ui-monospace,monospace; }
-.reference-dialog #search-papers { margin-left:6px; }
-.reference-dialog #link-results button { width:100%; white-space:normal; justify-content:flex-start; text-align:left; }
-@media(max-width:1049px) {
-  .reader .reader-edit { left:64px; right:auto; top:14px; }
-  .reader .reader-discussions { grid-column:2; grid-row:1; margin:12px; justify-self:end; }
-  .reader .reader-contents { grid-column:1/-1; grid-row:auto; }
-  .reader .chapter-navigation { max-height:160px; }
-}
-@media(max-width:760px) {
-  .editor-header { display:grid; grid-template-columns:28px minmax(0,1fr) auto; padding:10px 12px; gap:8px 10px; }
-  .editor-header .editor-brand { grid-column:1; grid-row:1; }
-  .editor-header .editor-heading { grid-column:2; grid-row:1; }
-  .editor-header .editor-heading strong { font-size:14px; }
-  .editor-header #save-status { grid-column:3; grid-row:1; margin:0; font-size:11px; }
-  .editor-header>a:not(.editor-brand) { grid-column:1 / 3; grid-row:2; font-size:13px; }
-  .editor-header form { grid-column:3; grid-row:2; }
-  .editor-controls { padding:8px 12px; gap:8px; flex-wrap:nowrap; }
-  .editor-page .pane-choices [data-layout=split] { display:none; }
-  .editor-page .pane-choices button { padding:4px 7px; }
-  .pane-choices .ui-icon { display:none; }
-  .editor-page .sync-choice { display:none; }
-  .editor-page #paper-details>summary { font-size:12px; padding:7px 9px; }
-  #paper-details>summary .ui-icon { display:none; }
-  .editor-page .editor-file-menu>summary { padding:7px 9px; }
-  .editor-file-menu>summary>.ui-icon:first-child { display:none; }
-  .editor-page .chapter-panel { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:6px 10px; width:auto; max-height:160px; padding:10px 12px; }
-  .chapter-panel h2 { grid-column:1; margin:0; align-self:center; }
-  .chapter-panel ol { grid-column:1/-1; grid-row:2; display:flex; margin:0; gap:4px; overflow:auto; }
-  .chapter-panel li { min-width:130px; }
-  .editor-page #chapter-list button { margin:0; padding:6px 10px; min-height:36px; }
-  .editor-page #add-chapter { grid-column:2; grid-row:1; width:auto; padding:3px 8px; min-height:28px; }
-  .chapter-actions { grid-column:1; grid-row:3; display:flex; gap:6px; margin:0; }
-  .editor-page .chapter-actions .ui-icon-button { width:30px; height:30px; min-height:30px; padding:5px; }
-  .editor-page #edit-bibliography { grid-column:2; grid-row:3; width:auto; padding:4px 8px; min-height:30px; font-size:12px; }
-  .chapter-tools { padding:8px 12px; gap:8px; min-height:52px; flex-wrap:nowrap; }
-  .chapter-tools strong { display:none; }
-  .chapter-tools select { max-width:155px; }
-  .chapter-tools button { flex:none; }
-}
-@media print { .copy-reference,.section-edit,.chapter-footer button,#reading-return { display:none!important; } }
-
-.reference-copy-row { display:flex; align-items:center; gap:8px; }
-.reference-copy-row input { flex:1; min-width:0; }
-.reference-dialog .reference-copy-row .ui-icon-button { width:36px; height:36px; flex:0 0 36px; }
-#reference-copy-status { min-height:1.6em; margin:12px 0 0; color:var(--control-ink); font-size:13px; }
-
-/* Shared reading actions keep the same position and meaning on every page. */
-.reader-actions { display:flex; gap:6px; align-items:center; margin:0 24px 12px; }
-.reader .reader-actions .reader-edit { position:static; margin:0; }
-.reader-actions .reader-paper-details { flex:1; }
-.chapter-heading-actions { display:flex; align-items:center; flex-wrap:wrap; gap:8px; margin-bottom:12px; }
-.chapter-heading-actions p { margin:0; font:13px/1.5 system-ui; color:var(--control-muted); }
-.chapter-heading-actions .chapter-edit { margin-left:0; }
-.paper-details-link { margin:8px 0 18px; }
-
-/* Keep guidance available without spending the editor's height on banners. */
-.editor-page .editor-header { min-height:54px; padding:8px 16px; gap:12px; }
-.editor-page .editor-controls { min-height:46px; padding:5px 16px; gap:8px; }
-.editor-page .chapter-tools { min-height:44px; padding:4px 16px; gap:8px; }
-.editor-page .chapter-panel { width:184px; padding:14px 12px; box-sizing:border-box; }
-.chapter-title-help { font:12px/1.5 system-ui; color:var(--control-muted); margin:0 0 12px; }
-.chapter-panel h2 { margin-bottom:8px; }
-.editor-page .chapter-actions { grid-template-columns:repeat(3,1fr); }
-.editor-page .section-scope { padding:0; font:12px/1.5 system-ui; background:none; color:var(--control-muted); }
-.editor-page .editor-intro { padding:0; background:none; margin:12px 0; }
-.editor-page .publication-readiness { position:relative; padding:0; margin:0 0 0 auto; border:0; overflow:visible; background:none; max-height:none; }
-.editor-page .publication-readiness>summary { margin:0; list-style:none; }
-.publication-readiness>summary::-webkit-details-marker { display:none; }
-.readiness-panel { position:absolute; right:0; top:calc(100% + 8px); width:min(350px,calc(100vw - 32px)); box-sizing:border-box; padding:16px; background:#fff; border:1px solid var(--control-border); border-radius:var(--control-radius); box-shadow:0 8px 28px #24372f18; z-index:30; max-height:65dvh; overflow:auto; }
-.editor-page .publication-checklist button { padding:4px 8px; min-height:30px; font-size:12px; }
-.checklist-count { min-width:18px; font-size:12px; color:var(--control-muted); }
-.checklist-count.needs-attention { color:#a32d2d; }
-.editor-page #paper-details { margin-left:0; }
-.editor-page .sync-choice { margin:0; }
-.editor-page .details-panel { top:calc(100% + 8px); }
-.editor-page .details-panel .pending-notice { padding:0; margin:0 0 12px; background:none; border:0; }
-.editor-page .details-panel .pending-notice>summary { white-space:normal; }
-.editor-page #preview-pane { padding:20px 28px; }
-@media(max-width:1150px) {
-  .editor-page .sync-choice { display:none; }
-  .editor-page .editor-controls { gap:6px; }
-  .editor-page .editor-discard span { display:none; }
-}
-@media(max-width:1049px) {
-  .reader-actions { grid-column:1/-1; margin:0 18px 10px; }
-  .reader-actions .reader-paper-details { flex:none; }
-}
-@media(max-width:760px) {
-  .editor-page .editor-header { display:flex; flex-wrap:wrap; gap:6px 10px; }
-  .editor-header .editor-heading { flex:1; flex-basis:45%; }
-  .editor-header form { margin-left:auto; }
-  .editor-page .editor-controls { padding:5px 10px; flex-wrap:wrap; }
-  .editor-page #toggle-chapters span,.editor-page .publication-readiness>summary>span:not(.checklist-count) { display:none; }
-  .editor-page .chapter-panel { width:auto; max-height:135px; padding:8px 10px; }
-  .chapter-title-help { display:none; }
-  .editor-page .chapter-tools { padding:4px 10px; flex-wrap:wrap; }
-  .editor-page .details-panel { position:fixed; top:110px; }
-  .editor-page .readiness-panel { position:fixed; top:110px; right:10px; }
-  .editor-page #preview-pane { padding:16px 20px; }
-}
-@media print { .chapter-heading-actions { display:none; } }

@@ -1,18 +1,50 @@
-{% extends 'base.html' %}{% block title %}Account · Peerpedia{% endblock %}
-{% block content %}<div class="auth-panel">
-<div class="eyebrow">YOUR ACCOUNT</div><h1>Sign-in options</h1>
-<p>Signed in as <strong>{{ user.username }}</strong>.</p><p class="help">{{ user.email }} · {% if user.email_verified %}Verified{% else %}Not verified{% endif %}</p>
-{% if user.has_usable_password %}<p><a href="{% url 'password_change' %}">Change your password</a></p>{% endif %}
-<h2>Google</h2>
-{% if google_account %}
-<p>Connected{% if google_account.extra_data.email %} to {{ google_account.extra_data.email }}{% endif %}.</p>
-{% if user.has_usable_password %}
-<p class="help">To disconnect Google, confirm your Peerpedia password. Your papers and contributions will stay in this account.</p>
-<form method="post">{% csrf_token %}{% include 'includes/form.html' %}<button class="button secondary full">Disconnect Google</button></form>
-{% else %}<p class="help">Use Google to sign in to this account. Google stays connected because this account has no Peerpedia password.</p><p><a href="{% url 'password_reset' %}">Add a password by email</a> to enable password sign-in and create CLI access tokens.</p>{% endif %}
-{% elif google_login_enabled and user.has_usable_password %}
-<p class="help">Connect the Google account with the same email address. Confirm your Peerpedia password first.</p>
-<form action="{% url 'google_login' %}" method="post">{% csrf_token %}<input type="hidden" name="process" value="connect">{% include 'includes/form.html' %}<button class="google-signin" type="submit">{% include 'includes/google_icon.html' %}<span>Connect Google</span></button></form>
-{% else %}<p class="help">Google sign-in is not available for this account yet.</p>{% endif %}
-<p class="auth-link"><a href="{% url 'privacy' %}">Privacy</a></p>
-</div>{% endblock %}
+{% extends 'base.html' %}
+{% block title %}Account · Peerpedia{% endblock %}
+{% block content %}
+<div class="form-layout">
+  <header class="page-heading">
+    <h1>Account</h1>
+    <p><strong>{{ user.username }}</strong> · {{ user.email }}{% if not user.email_verified %} · <a href="{% url 'verification_needed' %}?next={{ request.path|urlencode }}">Verify email</a>{% endif %}</p>
+  </header>
+  <div class="form-content">
+    <section class="settings-group">
+      <h2>Activity</h2>
+      <ul class="settings-links">
+        <li><a href="{% url 'inbox' %}"{% if unread_notifications %} aria-label="Inbox, {{ unread_notifications }} unread"{% endif %}>Inbox{% if unread_notifications %} <span class="muted">({{ unread_notifications }} unread)</span>{% endif %}</a></li>
+        {% if needs_agreement %}<li><a href="{% url 'agreements' %}?next={{ request.path|urlencode }}">Review contribution agreement</a></li>{% endif %}
+        {% if has_archived_drafts %}<li><a href="{% url 'drafts' %}">Export old drafts</a></li>{% endif %}
+      </ul>
+    </section>
+    <section class="settings-group">
+      <h2>AI and command-line access</h2>
+      <a href="{% url 'access_tokens' %}">Access tokens</a>
+    </section>
+    <section class="settings-group">
+      <h2>Sign-in and security</h2>
+      {% if user.has_usable_password %}<p><a href="{% url 'password_change' %}">Change your password</a></p>{% endif %}
+      {% if google_account %}
+        <p>Google connected{% if google_account.extra_data.email %} · {{ google_account.extra_data.email }}{% endif %}</p>
+        {% if user.has_usable_password %}
+          <details{% if form.errors %} open{% endif %}>
+            <summary>Disconnect Google</summary>
+            <form method="post">{% csrf_token %}{% include 'includes/form.html' %}
+              <button class="button secondary">Disconnect Google</button>
+            </form>
+          </details>
+        {% else %}
+          <p><a href="{% url 'password_reset' %}?next={{ request.path|urlencode }}">Add a password by email</a> to create access tokens or disconnect Google.</p>
+        {% endif %}
+      {% elif google_login_enabled and user.has_usable_password %}
+        <p class="help">To connect Google, use the Google account with your Peerpedia email and confirm your Peerpedia password.</p>
+        <form action="{% url 'google_login' %}" method="post">
+          {% csrf_token %}<input type="hidden" name="process" value="connect">
+          {% include 'includes/form.html' %}
+          <button class="button secondary" type="submit">{% include 'includes/google_icon.html' %} Connect Google</button>
+        </form>
+      {% endif %}
+      {% if user.is_staff %}<p><a href="{% url 'staff_mfa' %}">Two-factor authentication</a> · <a href="{% url 'admin:index' %}">Admin</a></p>{% endif %}
+    </section>
+    <form class="actions" action="{% url 'logout' %}" method="post">{% csrf_token %}<button class="button secondary">Sign out</button></form>
+  </div>
+</div>
+{% endblock %}

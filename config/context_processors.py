@@ -21,5 +21,4 @@ def project_info(request: HttpRequest) -> dict[str, object]:
         "developer_url": settings.DEVELOPER_URL,
         "site_url": settings.SITE_URL,
         "google_login_enabled": settings.GOOGLE_LOGIN_ENABLED,
-        "passage_comments_enabled": settings.PASSAGE_COMMENTS_ENABLED,
     }

@@ -1,6 +1,6 @@
 Someone requested a password reset for your Peerpedia account.
 
 Choose a new password using this link:
-{{ site_url }}{% url 'password_reset_confirm' uidb64=uid token=token %}
+{{ site_url }}{% url 'password_reset_confirm' uidb64=uid token=token %}{% if next %}?next={{ next|urlencode:'' }}{% endif %}
 
 This link expires after one hour. If you did not request this, ignore this email; your password will remain unchanged.

@@ -1,0 +1,5 @@
+Verify your Peerpedia email to publish, submit changes, and review papers.
+
+{{ activate_url }}
+
+This link expires in 24 hours. If you did not request this email, you can ignore it.

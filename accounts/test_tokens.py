@@ -6,10 +6,9 @@ from .tokens import authenticate_token, issue_token
 
 @override_settings(PASSWORD_HASHERS=["django.contrib.auth.hashers.MD5PasswordHasher"])
 class TokenTests(TestCase):
-    def setUp(self):
-        self.user = User.objects.create_user(
-            "reader", "reader@example.org", "password", email_verified=True
-        )
+    def setUp(self: "TokenTests") -> None:
+        self.user = User.objects.create_user("reader", "reader@example.org", "password")
+        self.user.emailaddress_set.create(email=self.user.email, verified=True, primary=True)
         self.client.force_login(self.user)
 
     def test_creation_requires_password_and_displays_secret_only_once(self):
@@ -26,11 +25,10 @@ class TokenTests(TestCase):
         self.assertNotContains(self.client.get("/accounts/tokens/"), raw)
         self.assertEqual(authenticate_token(raw).pk, token.pk)
 
-    def test_only_owner_can_revoke_and_csrf_is_required(self):
+    def test_only_owner_can_revoke_and_csrf_is_required(self: "TokenTests") -> None:
         token, raw = issue_token(self.user, "Laptop")
-        other = User.objects.create_user(
-            "other", "other@example.org", "password", email_verified=True
-        )
+        other = User.objects.create_user("other", "other@example.org", "password")
+        other.emailaddress_set.create(email=other.email, verified=True, primary=True)
         self.client.force_login(other)
         url = f"/accounts/tokens/{token.pk}/revoke/"
         self.assertEqual(self.client.post(url).status_code, 404)
@@ -42,7 +40,6 @@ class TokenTests(TestCase):
         self.client.post(url)
         self.assertIsNone(authenticate_token(raw))
 
-    def test_unverified_users_cannot_create_tokens(self):
-        self.user.email_verified = False
-        self.user.save()
+    def test_unverified_users_cannot_create_tokens(self: "TokenTests") -> None:
+        self.user.emailaddress_set.update(verified=False)
         self.assertRedirects(self.client.get("/accounts/tokens/"), "/accounts/verification/")

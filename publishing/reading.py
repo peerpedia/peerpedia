@@ -1,18 +1,14 @@
-"""Private reading state and public, frozen citation discovery."""
+"""Private reading state for published papers."""
 
 import json
 import math
-import uuid
 from django.core.exceptions import ValidationError
-from accounts.security import limited
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404
-from django.views.decorators.http import require_http_methods, require_GET
+from django.views.decorators.http import require_http_methods
 from django.db import transaction
 from .models import ReadingProgress, Submission, Paper
-from .queries import search_papers
 from .documents import pages, digest
-from .artifacts import references
 
 
 @require_http_methods(["GET", "POST"])
@@ -66,43 +62,3 @@ def progress(request, paper_id):
     response["Cache-Control"] = "private, no-store"
     response["Vary"] = "Cookie"
     return response
-
-
-@require_GET
-@limited("reference_search", limit=120, seconds=60)
-def reference_search(request):
-    snapshot_id = request.GET.get("submission")
-    if snapshot_id:
-        try:
-            snapshot_id = uuid.UUID(snapshot_id)
-        except ValueError:
-            return JsonResponse({"error": "Use a submission UUID."}, status=400)
-        submission = get_object_or_404(Submission, pk=snapshot_id, paper__is_hidden=False)
-        reader = submission.read_url
-        refs = references(submission)
-        return JsonResponse(
-            {
-                "targets": refs.targets,
-                "chapters": [
-                    {"id": p["id"], "title": p["title"], "url": reader + "?chapter=" + p["id"]}
-                    for p in pages(submission)
-                ],
-            }
-        )
-    results = []
-    for paper in search_papers(request.GET.get("q", "")[:200], "", "latest")[:20]:
-        s = paper.current
-        results.append(
-            {
-                "id": str(paper.pk),
-                "paper_identifier": paper.public_id,
-                "submission": str(s.pk),
-                "snapshot_identifier": s.public_id,
-                "title": s.title,
-                "authors": s.authors,
-                "year": s.created_at.year,
-                "url": request.build_absolute_uri(s.read_url),
-                "hash": s.hash,
-            }
-        )
-    return JsonResponse({"papers": results})

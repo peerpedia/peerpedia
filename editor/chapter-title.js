@@ -3,18 +3,17 @@ import { dialectOptions } from "./dialect.js";
 
 const dialect = defineDialect(dialectOptions);
 
-// Use the same grammar as the editor. Fenced examples and nested headings are
-// not chapter names, and incomplete equations must not prevent a draft save.
-/** @param {string} source @param {import("@lezer/common").Tree} [tree] @returns {string} */
-export function chapterTitle(
-  source,
-  tree = dialect.language.language.parser.parse(source),
-) {
+// Parse the book title and image policy with BananaMark’s own grammar.
+/** @param {string} source @returns {{ title: string, images: boolean }} */
+export function inspectChapter(source) {
+  const tree = dialect.language.language.parser.parse(source);
+  let images = false;
   const headings = [];
   let depth = 0;
   tree.iterate({
     /** @param {import("@lezer/common").SyntaxNodeRef} node @returns {void} */
     enter(node) {
+      if (node.name === "Image") images = true;
       if (node.name === "EnvironmentFence")
         depth += /^\s*:::\s*$/.test(source.slice(node.from, node.to)) ? -1 : 1;
       if (
@@ -33,13 +32,12 @@ export function chapterTitle(
       break;
     }
   }
-  return heading
-    ? headingText(source, heading).slice(0, 250) || "Untitled chapter"
-    : "Untitled chapter";
+  const title = heading ? headingText(source, heading).slice(0, 250) : "";
+  return { title: title || "Untitled chapter", images };
 }
 
 /** @param {string} source @param {import("@lezer/common").SyntaxNode} heading @returns {string} */
-export function headingText(source, heading) {
+function headingText(source, heading) {
   const removed = [];
   heading.toTree().iterate({
     /** @param {import("@lezer/common").SyntaxNodeRef} node @returns {false|void} */

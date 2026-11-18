@@ -13,7 +13,7 @@ from django.db import connection
 from django.test import SimpleTestCase, override_settings
 from accounts.tokens import issue_token
 from cli.peerpedia_cli import main as client
-from publishing.models import Paper, Submission
+from publishing.models import Comment, Paper, Review, Submission
 from publishing.services import decide, propose, publish
 from publishing.tests import document
 
@@ -167,33 +167,15 @@ class CLIJourneys(StaticLiveServerTestCase):
     def fixture_paper(self):
         return publish(self.owner, document())
 
-    @override_settings(PASSAGE_COMMENTS_ENABLED=True)
-    def test_read_feedback_and_push_linked_multi_snapshot_pr(self: "CLIJourneys") -> None:
-        from publishing.models import Passage, PassageComment, PassageCommentRevision
-        from publishing.passages import validate
-
+    def test_read_reviews_and_update_multi_snapshot_pr(self: "CLIJourneys") -> None:
         paper = self.fixture_paper()
-        spans, quote, key = validate(
-            paper.current.markdown, [{"block": "b1", "start": 0, "end": 11}]
+        review = Review.objects.create(
+            paper=paper, user=self.owner, score=3, text="Explain the equation."
         )
-        anchor = Passage.objects.create(submission=paper.current, spans=spans, quote=quote, key=key)
-        thread = PassageComment.objects.create(
-            passage=anchor, user=self.owner, score=3, text="Explain the equation."
-        )
-        PassageCommentRevision.objects.create(comment=thread, number=1, text=thread.text, score=3)
-        for i in range(33):
-            PassageComment.objects.create(
-                passage=anchor,
-                user=self.owner,
-                parent=thread,
-                root=thread,
-                depth=1,
-                text=f"Follow-up {i}",
-            )
         # Public reads work before logging in, without writing local project state.
         found = self.command("search", "Ada", "--server", self.live_server_url)
         self.assertEqual(found["papers"][0]["paper_id"], str(paper.pk))
-        self.assertEqual(found["papers"][0]["rating_count"], 0)
+        self.assertEqual(found["papers"][0]["rating_count"], 1)
         self.assertEqual(
             self.command("search", "absent & ? 中文", "--server", self.live_server_url)["papers"],
             [],
@@ -210,29 +192,19 @@ class CLIJourneys(StaticLiveServerTestCase):
             failure="invalid_request",
         )
         self.assertFalse((self.root / "credentials").exists())
-        feedback = self.command(
-            "feedback", "--server", self.live_server_url, "--paper", str(paper.pk), "--all"
+        reviews = self.command(
+            "reviews", "--server", self.live_server_url, "--paper", str(paper.pk), "--all"
         )
-        self.assertEqual(feedback["passages"][0]["original_hash"], paper.current.hash)
-        detail = self.command(
-            "discussion", str(anchor.pk), "--server", self.live_server_url, "--all"
-        )
-        self.assertEqual(len(detail["threads"][0]["replies"]), 33)
-        history = self.command(
-            "comment-history", str(thread.pk), "--server", self.live_server_url, "--all"
-        )
-        self.assertEqual(history["revisions"][0]["text"], thread.text)
+        self.assertEqual([row["text"] for row in reviews["reviews"]], [review.text])
         self.login(self.other_token)
-        self.command("clone", str(paper.pk), "feedback-work")
-        work = self.root / "feedback-work"
-        self.assertEqual(self.command("feedback", folder=work)["paper_id"], str(paper.pk))
+        self.command("clone", str(paper.pk), "reviews-work")
+        work = self.root / "reviews-work"
+        self.assertEqual(self.command("reviews", folder=work)["paper_id"], str(paper.pk))
         (work / "paper.md").write_text("# A test paper\n\nA clearer equation.\n", encoding="utf-8")
         first = self.command(
             "push",
             "-m",
             "Explain the equation.",
-            "--address",
-            str(thread.pk),
             "--ai-assisted",
             folder=work,
         )
@@ -250,14 +222,6 @@ class CLIJourneys(StaticLiveServerTestCase):
             "snapshot", snapshot["snapshot_identifier"], "--server", self.live_server_url
         )
         self.assertEqual(dated["hash"], first["hash"])
-        dated_feedback = self.command(
-            "feedback",
-            "--submission",
-            dated["snapshot_identifier"],
-            "--server",
-            self.live_server_url,
-        )
-        self.assertEqual(dated_feedback["paper_id"], dated["manifest"]["paper_id"])
         linked = self.command(
             "snapshot",
             self.live_server_url + snapshot["read_url"],
@@ -269,7 +233,11 @@ class CLIJourneys(StaticLiveServerTestCase):
         self.assertEqual((work / "paper.md").read_bytes(), saved_markdown)
         pr = self.command("pr", pr_id, folder=work)
         self.assertEqual(pr["head_hash"], first["hash"])
-        self.assertEqual(pr["discussion_ids"], [str(thread.pk)])
+        comment = Comment.objects.create(
+            submission_id=first["submission_id"], user=self.owner, text="Please add an example."
+        )
+        comments = self.command("pr-comments", pr_id, "--all", folder=work)
+        self.assertEqual([row["text"] for row in comments["comments"]], [comment.text])
         (work / "paper.md").write_text(
             "# A test paper\n\nA complete explanation.\n", encoding="utf-8"
         )
@@ -281,8 +249,6 @@ class CLIJourneys(StaticLiveServerTestCase):
             pr_id,
             "--expected-head",
             first["hash"],
-            "--address",
-            str(thread.pk),
             "--ai-assisted",
             folder=work,
         )

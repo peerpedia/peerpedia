@@ -24,7 +24,7 @@ class AdministrationTests(TestCase):
             reverse("staff_mfa"), {"action": "verify", "code": f"{totp(device.bin_key):06d}"}
         )
 
-    def test_dashboard_respects_model_permissions(self):
+    def test_dashboard_respects_model_permissions(self: "AdministrationTests") -> None:
         self.client.force_login(self.owner)
         self.assertEqual(self.client.get(reverse("admin:index")).status_code, 302)
         staff = consenting_user("moderator", "moderator@example.org", is_staff=True)
@@ -35,17 +35,19 @@ class AdministrationTests(TestCase):
         page = self.client.get(reverse("admin:index"))
         self.assertContains(page, "Paper reviews")
         self.assertNotContains(page, reverse("admin:accounts_user_changelist"))
-        self.assertNotContains(page, reverse("admin:publishing_passagereport_changelist"))
+        self.assertNotContains(page, "Reported comments")
         self.assertNotContains(page, reverse("admin:publishing_submission_changelist"))
 
-    def test_dashboard_and_lists_render_with_immutable_snapshots(self):
+    def test_dashboard_and_lists_render_with_immutable_snapshots(
+        self: "AdministrationTests",
+    ) -> None:
         self.verified_login(self.admin)
         response = self.client.get(reverse("admin:index"))
         for heading in [
             "Moderation",
             "Accounts",
             "History",
-            "Reported comments",
+            "Paper reviews",
             "Your recent activity",
         ]:
             self.assertContains(response, heading)
@@ -56,10 +58,6 @@ class AdministrationTests(TestCase):
             "submission",
             "decision",
             "moderationevent",
-            "passage",
-            "passagecomment",
-            "passagereport",
-            "passagecommentrevision",
             "submissionsource",
         ]:
             self.assertEqual(

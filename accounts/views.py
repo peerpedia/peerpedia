@@ -1,50 +1,41 @@
 import logging
+from typing import Any
 from django.conf import settings
 from django.contrib import messages
-from django.contrib.auth import login
 from django.contrib.auth.decorators import login_required
-from django.contrib.auth.views import LoginView, PasswordResetView
+from django.contrib.auth.views import LoginView, PasswordResetConfirmView, PasswordResetView
 from django.core import signing
-from django.core.mail import send_mail
+from allauth.account.adapter import get_adapter
+from allauth.account.models import EmailAddress, EmailConfirmationHMAC
+from allauth.account.views import SignupView
+from django.db import IntegrityError, transaction
+from django.db.models import F
+from django.http import HttpRequest, HttpResponse
 from django.shortcuts import redirect, render
 from django.urls import reverse
-from django.views.decorators.http import require_POST
+from django.views.decorators.http import require_http_methods, require_POST
 from .forms import LoginForm, SignupForm, PeerPasswordResetForm
 from .models import User
-from .security import limited
+from .security import limited, local_destination
 
 logger = logging.getLogger(__name__)
 
 
-def send_verification(user):
-    token = signing.dumps({"user": user.pk, "email": user.email}, salt="verify-email")
-    url = settings.SITE_URL + reverse("verify_email", args=[token])
-    send_mail(
-        "Verify your Peerpedia email",
-        f"Welcome to Peerpedia.\n\nVerify your email to publish, submit changes, and review papers:\n{url}\n\nThis link expires in 24 hours. If you did not create this account, ignore this email.",
-        settings.DEFAULT_FROM_EMAIL,
-        [user.email],
-    )
+class PeerSignupView(SignupView):
+    form_class = SignupForm
+    template_name = "accounts/signup.html"
 
+    def get_success_url(self: "PeerSignupView") -> str:
+        target = local_destination(self.get_next_url() or "")
+        return reverse("verification_needed", query={"next": target} if target else None)
 
-@limited("signup", limit=10, seconds=3600)
-def signup(request):
-    if request.user.is_authenticated:
-        return redirect("browse")
-    form = SignupForm(request.POST or None)
-    if request.method == "POST" and form.is_valid():
-        user = form.save()
-        login(request, user, backend="accounts.backends.UsernameOrEmailBackend")
+    def form_valid(self: "PeerSignupView", form: SignupForm) -> HttpResponse:
         try:
-            send_verification(user)
-        except Exception:
-            logger.exception("Verification email delivery failed")
-            messages.error(
-                request,
-                "Your account was created, but email delivery failed. Please try sending the verification email again.",
-            )
-        return redirect("verification_needed")
-    return render(request, "accounts/signup.html", {"form": form})
+            with transaction.atomic():
+                return super().form_valid(form)
+        except IntegrityError:
+            form.add_error(None, "That username or email was just registered.")
+            return self.form_invalid(form)
 
 
 class PeerLoginView(LoginView):
@@ -58,9 +49,10 @@ class PeerPasswordResetView(PasswordResetView):
     email_template_name = "accounts/reset_email.txt"
     subject_template_name = "accounts/reset_subject.txt"
 
-    def form_valid(self, form):
-        # Use configured origin, not request Host, in outgoing reset links.
-        self.extra_email_context = {"site_url": settings.SITE_URL}
+    def form_valid(self: "PeerPasswordResetView", form: PeerPasswordResetForm) -> HttpResponse:
+        target = local_destination(self.request.GET.get("next", ""))
+        self.request.session["reset_next"] = target
+        self.extra_email_context = {"site_url": settings.SITE_URL, "next": target}
         try:
             return super().form_valid(form)
         except Exception:
@@ -69,18 +61,37 @@ class PeerPasswordResetView(PasswordResetView):
             return redirect("password_reset_done")
 
 
+class PeerPasswordResetConfirmView(PasswordResetConfirmView):
+    template_name = "accounts/password_reset_confirm.html"
+
+    def dispatch(
+        self: "PeerPasswordResetConfirmView", request: HttpRequest, *args: Any, **kwargs: Any
+    ) -> HttpResponse:
+        response = super().dispatch(request, *args, **kwargs)
+        if request.method == "GET" and response.status_code == 302:
+            # Django has verified the emailed link and removed its token from the URL.
+            request.session["reset_next"] = local_destination(request.GET.get("next", ""))
+        return response
+
+
 @login_required
-def verification_needed(request):
-    return render(request, "accounts/verify.html")
+def verification_needed(request: HttpRequest) -> HttpResponse:
+    if "next" in request.GET:
+        request.session["verification_next"] = local_destination(request.GET["next"])
+    target = request.session.get("verification_next", "")
+    return render(request, "accounts/verify.html", {"next": target})
 
 
 @login_required
 @require_POST
 @limited("verify", limit=4, seconds=3600)
-def resend_verification(request):
+def resend_verification(request: HttpRequest) -> HttpResponse:
     if not request.user.email_verified:
         try:
-            send_verification(request.user)
+            address, _ = EmailAddress.objects.get_or_create(
+                user=request.user, email=request.user.email.lower()
+            )
+            address.send_confirmation(request)
             messages.success(request, "Verification email sent. Check your inbox.")
         except Exception:
             logger.exception("Verification email delivery failed")
@@ -88,23 +99,50 @@ def resend_verification(request):
     return redirect("verification_needed")
 
 
-def verify_email(request, token):
+def legacy_confirmation(token: str) -> EmailConfirmationHMAC | None:
+    # Links issued before the allauth migration are valid for their original 24 hours.
     try:
         data = signing.loads(token, salt="verify-email", max_age=86400)
         user = User.objects.get(pk=data["user"], email=data["email"], is_active=True)
-    except (signing.BadSignature, User.DoesNotExist, KeyError):
-        return render(
-            request,
-            "error.html",
-            {
-                "heading": "Verification link unavailable",
-                "detail": "This link is invalid or expired. Sign in and request a new verification email.",
-            },
-            status=400,
+        address = EmailAddress.objects.get(user=user, email=user.email.lower(), verified=False)
+    except (signing.BadSignature, User.DoesNotExist, EmailAddress.DoesNotExist, KeyError):
+        return None
+    return EmailConfirmationHMAC(address)
+
+
+@require_http_methods(["GET", "POST"])
+@transaction.atomic
+def verify_email(request: HttpRequest, token: str) -> HttpResponse:
+    confirmation = EmailConfirmationHMAC.from_key(token) or legacy_confirmation(token)
+    if confirmation:
+        # Recheck both records under lock so an email change, deactivation, or
+        # second confirmation cannot race the publishing permission change.
+        address = (
+            EmailAddress.objects.select_related("user")
+            .select_for_update()
+            .filter(
+                pk=confirmation.email_address.pk,
+                user__is_active=True,
+                email__iexact=F("user__email"),
+                verified=False,
+            )
+            .first()
         )
-    if request.method == "POST":
-        user.email_verified = True
-        user.save(update_fields=["email_verified"])
-        messages.success(request, "Email verified. You can now participate in Peerpedia.")
-        return redirect("browse" if request.user.is_authenticated else "login")
-    return render(request, "accounts/verify_confirm.html", {"token": token})
+        if address:
+            if request.method == "GET":
+                return render(request, "accounts/verify_confirm.html")
+            if get_adapter().confirm_email(request, address):
+                target = local_destination(request.GET.get("next", ""))
+                if request.user.pk == address.user_id:
+                    pending = request.session.pop("verification_next", "")
+                    return redirect(pending or target or reverse("browse"))
+                return redirect(reverse("login", query={"next": target} if target else None))
+    return render(
+        request,
+        "error.html",
+        {
+            "heading": "Verification link unavailable",
+            "detail": "This link is invalid or expired. Sign in and request a new verification email.",
+        },
+        status=400,
+    )

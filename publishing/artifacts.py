@@ -8,24 +8,22 @@ from .models import RenderedSubmission, Submission
 
 
 def renderer_version() -> str:
-    return _renderer_version(settings.STATIC_URL, settings.PASSAGE_COMMENTS_ENABLED)
+    return _renderer_version(settings.STATIC_URL)
 
 
 @lru_cache(maxsize=2)
-def _renderer_version(static_url: str, passage_comments: bool) -> str:
+def _renderer_version(static_url: str) -> str:
     digest = hashlib.sha256()
     for name in (
         "editor/package-lock.json",
         "editor/dialect.js",
         "editor/chapter-title.js",
         "editor/render-document.mjs",
-        "editor/passage-html.mjs",
         "publishing/artifacts.py",
     ):
         digest.update(name.encode())
         digest.update((settings.BASE_DIR / name).read_bytes())
     digest.update(static_url.encode())
-    digest.update(b"annotated" if passage_comments else b"native")
     return digest.hexdigest()
 
 

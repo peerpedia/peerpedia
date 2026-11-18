@@ -1,13 +1,40 @@
-{% extends 'base.html' %}{% load static %}
-{% block title %}Review your upload · Peerpedia{% endblock %}
+{% extends "base.html" %}
+{% load static %}
+{% block title %}Preview {% if paper %}proposal{% else %}paper{% endif %} · Peerpedia{% endblock %}
 {% block head %}<link rel="stylesheet" href="{% static 'reader.css' %}">{% include "includes/math.html" %}{% endblock %}
 {% block content %}
-<div class="eyebrow"><span class="muted">01 UPLOAD / </span>02 PREVIEW <span class="muted">/ 03 PUBLISH</span></div>
-<h1>Review your upload</h1><p class="lede">Nothing has been published yet. This preview expires after one hour.</p>
-<div class="preview-metadata"><h2>{{ data.title }}</h2><p class="author-list">{{ data.authors|linebreaksbr }}</p><h3>Abstract</h3><p>{{ data.abstract|linebreaksbr }}</p>{% if paper %}<h3>Change description</h3><p>{{ data.explanation|linebreaksbr }}</p>{% endif %}</div>
-{% include 'includes/subjects.html' %}
-{% if paper %}<details class="diff-details" open><summary>Markdown and metadata changes</summary>{% include 'includes/diff.html' %}</details>{% endif %}
-<details class="render-preview" {% if not paper %}open{% endif %}><summary>Rendered document</summary><div class="markdown-body">{{ body }}</div></details>
-<div class="publish-confirm"><h2>Ready to publish?</h2><p>This {% if paper %}submission{% else %}paper{% endif %} will become <strong>public and immutable</strong>. Corrections require a new submission. {% if paper %}It will remain a proposal until the corresponding author accepts it.{% endif %}</p>
-<form method="post">{% csrf_token %}<input type="hidden" name="action" value="confirm"><input type="hidden" name="token" value="{{ token }}">{% include "includes/publication_consent.html" %}<div class="actions"><button class="button">Publish {% if paper %}submission{% else %}paper{% endif %}</button><a class="button secondary" href="{% if paper %}{% url 'propose' paper.pk %}{% else %}{% url 'publish' %}{% endif %}">Start over</a></div></form></div>
+<div class="author-preview">
+  <header class="page-heading">
+    <h1>Preview {% if paper %}proposal{% else %}paper{% endif %}</h1>
+    <p class="muted">Private preview · Available for one hour</p>
+  </header>
+  <section class="preview-metadata">
+    <h2>{{ data.title }}</h2>
+    <p class="author-list">{{ data.authors|linebreaksbr }}</p>
+    <h3>Abstract</h3>
+    <p class="abstract-text">{{ data.abstract|linebreaksbr }}</p>
+    {% include "includes/subjects.html" %}
+  </section>
+  {% if paper %}
+    <section><h2>What changed?</h2><p>{{ data.explanation|linebreaksbr }}</p></section>
+    <details class="diff-details" open><summary>Changes to the paper</summary>{% include "includes/diff.html" %}</details>
+  {% endif %}
+  <details class="render-preview disclosure" {% if not paper %}open{% endif %}>
+    <summary>Rendered document</summary>
+    <div class="markdown-body">{{ body }}</div>
+  </details>
+  <section class="publish-confirm">
+    <h2>License and permissions</h2>
+    <p>{% if paper %}Your proposal will be public. The corresponding author can accept it as the next version.{% else %}Publishing makes this version public. Future corrections appear as new versions.{% endif %}</p>
+    <form method="post">
+      {% csrf_token %}
+      <input type="hidden" name="token" value="{{ token }}">
+      {% include "includes/publication_consent.html" %}
+      <div class="actions">
+        <button type="submit" name="action" value="confirm" class="button">{% if paper %}Submit proposal{% else %}Publish paper{% endif %}</button>
+        <button type="submit" name="action" value="edit" formnovalidate class="button secondary">Edit upload</button>
+      </div>
+    </form>
+  </section>
+</div>
 {% endblock %}

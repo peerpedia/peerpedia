@@ -1,12 +1,15 @@
 """Versioned permissions, separate from immutable historical content."""
 
+from collections.abc import Callable
 from functools import lru_cache, wraps
 import hashlib
 from pathlib import Path
+from typing import Concatenate, ParamSpec
 from urllib.parse import urlencode
 from django import forms
 from django.conf import settings
 from django.core.exceptions import ValidationError
+from django.http import HttpRequest, HttpResponse
 from django.shortcuts import redirect, render
 from django.urls import reverse
 from django.utils.http import url_has_allowed_host_and_scheme
@@ -188,20 +191,22 @@ def agreements(request):
     return response
 
 
-def agreement_required(view):
+P = ParamSpec("P")
+
+
+def agreement_required(
+    view: Callable[Concatenate[HttpRequest, P], HttpResponse],
+) -> Callable[Concatenate[HttpRequest, P], HttpResponse]:
     @wraps(view)
-    def wrapped(request, *args, **kwargs):
+    def wrapped(request: HttpRequest, /, *args: P.args, **kwargs: P.kwargs) -> HttpResponse:
         if not acceptance(request.user):
-            # Return to the saved draft or paper, never replay a POST.
-            target = request.get_full_path() if request.method == "GET" else "/publish/"
-            for key, route in (
-                ("draft_id", "editor"),
-                ("paper_id", "paper"),
-                ("submission_id", "submission"),
-            ):
-                if request.method == "POST" and key in kwargs:
-                    target = reverse(route, args=[kwargs[key]])
-                    break
+            # Upload forms support GET. Feedback submissions return to the public detail page.
+            target = request.get_full_path()
+            if request.method == "POST" and request.resolver_match:
+                if request.resolver_match.url_name == "comment":
+                    target = reverse("submission", args=[kwargs["submission_id"]])
+                elif request.resolver_match.url_name == "review":
+                    target = reverse("paper", args=[kwargs["paper_id"]])
             return redirect(reverse("agreements") + "?" + urlencode({"next": target}))
         return view(request, *args, **kwargs)
 

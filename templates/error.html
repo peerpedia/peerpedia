@@ -1,1 +1,7 @@
-{% extends 'base.html' %}{% block title %}{{ heading }} · Peerpedia{% endblock %}{% block content %}<div class="empty-state"><h1>{{ heading }}</h1><p>{{ detail }}</p><a class="button secondary" href="{% url 'browse' %}">Browse papers</a></div>{% endblock %}
+{% extends 'base.html' %}{% block title %}{{ heading }} · Peerpedia{% endblock %}
+{% block content %}
+<div class="form-layout"><h1>{{ heading }}</h1><p>{{ detail }}</p>
+  {% if retry_upload %}
+    <a class="button" href="{% if paper %}{% url 'propose' paper.pk %}{% else %}{% url 'publish' %}{% endif %}">{% if paper %}Return to proposal{% else %}Return to upload{% endif %}</a>
+  {% else %}<a href="{% url 'browse' %}">Browse papers</a>{% endif %}
+</div>{% endblock %}

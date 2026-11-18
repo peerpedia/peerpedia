@@ -1,10 +1,13 @@
 import re
+from collections.abc import Iterator
+from allauth.account.forms import SignupForm as AllauthSignupForm
 from django import forms
-from django.contrib.auth.forms import AuthenticationForm, UserCreationForm, PasswordResetForm
+from django.contrib.auth.forms import AuthenticationForm, PasswordResetForm
+from django.db.models import F
 from .models import User
 
 
-class SignupForm(UserCreationForm):
+class SignupForm(AllauthSignupForm):
     username = forms.CharField(
         min_length=3,
         max_length=30,
@@ -15,11 +18,7 @@ class SignupForm(UserCreationForm):
         help_text="Private. Used to verify your account and reset your password."
     )
 
-    class Meta:
-        model = User
-        fields = ("username", "email", "password1", "password2")
-
-    def clean_username(self):
+    def clean_username(self: "SignupForm") -> str:
         value = self.cleaned_data["username"].strip()
         if not re.fullmatch(r"[A-Za-z0-9_\-]{3,30}", value):
             raise forms.ValidationError("Use 3–30 letters, numbers, underscores, or hyphens.")
@@ -27,7 +26,7 @@ class SignupForm(UserCreationForm):
             raise forms.ValidationError("That username is already taken.")
         return value
 
-    def clean_email(self):
+    def clean_email(self: "SignupForm") -> str:
         value = self.cleaned_data["email"].strip().lower()
         if User.objects.filter(email__iexact=value).exists():
             raise forms.ValidationError(
@@ -44,14 +43,15 @@ class LoginForm(AuthenticationForm):
 
 
 class PeerPasswordResetForm(PasswordResetForm):
-    def get_users(self, email):
+    def get_users(self: "PeerPasswordResetForm", email: str) -> Iterator[User]:
         for user in super().get_users(email):
             yield user
         # Google-only users can add a local password by proving email ownership again.
         for user in User.objects.filter(
             email__iexact=email,
             is_active=True,
-            email_verified=True,
+            emailaddress__verified=True,
+            emailaddress__email__iexact=F("email"),
             socialaccount__provider="google",
         ).distinct():
             if not user.has_usable_password():

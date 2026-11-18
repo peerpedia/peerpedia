@@ -8,7 +8,7 @@
 {% endblock %}
 
 {% block branding %}
-<a class="admin-wordmark" href="{% url 'browse' %}" aria-label="Peerpedia home">peer<span>pedia</span><i aria-hidden="true">.</i></a>
+{% include 'includes/wordmark.html' %}
 <a class="admin-area" href="{% url 'admin:index' %}">Administration</a>
 {% endblock %}
 
@@ -21,4 +21,4 @@
   {% include "admin/color_theme_toggle.html" %}
 {% endblock %}
 
-{% block footer %}<div class="admin-footer">Peerpedia {{ project_version }} · {% include 'includes/motto.html' %}</div>{% endblock %}
+{% block footer %}{% endblock %}

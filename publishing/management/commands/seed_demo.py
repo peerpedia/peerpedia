@@ -10,7 +10,7 @@ class Command(BaseCommand):
         "Create clearly labelled local demonstration content, without login-capable demo accounts."
     )
 
-    def handle(self, **options):
+    def handle(self: "Command", **options: object) -> None:
         if not settings.DEBUG:
             raise CommandError("Demo seeding is only available in DEBUG mode.")
         if Paper.objects.exists():
@@ -18,10 +18,12 @@ class Command(BaseCommand):
             return
         users = []
         for username in ("demo_researcher", "demo_contributor", "demo_reviewer"):
-            user, _ = User.objects.get_or_create(
+            user, created = User.objects.get_or_create(
                 username=username,
-                defaults={"email": f"{username}@example.invalid", "email_verified": True},
+                defaults={"email": f"{username}@example.invalid"},
             )
+            if created:
+                user.emailaddress_set.create(email=user.email, primary=True, verified=True)
             user.set_unusable_password()
             user.save()
             from publishing.models import AgreementAcceptance

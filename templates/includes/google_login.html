@@ -1,7 +1,7 @@
 {% if google_login_enabled %}
 <form action="{% url 'google_login' %}" method="post" class="google-signin-form">
   {% csrf_token %}<input type="hidden" name="next" value="{{ next }}">
-  <button class="google-signin" type="submit">{% include 'includes/google_icon.html' %}<span>Continue with Google</span></button>
+  <button class="button secondary full" type="submit">{% include 'includes/google_icon.html' %} Continue with Google</button>
 </form>
-<div class="auth-divider"><span>or use your password</span></div>
+<p class="auth-divider">or</p>
 {% endif %}

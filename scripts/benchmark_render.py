@@ -50,7 +50,7 @@ def main() -> int:
             raise SystemExit(result["error"]["message"])
         pages = result["result"]["pages"]
         if [page["id"] for page in pages] != expected_ids or not all(
-            page.get("nativeHtml") and not page["blocks"] for page in pages
+            isinstance(page.get("html"), str) for page in pages
         ):
             raise SystemExit("Expected complete native HTML for every chapter.")
         digest = hashlib.sha256()

@@ -2,7 +2,6 @@
 {% block title %}Account security · Peerpedia{% endblock %}
 {% block content %}
 <div class="auth-panel security-panel">
-  <div class="eyebrow">ADMINISTRATOR SECURITY</div>
   <h1>{% if mode == 'verify' %}Verify your sign-in{% else %}Two-factor authentication{% endif %}</h1>
   {% if error %}<p class="notice error" role="alert">{{ error }}</p>{% endif %}
   {% if codes %}

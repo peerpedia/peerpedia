@@ -4,7 +4,7 @@
 {% block nav-breadcrumbs %}{% endblock %}
 {% block nav-sidebar %}{% endblock %}
 {% block content_title %}
-<div class="admin-intro"><p class="admin-eyebrow">PEERPEDIA ADMINISTRATION</p><h1>{% include 'includes/motto.html' %}</h1><p>Review content, manage accounts, and follow the history of the work.</p></div>
+<div class="admin-intro"><h1>Administration</h1></div>
 {% endblock %}
 {% block content %}
 {% admin_sections app_list as sections %}
@@ -32,7 +32,6 @@
       {% if not entry.is_deletion and entry.get_admin_url %}<a href="{{ entry.get_admin_url }}">{{ entry.object_repr }}</a>{% else %}<span>{{ entry.object_repr }}</span>{% endif %}
       <small>{% if entry.is_addition %}Added{% elif entry.is_change %}Updated{% else %}Deleted{% endif %} · {{ entry.action_time|date:"j M, H:i" }}</small>
     </li>{% endfor %}</ul>{% else %}<p>Your administration activity will appear here as you work.</p>{% endif %}
-    <div class="admin-history-note"><h3>Research keeps its history</h3><p>Moderation changes visibility. Published snapshots and recorded decisions stay preserved.</p></div>
   </aside>
 </div>
 {% endblock %}

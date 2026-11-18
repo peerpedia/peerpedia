@@ -64,7 +64,7 @@ class PaperIdentifierTests(TestCase):
         ]:
             self.assertEqual(self.client.get(url).status_code, 404)
 
-    def test_api_search_and_generated_links(self):
+    def test_api_search_and_generated_links(self: "PaperIdentifierTests") -> None:
         data = self.client.get(f"/api/v1/papers/{self.paper.public_id}/").json()
         self.assertEqual(data["paper_id"], str(self.paper.pk))
         self.assertEqual(data["paper_identifier"], self.paper.public_id)
@@ -73,12 +73,12 @@ class PaperIdentifierTests(TestCase):
         self.assertEqual(data["current"]["read_url"], self.paper.current.read_url)
         response = self.client.get("/", {"q": self.paper.public_id})
         self.assertContains(response, self.paper.get_absolute_url())
-        self.assertContains(response, self.paper.read_url)
+        self.assertNotContains(response, self.paper.read_url)
         self.assertContains(response, self.paper.public_id)
         self.assertEqual(self.paper.read_url, self.paper.current.read_url)
-        for page in (response, self.client.get(self.paper.get_absolute_url())):
-            self.assertContains(page, f'href="{self.paper.current.read_url}"')
-            self.assertNotContains(page, f'href="{self.paper.get_absolute_url()}read/"')
+        overview = self.client.get(self.paper.get_absolute_url())
+        self.assertContains(overview, f'href="{self.paper.current.read_url}"')
+        self.assertNotContains(overview, f'href="{self.paper.get_absolute_url()}read/"')
         listed = self.client.get("/api/v1/papers/").json()["papers"]
         self.assertEqual(listed[0]["read_url"], self.paper.current.read_url)
         self.assertEqual(

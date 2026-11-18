@@ -23,14 +23,7 @@ class Anchors(HTMLParser):
 
 
 class HelpExampleTests(SimpleTestCase):
-    def test_passage_guide_matches_feature_availability(self: "HelpExampleTests") -> None:
-        page = self.client.get(reverse("help"))
-        self.assertContains(page, "Passage comments and ratings are paused")
-        self.assertNotContains(page, "Comment &amp; rate")
-        with self.settings(PASSAGE_COMMENTS_ENABLED=True):
-            self.assertContains(self.client.get(reverse("help")), "Comment &amp; rate")
-
-    def test_writing_guide_has_real_outputs_and_unambiguous_links(self):
+    def test_writing_guide_has_real_outputs_and_unambiguous_links(self: "HelpExampleTests") -> None:
         response = self.client.get(reverse("help_writing"))
         self.assertEqual(response.status_code, 200)
         body = response.content.decode()
@@ -40,7 +33,7 @@ class HelpExampleTests(SimpleTestCase):
         self.assertIn('id="help-references-eq:area"', body)
         self.assertIn("bm-env-theorem", body)
         self.assertIn("bm-env-proof", body)
-        self.assertIn("<table ", body)
+        self.assertIn("<table>", body)
         self.assertEqual(body.count('class="bm-tikz-body"'), 2)
         self.assertNotIn('<svg viewBox="0 0 260 180"', body)
         self.assertNotIn('class="broken-reference"', body)
@@ -51,7 +44,9 @@ class HelpExampleTests(SimpleTestCase):
         self.assertIn('href="#help-citation-bib-', body)
         self.assertIn('href="#help-citation_details-bib-', body)
 
-    def test_preview_prefix_preserves_source_labels_and_default_rendering(self):
+    def test_help_prefix_preserves_source_labels_and_default_rendering(
+        self: "HelpExampleTests",
+    ) -> None:
         source = "## Area {@sec:area}\n\nSee @sec:area.\n"
         chapters = [{"id": "main", "title": "Example", "markdown": source}]
         plain = ReferenceDocument(chapters)

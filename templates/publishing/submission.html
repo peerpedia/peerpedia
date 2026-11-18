@@ -1,24 +1,104 @@
-{% extends 'base.html' %}
-{% block title %}Submission {{ submission.public_id }} · Peerpedia{% endblock %}
-{% block content %}{% include 'includes/license.html' %}
-<a class="breadcrumb" href="{{ paper.get_absolute_url }}?tab=submissions">← {{ paper.current.title }}</a>
-<a class="button secondary paper-details-link" href="{{ paper.get_absolute_url }}">{% include "includes/ui_icon.html" with name="file" %}Paper details</a><div class="submission-heading"><div class="eyebrow">Snapshot {{ submission.public_id }}</div><h1>{{ submission.title }}</h1><div class="meta-line"><span class="status {{ submission.status }}">{{ submission.status|title }}</span><span>Submitted by <strong>{{ submission.contributor_name }}</strong>{% if submission.via_cli %} · via CLI{% endif %}{% if submission.ai_assisted %} · AI-assisted{% endif %}</span><span>{{ submission.created_at|date:'j M Y, H:i' }} UTC</span></div></div>
-<p class="muted">{% if submission.decision.action == 'accepted' %}Accepted {{ submission.decision.created_at|date:'j M Y, H:i' }} UTC{% if submission.pk == paper.current_id %} · Latest accepted text{% endif %}{% elif submission.status == 'pending' %}These changes have not been accepted.{% endif %}</p>
-{% include 'includes/subjects.html'  with subjects=submission.subjects %}
-{% if pr %}<div class="notice"><a href="{% url 'pull_request' pr.pk %}">PR conversation · {{ commits|length }} snapshot{{ commits|length|pluralize }}</a>
-{% if submission.pk != pr.head_id %}<p>This is an earlier frozen snapshot. <a href="{{ pr.head.get_absolute_url }}">Review the latest snapshot</a>.</p>{% endif %}
-{% if user.pk == pr.contributor_id and pr.head.status == 'pending' %}<p><a href="{% url 'edit_pr' pr.pk %}">{% if stale %}Update to latest in the editor →{% else %}Update PR in the editor →{% endif %}</a></p>{% endif %}
-<details><summary>Snapshot history</summary><ol>{% for commit in commits %}<li><a href="{{ commit.submission.get_absolute_url }}">Snapshot {{ commit.submission.public_id }}</a> — {{ commit.submission.explanation|truncatechars:100 }}</li>{% endfor %}</ol></details></div>{% endif %}
-{% if submission.pr_commit.section %}<p class="notice">{% if submission.pr_commit.section.kind == "chapter" %}Chapter{% else %}Section{% endif %} PR · {{ submission.pr_commit.section.label }}. This snapshot contains the complete paper.</p>{% endif %}<div class="submission-info"><p>{{ submission.explanation|linebreaksbr }}</p><dl class="hash-info"><dt>Submission hash</dt><dd><code>{{ submission.hash }}</code></dd>{% if submission.base %}<dt>Base version</dt><dd><a href="{{ submission.base.get_absolute_url }}"><code>{{ submission.base.public_id }}</code></a></dd>{% endif %}</dl><div class="inline-links"><a href="{{ submission.read_url }}">Read submitted document ↗</a><a href="{{ submission.download_url }}">Download Markdown</a><a href="{{ submission.manifest_url }}">Verification manifest</a></div></div>
-{% if stale %}<div class="notice warning">A newer version has been accepted. This proposal remains public, but accepting it requires a new submission based on the latest version.</div>{% endif %}
-<details class="diff-details"><summary>View Markdown changes</summary>{% if chapter_changes %}<nav class="chapter-diffs" aria-label="Changed chapters">{% for change in chapter_changes %}<a href="?chapter={{ change.id }}" {% if change.id == selected_change.id %}aria-current="page"{% endif %}>{{ change.kind }} · {{ change.title }}{% if change.moved %} · Reordered{% endif %}</a>{% endfor %}</nav><h3>{{ selected_change.title }}</h3>{% endif %}{% include 'includes/diff.html' %}</details>
-{% if submission.status == 'pending' %}
-{% if user.pk == paper.owner_id or user.pk == submission.contributor_id %}<div class="decision-panel"><div><h2>Submission decision</h2><p class="muted">Decisions preserve the document exactly as submitted.</p></div><form method="post" action="{% url 'decision' submission.pk %}" class="actions">{% csrf_token %}{% if user.pk == paper.owner_id %}<button class="button" name="action" value="accepted" {% if stale %}disabled{% endif %}>Accept submission</button><button class="button danger" name="action" value="rejected">Reject</button>{% endif %}{% if user.pk == submission.contributor_id %}<button class="button secondary" name="action" value="withdrawn">Withdraw</button>{% endif %}</form></div>{% endif %}
-{% elif submission.status == "superseded" %}<div class="notice">A newer snapshot continues this PR. This snapshot and its hash are preserved.</div>
-{% else %}<div class="notice">{{ submission.status|title }} by {{ submission.decision.actor.username }} on {{ submission.decision.created_at|date:'j M Y, H:i' }} UTC. The submitted snapshot is preserved.</div>{% endif %}
-{% if linked_discussions %}<section class="form-panel"><h2>Passage discussions addressed</h2><ul>{% for link in linked_discussions %}<li><a href="{{ link.thread.passage.submission.read_url }}?discussion={{ link.thread.passage_id }}">{{ link.thread.passage.quote|truncatechars:180 }}</a> · {% if link.thread.resolved %}Resolved{% elif pr.head.status == 'accepted' %}Awaiting commenter review{% else %}Open{% endif %}</li>{% endfor %}</ul></section>{% endif %}
-<section id="conversation"><div class="section-heading"><h2>Conversation</h2><span class="muted">{{ comments|length }} comment{{ comments|length|pluralize }}</span></div>
-{% for comment in comments %}<article class="review"><div class="review-heading"><strong>{{ comment.user.username }}</strong><time datetime="{{ comment.created_at|date:'c' }}">{{ comment.created_at|date:'j M Y, H:i' }} UTC</time></div><p>{{ comment.text|linebreaksbr }}</p>{% if pr %}<a class="muted" href="{{ comment.submission.get_absolute_url }}">On snapshot {{ comment.submission.public_id }}</a>{% endif %}</article>{% empty %}<p class="empty-inline">No comments yet. Discuss the proposed change here.</p>{% endfor %}
-<div class="form-panel">{% if user.is_authenticated and user.email_verified %}<form action="{% url 'comment' submission.pk %}" method="post">{% csrf_token %}{% include 'includes/form.html' with form=comment_form %}<button class="button">Post comment</button></form>{% elif user.is_authenticated %}<p><a href="{% url 'verification_needed' %}">Verify your email</a> to join the conversation.</p>{% else %}<p><a href="{% url 'login' %}?next={{ request.path|urlencode }}">Sign in</a> to join the conversation.</p>{% endif %}</div>
-</section>
+{% extends "base.html" %}
+{% block title %}{% if submission.base_id %}Proposal{% else %}Published version{% endif %} · {{ submission.title }} · Peerpedia{% endblock %}
+{% block content %}
+<article class="proposal-page">
+  <header class="page-heading submission-heading">
+    <a class="breadcrumb" href="{{ paper.get_absolute_url }}">← Paper details</a>
+    <h1>{{ submission.title }}</h1>
+    <div class="meta-line">
+      <span class="status {{ submission.status }}">{{ submission.status|title }}</span>
+      <span>{% if submission.base_id %}Proposed{% else %}Published{% endif %} by <strong>{{ submission.contributor_name }}</strong></span>
+      <time datetime="{{ submission.created_at|date:'c' }}">{{ submission.created_at|date:'j M Y' }}</time>
+      {% if submission.pk == paper.current_id %}<span>Latest accepted text</span>{% endif %}
+    </div>
+  </header>
+  {% if submission.base_id %}
+    <section>
+      <h2>What changed?</h2>
+      <p>{{ submission.explanation|linebreaksbr }}</p>
+      {% if submission.pr_commit.section %}<p>{% if submission.pr_commit.section.kind == "chapter" %}Chapter{% else %}Section{% endif %} · {{ submission.pr_commit.section.label }}</p>{% endif %}
+    </section>
+  {% endif %}
+  <p><a href="{{ submission.read_url }}">Read this version</a></p>
+  {% if stale %}
+    <p class="notice warning">A newer version has been accepted. To have these changes reviewed for acceptance, <a href="{% url 'propose' paper.pk %}">start a proposal from the latest version</a>.</p>
+  {% elif pr and submission.pk != pr.head_id %}
+    <p class="notice">The contributor updated this proposal. <a href="{{ pr.head.get_absolute_url }}">View the latest changes</a>.</p>
+  {% endif %}
+  <details class="diff-details"{% if submission.base_id %} open{% endif %}>
+    <summary>{% if submission.base_id %}Changes to the paper{% else %}Original Markdown{% endif %}</summary>
+    {% if chapter_changes %}
+      <nav class="chapter-diffs" aria-label="Changed chapters">
+        {% for change in chapter_changes %}
+          <a href="?chapter={{ change.id }}"{% if change.id == selected_change.id %} aria-current="page"{% endif %}>{{ change.title }} · {{ change.kind }}{% if change.moved %} · Reordered{% endif %}</a>
+        {% endfor %}
+      </nav>
+      <h3>{{ selected_change.title }}</h3>
+    {% endif %}
+    {% include "includes/diff.html" %}
+  </details>
+  {% if submission.status == 'pending' and user.is_authenticated and user.email_verified %}
+    {% if user.pk == paper.owner_id or user.pk == submission.contributor_id %}
+      <section class="decision-panel">
+        {% if user.pk == paper.owner_id %}<h2>Review decision</h2><p>Accepting makes this version the paper’s current text.</p>{% endif %}
+        <form method="post" action="{% url 'decision' submission.pk %}" class="actions">
+          {% csrf_token %}
+          {% if user.pk == paper.owner_id %}
+            <button class="button" name="action" value="accepted"{% if stale %} disabled{% endif %}>Accept proposal</button>
+            <button class="button secondary" name="action" value="rejected">Reject proposal</button>
+          {% endif %}
+          {% if user.pk == submission.contributor_id %}<button class="button secondary" name="action" value="withdrawn">Withdraw proposal</button>{% endif %}
+        </form>
+      </section>
+    {% endif %}
+  {% endif %}
+  <details class="disclosure">
+    <summary>Version details</summary>
+    <dl class="hash-info">
+      <dt>Submission hash</dt><dd><code>{{ submission.hash }}</code></dd>
+      <dt>Version ID</dt><dd>{{ submission.public_id }}</dd>
+      {% if submission.base_id %}<dt>Based on</dt><dd><a href="{{ submission.base.get_absolute_url }}">{{ submission.base.public_id }}</a></dd>{% endif %}
+      <dt>Submitted</dt><dd>{{ submission.created_at|date:'j M Y, H:i' }} UTC{% if submission.via_cli %} · via CLI{% endif %}{% if submission.ai_assisted %} · AI-assisted{% endif %}</dd>
+      {% if submission.decision %}<dt>{{ submission.decision.action|title }}</dt><dd>{{ submission.decision.actor.username }} · {{ submission.decision.created_at|date:'j M Y, H:i' }} UTC</dd>{% endif %}
+    </dl>
+    {% include "includes/subjects.html" with subjects=submission.subjects %}
+    {% include "includes/license.html" %}
+    <div class="inline-links">
+      <a href="{{ submission.download_url }}">Download {% if submission.chapters or submission.bibliography %}source files{% else %}Markdown{% endif %}</a>
+      <a href="{{ submission.manifest_url }}">Verification manifest</a>
+      {% if pr and user.pk == pr.contributor_id and pr.head.status == 'pending' %}<a href="{% url 'help_cli' %}#update-pr">Update proposal with the CLI</a>{% endif %}
+    </div>
+    {% if commits|length > 1 %}
+      <h3>Proposal history</h3>
+      <ol>{% for commit in commits %}<li><a href="{{ commit.submission.get_absolute_url }}">{{ commit.submission.public_id }}</a> · {{ commit.submission.explanation|truncatechars:100 }}</li>{% endfor %}</ol>
+    {% endif %}
+  </details>
+  <section id="conversation">
+    <div class="section-heading"><h2>Conversation</h2>{% if comments %}<span class="muted">{{ comments|length }} comment{{ comments|length|pluralize }}</span>{% endif %}</div>
+    {% for comment in comments %}
+      <article class="review">
+        <header class="review-heading"><strong>{{ comment.user.username }}</strong><time datetime="{{ comment.created_at|date:'c' }}">{{ comment.created_at|date:'j M Y, H:i' }} UTC</time></header>
+        <p>{{ comment.text|linebreaksbr }}</p>
+        {% if pr and comment.submission_id != submission.pk %}<a href="{{ comment.submission.get_absolute_url }}">On version {{ comment.submission.public_id }}</a>{% endif %}
+      </article>
+    {% empty %}<p class="muted">No comments yet.</p>{% endfor %}
+    <div class="form-panel">
+      {% with destination=request.get_full_path|urlencode %}
+        {% if not user.is_authenticated %}
+          <a href="{% url 'login' %}?next={{ destination }}%23conversation">Sign in to comment</a>
+        {% elif not user.email_verified %}
+          <a href="{% url 'verification_needed' %}?next={{ destination }}%23conversation">Verify your email to comment</a>
+        {% elif needs_agreement %}
+          <a href="{% url 'agreements' %}?next={{ destination }}%23conversation">Review the contribution agreement to comment</a>
+        {% else %}
+          <form action="{% url 'comment' submission.pk %}" method="post">
+            {% csrf_token %}
+            {% include "includes/form.html" with form=comment_form %}
+            <button class="button">Post comment</button>
+          </form>
+        {% endif %}
+      {% endwith %}
+    </div>
+  </section>
+</article>
 {% endblock %}

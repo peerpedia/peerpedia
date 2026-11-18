@@ -1,7 +1,27 @@
-{% extends 'base.html' %}
-{% block title %}Compare versions · {{ paper.current.title }}{% endblock %}
+{% extends "base.html" %}
+{% block title %}Compare versions · {{ paper.current.title }} · Peerpedia{% endblock %}
 {% block content %}
-<a class="breadcrumb" href="{{ paper.get_absolute_url }}?tab=history">← Publication history</a><h1>Compare versions</h1><p class="lede">{{ paper.current.title }}</p>
-<form class="compare-form" method="get"><div class="field"><label for="before">From</label><select id="before" name="before">{% for item in versions %}<option value="{{ item.pk }}" {% if item.pk == before.pk %}selected{% endif %}>{{ item.decision.created_at|date:'j M Y, H:i' }} · {{ item.public_id }}</option>{% endfor %}</select></div><div class="field"><label for="after">To</label><select id="after" name="after">{% for item in versions %}<option value="{{ item.pk }}" {% if item.pk == after.pk %}selected{% endif %}>{{ item.decision.created_at|date:'j M Y, H:i' }} · {{ item.public_id }}</option>{% endfor %}</select></div><button class="button">Compare</button></form>
-{% include 'includes/diff.html' %}
+<article class="compare-page">
+  <header class="page-heading">
+    <a class="breadcrumb" href="{{ paper.get_absolute_url }}?tab=history">← Publication history</a>
+    <h1>Compare versions</h1>
+    <p>{{ paper.current.title }}</p>
+  </header>
+  <form class="compare-form" method="get">
+    <div class="field">
+      <label for="before">From</label>
+      <select id="before" name="before">
+        {% for item in versions %}<option value="{{ item.pk }}"{% if item.pk == before.pk %} selected{% endif %}>{{ item.decision.created_at|date:'j M Y' }} · {{ item.public_id }}</option>{% endfor %}
+      </select>
+    </div>
+    <div class="field">
+      <label for="after">To</label>
+      <select id="after" name="after">
+        {% for item in versions %}<option value="{{ item.pk }}"{% if item.pk == after.pk %} selected{% endif %}>{{ item.decision.created_at|date:'j M Y' }} · {{ item.public_id }}</option>{% endfor %}
+      </select>
+    </div>
+    <button class="button">Compare</button>
+  </form>
+  {% include "includes/diff.html" %}
+</article>
 {% endblock %}

@@ -7,6 +7,7 @@ from django import forms
 from django.contrib import messages
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
+from django.db.models import F
 from django.views.decorators.debug import sensitive_post_parameters
 from django.views.decorators.http import require_http_methods, require_POST
 from .models import AccessToken
@@ -26,7 +27,7 @@ def issue_token(user, name, days=90, can_publish=False):
     return token, raw
 
 
-def authenticate_token(raw):
+def authenticate_token(raw: str) -> AccessToken | None:
     if not raw.startswith("pp_") or len(raw) > 100:
         return None
     return (
@@ -36,7 +37,8 @@ def authenticate_token(raw):
             revoked_at__isnull=True,
             expires_at__gt=timezone.now(),
             user__is_active=True,
-            user__email_verified=True,
+            user__emailaddress__verified=True,
+            user__emailaddress__email__iexact=F("user__email"),
         )
         .first()
     )

@@ -1,7 +1,5 @@
 # Peerpedia 0.1.1
 
-To a better academia
-
 A small, public research-publishing application built with Django and PostgreSQL. Researchers write or upload Markdown, organize chapters, propose frozen changes, review papers, and preserve their publication history.
 
 [Website](https://peerpedia.dev) · [Usage guide](https://peerpedia.dev/help/) · [Source](https://github.com/peerpedia/peerpedia)
@@ -14,14 +12,14 @@ The software uses the [MIT license](LICENSE). Papers have their own author-selec
 
 - Public paper list with title, authors, average rating, search, arXiv subject filtering, and latest-acceptance/rating sorting.
 - One primary arXiv subject and optional cross-lists per new submission. Search recognizes category codes, names, and arXiv aliases.
-- Separate metadata pages, Palatino-style HTML readers with a section outline that follows your reading position, and downloadable Markdown. Contents collapse on small screens; tables are centered and wide equations scroll within the page.
+- Paper titles open the abstract and whole-paper reviews. **Read paper** opens the published text, with an outline that follows your reading position. Downloads and history are under **Publication details**. Contents collapse on small screens; tables are centered and wide equations scroll within the page.
 - Username or email sign-in, email verification, password changes, and emailed password-reset links.
-- An online Markdown editor with autosave, chapter and section editing, equations, references, bibliography, and compiled TikZ diagrams. Uploads and local CLI editing are also supported.
+- Upload Markdown to preview and publish a paper or propose a revision. The CLI supports AI-assisted submissions, chapter files, and shared bibliographies.
 - SHA-256 submission hashes, independent verification manifests, permanent source snapshots, and database triggers preventing updates/deletions of historical records.
 - Whole-submission acceptance by the corresponding author only. Stale proposals require a new submission.
 - Public accepted/rejected/withdrawn history, Markdown and metadata diffs, arbitrary accepted-version comparisons, and separate contribution credit.
 - One editable rating-and-written-review per user per paper, including the paper's own author. Reviews sort by original posting time.
-- PR conversations and paper reviews. Existing passage discussions are available through the read-only feedback API and CLI.
+- Public conversations about proposed revisions.
 - Administrator content hiding/restoration and account disabling.
 - Public usage guide with website workflows, local CLI/AI instructions, and links to the source and developer.
 
@@ -42,7 +40,7 @@ npm run build --prefix editor
 
 Open http://127.0.0.1:8000. Local development uses SQLite unless `DATABASE_URL` is set. Production requires PostgreSQL; SQLite is not a deployment option and does not provide the PostgreSQL concurrent-acceptance guarantee.
 
-BananaMark 0.1.0 renders Markdown, references and KaTeX on the server. The editor build copies the pinned package styles and fonts locally; readers need no math JavaScript or CDN requests. Node 22 or newer is required for local development.
+BananaMark 0.1.0 renders Markdown, references and KaTeX on the server. The asset build copies the pinned package styles and fonts locally; readers need no math JavaScript or CDN requests. Node 22 or newer is required for local development.
 
 ### Optional demonstration content
 
@@ -54,7 +52,9 @@ This only operates in development mode and on a database with no existing papers
 
 ### Accounts and local email
 
-Create an account through the website. In local development, outgoing messages are printed in the server terminal instead of sent: open the verification URL printed there, then confirm it. Password-recovery URLs appear in the same terminal. Treat those URLs as credentials; do not share them.
+Website registration and email confirmation use django-allauth. Users can sign in before confirming their email. Publishing and reviewing require a verified address.
+
+In local development, outgoing messages are printed in the server terminal instead of sent: open the verification URL printed there, then confirm it. Password-recovery URLs appear in the same terminal. Treat those URLs as credentials; do not share them.
 
 To create your administrator account:
 
@@ -228,14 +228,11 @@ runs the application, and WhiteNoise serves locally bundled static assets. There
 is no separate frontend server or Git hosting service. Browser pages and the CLI
 share publication rules and frozen snapshots.
 
-The application has three interfaces:
+The website and CLI share the publication service.
 
 - Django templates and forms for browsing, accounts, publication, and administration.
-- CodeMirror and browser JavaScript for autosave, preview, recovery, section editing,
-  reader navigation, and optional passage discussions. Preview and publication use the same
-  safe Markdown renderer and server-rendered KaTeX.
 - A versioned JSON API for public reading and scoped CLI submissions. API tokens
-  cannot accept proposals or write comments, ratings, votes, or inbox state.
+  cannot accept proposals or write comments, ratings, or inbox state.
 
 The module boundaries are explicit:
 
@@ -243,30 +240,20 @@ The module boundaries are explicit:
 |---|---|
 | `models.py` and migrations | Stored records, constraints, hashes, immutable-history protections |
 | `services.py` | Transactional publication, proposal updates, and author decisions |
-| `discussion_actions.py` | Verified-participant discussion mutations and preserved edit records |
-| `queries.py`, `feedback_queries.py` | Shared visibility rules and paginated data retrieval |
-| `comparisons.py`, `rendering.py`, `sections.py`, `passages.py` | Derived document representations and anchors |
+| `queries.py` | Shared visibility rules and paginated data retrieval |
+| `comparisons.py`, `rendering.py` | Derived document representations and anchors |
 | `artifacts.py`, `bananamark.py` | Durable reading copies and transport to the BananaMark renderer |
 | `editor/render-document.mjs`, `editor/dialect.js` | Native BananaMark rendering and shared syntax configuration |
-| `views.py`, `api.py`, `discussions.py`, `drafts.py` | HTTP authentication, request validation, and responses |
+| `views.py`, `api.py`, `drafts.py` | HTTP authentication, request validation, and responses |
 | `notifications.py` | Account-private grouped activity |
-
-Feedback queries return ordinary data to browser and API handlers. The public API
-passes an anonymous viewer explicitly; it does not rewrite the authenticated
-request or invoke a browser HTTP handler. Passage statistics are aggregated in one
-query, personal votes are fetched with the comments, and thread ranking happens
-in SQL before pagination. Query-budget tests cover 100 annotations and 100 replies.
 
 A `Paper` is a stable identity whose current pointer refers to an accepted
 `Submission`. Each submission stores the entire Markdown document and a versioned
 verification manifest. A `PullRequest` groups immutable snapshots; its head points
-to the only snapshot that can receive a final decision. `Draft` records are private,
-mutable working copies with revision checks. Passage anchors point to frozen source
-versions, and comment revisions and tool attribution are separately preserved.
+to the only snapshot that can receive a final decision. `Draft` records are private archives from the retired editor. Tool attribution is stored alongside the snapshot.
 
 Acceptance locks the paper row in a PostgreSQL transaction, checks ownership and
-the accepted base, records a decision, and advances the pointer atomically. Draft
-submission revalidates the source and goes through the same publication services.
+the accepted base, records a decision, and advances the pointer atomically.
 Full documents remain in PostgreSQL so source, decisions, and metadata can be
 backed up and restored together.
 
@@ -278,8 +265,7 @@ default configuration. Equations accept `$...$` and `\(...\)` inline, or
 Other fenced code stays literal.
 
 File-upload previews use expiring signatures bound to the submitting account and
-target paper. Editor previews use owner-only saved drafts. Both confirmation paths
-are idempotent and preserve existing immutable snapshots.
+target paper. Confirming a preview preserves the submitted snapshot.
 
 This is still a small-server architecture. Search constructs PostgreSQL text-search
 expressions at request time and notification fan-out is synchronous. Published
@@ -339,8 +325,7 @@ The browser suite is separate from the backend/API/CLI tests. It uses Playwright
 - Signup, email verification, participation restrictions, logout, password recovery, and reset-link reuse rejection.
 - Mobile-width search, empty results, metadata/reader navigation, browser back, equation rendering, code blocks, and expandable diffs.
 - Access-token creation, one-time display, scope, and revocation.
-- Online-editor autosave, rendered preview, reload, immutable PR submission, two-tab conflicts, and recovery after failed saves.
-- Sentence selection, passage rating, threaded replies, thumbs, edit history, and mobile discussion layout.
+- File upload, rendered preview, revision submission, and author decisions.
 - Administration navigation, full frozen hashes, and responsive controls.
 
 Install the browser dependencies into the application development environment, and use the optional `.test-tools` PostgreSQL helper described above:
@@ -409,123 +394,26 @@ For actual disaster recovery, stop writes and restore the chosen backup into a *
 - Search is PostgreSQL full-text search with substring matching for titles, names, and content. It is not semantic search or Google-scale ranking.
 - Ratings are the ordinary arithmetic mean of visible reviews, with review count shown. Self-reviews are permitted as requested.
 - SMTP failures are logged; users can request another verification/reset message. There is no email queue yet.
-- No Git hosting, notifications feed, nested discussion, profile pages, or automated AI generation.
+- No Git hosting, nested discussion, profile pages, or automated AI generation.
 - Self-hosted installations require verified domain and SMTP configuration, an administrator account, system security updates, and off-server backups.
 
 
-### Online editor and private drafts
+### Uploads, revisions, and old drafts
 
-Build the pinned, self-hosted CodeMirror bundle before running the site:
+Choose **Upload paper** for a new Markdown file, or **Propose a change** on an existing paper. Check the preview and confirm. The corresponding author decides whether a revision becomes the accepted version. Each submission preserves the source and its hash.
 
-```sh
-npm ci --ignore-scripts --prefix editor
-npm run build --prefix editor
-python manage.py migrate
-```
+Use the CLI to upload a multi-chapter working copy or append a snapshot to an open PR with its ID and expected head hash. Readers can follow comments on earlier snapshots in the same conversation.
 
-Node is a build dependency only. Docker uses a separate asset build stage. The bundle and third-party license notices are generated under `static/vendor/editor/`; production browsers make no CDN requests.
+Owners can download saved work from the retired browser editor under **Account → Export old drafts**.
 
-The reader offers Edit paper, Edit chapter, and edit icons beside sections. Each opens a private draft at the selected scope. The main navigation’s New note link opens a blank private editor for an initial paper or note. Add metadata under Paper details, then choose Review & publish to choose a license and confirm publication. Files → Import Markdown loads a file into the active chapter in the same editor. Chapter names follow their Markdown headings. Drafts autosave under My drafts and support Markdown import/download, a live preview using the BananaMark publication renderer, resizable panes, full-pane and mobile modes, and section-following scroll. Preview content is never published by saving or rendering it.
+### Paper reviews and revision conversations
 
-Draft access is owner-only, including for administrators through the application views. Saves compare a monotonically increasing revision while holding a row lock. A conflict never silently overwrites the other copy. Browser recovery uses per-user, per-draft, per-tab keys for unsaved changes; recovery remains subject to the browser's storage availability and can be removed by clearing site data. Successful saves remove that tab's recovery copy. One active draft per user, paper, and section scope is enforced by a database constraint. The full-paper draft has its own scope. New-paper drafts may be multiple.
-
-Review binds the draft ID, owner, and saved revision in an expiring signed token. Submission locks the draft, revalidates permissions and the accepted base, creates a frozen snapshot, and clears the working contents. Repeat confirmation returns the existing submission. Another edit after preview invalidates that preview. Drafts never alter accepted documents or existing manifests.
-
-A PullRequest groups immutable PullRequestCommit membership records. Existing revision submissions migrate to one-snapshot PRs without changing any submission, hash, decision, or comment. Update PR starts from its current head and appends a snapshot. Only the PR contributor can append, only the latest snapshot can receive a decision, and only the corresponding author can accept/reject. Comments from all snapshots appear in the common conversation, labeled with their source snapshot. The CLI creates new proposals by default; CLI 0.3 can append snapshots with an explicit PR ID and expected head hash. It does not read or write online drafts. PR membership is protected by database triggers; the grouping migration refuses downgrade once PRs or drafts exist to prevent accidental historical deletion.
-
-To verify editor changes, run `python manage.py test publishing.test_drafts`; use the PostgreSQL test helper for real row-lock concurrency coverage. Preview rendering, autosave, recovery, conflict resolution, mobile layout, and the submission journey also require browser verification. Existing published hashes can be checked with `python manage.py verify_history`.
-
-### Section editing
-
-Each section/subsection heading in the latest accepted reader offers Edit. A section draft includes descendants up to the next heading of equal or higher level. The first H1 document title and headings inside quotations/lists are not section entry points. The whole-paper editor remains available for document structure and metadata. Section drafts permit heading renames and adding/removing subsections, but preserve the selected heading level and surrounding Markdown.
-
-Drafts store only their selected source plus a range on the immutable base. Reviewed and submitted snapshots contain the complete paper. Markdown parsing determines boundaries, including fenced blocks and Setext headings. Reader links bind their source version so an old link cannot silently select a different section. Saves and recovery retain existing ownership and optimistic-concurrency protection.
-
-On review, an unchanged section can advance onto the latest accepted paper while preserving unrelated source and metadata changes. A changed, deleted, or ambiguous section requires a comparison and explicit target selection. Rebase preserves the private text; users must incorporate the displayed accepted changes before confirming. Acceptance racing with final submission requires another review. An existing section PR resumes its proposed section and appends another immutable snapshot after review. Section scope is stored in the immutable PR membership record; historical submission hashes are unchanged. SQLite membership triggers are reinstalled after its table-rebuilding migration.
-
-Tests: `python manage.py test publishing.test_sections publishing.test_drafts`; the PostgreSQL helper covers the full suite, migrations, concurrency, and restore checks. Passage discussions and CLI feedback are described in the later stages below.
-
-### Passage discussions (local stage 2)
-
-Passage comments and ratings are paused by default. The reader omits the selection
-controls and discussion panel, and the website rejects passage-comment writes.
-Existing threads, quotes, and edit histories remain accessible through the
-read-only feedback API and CLI. Paper reviews and PR conversations remain available.
-
-To enable passage comments, set `PASSAGE_COMMENTS_ENABLED=1` in the web
-environment (or in `.env` for Compose) and restart the web processes with the
-updated environment. New reading copies then include passage anchors. Run
-`python manage.py build_reading_copies --refresh` in that environment to add
-anchors to previously built reading copies. Restoring the default value `0`
-pauses interaction immediately after the web processes restart.
-
-When enabled, the reader supports text-range discussions, whole-equation/table/code discussions,
-1–5 passage ratings, nested replies, reversible helpfulness votes, and comment edit
-history. These ratings are separate from overall paper reviews. Browser writes
-require a verified session and CSRF; bearer credentials cannot write feedback.
-
-Anchors store canonical quoted text and the immutable source version. Only exact,
-unambiguous matches in accepted ancestry or earlier snapshots of the same PR carry
-discussions forward. Changed or ambiguous passages retain historical links and
-do not inherit scores. Deleted/hidden comments leave placeholders with replies;
-public history excludes unavailable comments. Database triggers protect original
-anchors and comment revisions. Migration 0008 refuses rollback while passage
-history exists.
-
-Commenters resolve their own threads. PR contributors can link proposed fixes;
-accepted changes await the commenter's review. Administrators review reports and
-hide or restore comments, with moderation audit records. CLI feedback reading and the notification inbox are implemented in stage 3 below.
-
-Verification uses isolated Django test databases and the temporary PostgreSQL
-runner. Browser checks use the separate local preview database on port 8011.
-Nothing in this stage changes the deployed site.
-
-### Feedback CLI and inbox (local stage 3)
-
-CLI 0.3 provides public read-only commands. From a cloned paper directory:
-
-- `peerpedia feedback --all --json` lists passage anchors, original quotes and full hashes, current mappings, ratings, and historical locations.
-- `peerpedia discussion PASSAGE_ID --all --json` reads every root and reply for that location.
-- `peerpedia replies THREAD_ID --all --json` reads replies alone.
-- `peerpedia comment-history COMMENT_ID --all --json` reads public edit history.
-- `peerpedia reviews --all --json` reads overall paper reviews.
-- `peerpedia pr PR_ID --all --json` reads frozen snapshot membership and the current head hash.
-- `peerpedia pr-comments PR_ID --all --json` reads the PR conversation.
-
-Use `feedback --submission SUBMISSION_ID` for a particular snapshot. Outside a
-project, supply `--server ORIGIN` and `--paper PAPER_ID` where applicable. Commands
-return a numeric `next` offset unless `--all` exhausts the pages; `--offset N`
-resumes a page. Reading sends no bearer credentials and writes no project files.
-These endpoints accept GET only. Hidden papers and moderated comment histories
-are excluded. Private drafts, inboxes, and moderation reports are not exported.
-
-After reconciling the local files with the accepted base, submit a fix with
-`peerpedia push -m "Explain the correction" --address THREAD_ID --ai-assisted`.
-Repeat `--address` to address several top-level discussion IDs. Append another
-snapshot using `--pr PR_ID --expected-head FULL_HEAD_HASH`. These writes create
-paper proposals only; the tool cannot post comments, rate, vote, resolve threads,
-or accept a PR. A stale head is rejected. Retrying a lost response reuses the exact
-saved payload, attribution, links, and idempotency key.
-
-Submissions retain the contributor's identity and show “via CLI”. The optional
-AI-assisted declaration is append-only attribution stored separately from the
-document manifest; existing hashes and manifest verification are unchanged.
-The declaration is self-reported, not an AI detector.
-
-The private website inbox groups activity by conversation/PR and event type.
-It covers discussions, replies, edits, votes, linked fixes, PR activity/decisions,
-and paper reviews. Report alerts go only to active staff. Own actions are excluded;
-there are no notification emails. Opening an item marks only the displayed revision
-read. Mark-all uses the page's load time, preserving newer arrivals. Hidden papers
-are excluded from both the inbox and unread badge.
-
-Migration 0009 adds notifications and immutable submission attribution. Attribution
-has database update/delete guards; rollback refuses to discard populated attribution.
-Test with the isolated PostgreSQL runner and `publishing.test_feedback`; the CLI
-integration journey covers public reads, linked fixes, stale heads, snapshot updates,
-and explicit reversion to the accepted base. The local preview remains separate
-from the deployed pilot.
-
+Readers can leave an overall review on a paper and discuss a proposed revision.
+The CLI reads this feedback with `peerpedia reviews`, `peerpedia pr PR_ID`, and
+`peerpedia pr-comments PR_ID`. Use `--all` to read every page.
+The private inbox groups paper reviews, proposals, decisions, and PR comments.
+Historical passage records are retained in the database. The website, plugin and
+API no longer publish or accept passage discussions.
 
 ## Quality and release gates
 
@@ -646,9 +534,9 @@ limits can delay a legitimate user during an attack; they are not permanent lock
 CLI bearer tokens retain their existing limited scopes and cannot perform browser
 administration, comment, rate, or vote.
 
-The Tests workflow scans pinned Python packages and editor dependencies on each
+The Tests workflow scans pinned Python packages and renderer dependencies on each
 push/PR and daily. A successful `security` job is also required by the release tool.
-Dependabot proposes weekly Python, editor, Docker, and Actions updates. Review and
+Dependabot proposes weekly Python, renderer, Docker, and Actions updates. Review and
 test those PRs before deploying; updates are not automatically merged. Enable
 Dependabot alerts/security updates and secret-scanning push protection in GitHub.
 Operating-system automatic updates do not update already-running container images;
@@ -743,20 +631,18 @@ separate from licensing of this application's source code.
 
 ### BananaMark rendering
 
-Peerpedia uses pinned `bananamark`, `bananamark-codemirror` and `bananamark-tikz`
+Peerpedia uses pinned `bananamark` and `bananamark-tikz`
 0.1.0 packages. The npm override selects `markdown-it` 15.0.3, which fixes
 [the upstream parser denial-of-service advisory](https://github.com/advisories/GHSA-gfr2-rv44-r23c)
 in BananaMark 0.1.0's pinned 15.0.2 dependency.
 `editor/dialect.js` is the shared syntax configuration: native
-bibliography and TikZ enabled, wiki links disabled. The editor uses the upstream
-language, highlighting and completion; publication and preview share the server
-renderer. Formula errors and missing or duplicate labels prevent publication;
-incomplete drafts can still be saved. Only fenced `math` blocks are numbered.
+bibliography and TikZ enabled, wiki links disabled. Publication and upload previews share the server renderer.
+Formula errors and missing or duplicate labels prevent publication. Only fenced `math` blocks are numbered.
 Theorem-like environments share a chapter counter; equations have their own.
 
 Write diagrams in a `tikz` fence, retaining explicit `\begin` and `\end`, or use
 `tikzcd` / `tikzpicture` inside a formula. `bananamark-tikz` compiles SVG with its
-native cache and bundled fonts. No TeX engine runs in the reader or editor.
+native cache and bundled fonts. No TeX engine runs in the browser.
 Compilation is limited to 8 seconds per diagram and 20 seconds per rendering
 request, with at most 32 diagrams and 32 KB of source per diagram. Correct errors
 before publishing. Existing compiled diagrams share the package's cache.
@@ -771,16 +657,14 @@ The renderer returns native HTML/MathML/SVG; the browser retains its existing CS
 Build with `docker compose build web renderer`, run migrations, then start
 `renderer` and `web`. The old diagram queue and browser compiler are removed.
 `static/bananamark.css` supplies Peerpedia's article theme; it does not redefine the
-Markdown grammar. With passage comments enabled, the renderer adds passage
-annotations. BananaMark's editor grammar supplies source positions. No old syntax compatibility
+Markdown grammar. No old syntax compatibility
 renderer is retained. Desktop packaging is a separate follow-up.
 
 ### Chapters, references, and reading progress
 
 A paper can contain up to 64 ordered Markdown chapters and one shared UTF-8
 `references.yaml`. The complete source and bibliography are limited to 1 MB.
-Existing single-file papers continue to work. In the editor, **Add chapter**
-converts the draft; a single PR publishes all chapter changes together. Readers
+Existing single-file papers continue to work. List chapter files in the CLI working copy’s `paper.json`. A single PR can include all chapter changes. Readers
 see one chapter at a time. Chapter IDs survive file renaming and reordering.
 
 For chaptered papers in 0.1.1, `paper.json` includes:
@@ -832,10 +716,10 @@ einstein1905:
 ````
 
 Bibliographies use native BananaMark YAML. They may appear as `bibliography`
-blocks, or in the editor's shared bibliography, displayed at the end of the last
+blocks, or in the shared bibliography file, displayed at the end of the last
 chapter. All chapters share the same labels and bibliography entries. Native
 citations use author–year text. External Peerpedia references use frozen snapshot
-URLs. The reference picker lists declared labels; `@` also offers completion.
+URLs.
 There is no BibTeX parser or conversion layer.
 
 Manifest v4 hashes ordered chapter IDs, titles and individual Markdown hashes,
@@ -847,20 +731,13 @@ The chapter migration refuses a rollback once v4 snapshots exist.
 Reading completion and position are private account data. Visitors keep progress
 in their browser. Completion retains the hash of the chapter read, allowing the
 sidebar to indicate later changes without erasing the reader's achievement.
-For snapshots with passage anchors, cross-chapter mapping uses the exact, unambiguous quote rule;
-uncertain matches remain historical.
 
 ### Browser rendering and durable reading copies
 
-BananaMark parses and renders each review once. Editor previews render the selected
-chapter with the book's shared labels and numbering; the browser permits one
-preview request at a time and coalesces pending edits to the latest text.
-
 Publication compiles and validates content before taking database row locks. The
-short commit transaction rechecks the draft revision, accepted base and PR head,
+short commit transaction rechecks the accepted base and PR head,
 and stores both the immutable submission and a separate `RenderedSubmission`.
-The derived record contains HTML (including diagram SVG), headings, references,
-and passage indexes when enabled. Reading and discussion indexes use it without contacting BM.
+The derived record contains HTML (including diagram SVG), headings, and references. The reader uses it without contacting BananaMark.
 Database backups include these reading copies.
 
 The renderer resolves numbering and references for the book before reusing

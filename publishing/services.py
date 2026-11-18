@@ -1,75 +1,41 @@
+from typing import Any
+from uuid import UUID
+from accounts.models import User
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.db import transaction
+from .documents import PreparedDocument, prepare
 from .models import Decision, Paper, Submission, PullRequest, PullRequestCommit
 
 
-def require_verified(user):
+def require_verified(user: User) -> None:
     if not user.is_authenticated or not user.is_active or not user.email_verified:
         raise PermissionDenied("A verified account is required.")
 
 
-def publish(user, data):
+def publish(user: User, data: dict[str, Any] | PreparedDocument) -> Paper:
     require_verified(user)
     from .licensing import require_agreement
 
     require_agreement(user)
-    from .documents import prepare, PreparedDocument
-
     prepared = data if isinstance(data, PreparedDocument) else prepare(data)
     if prepared.base_id is not None:
         raise ValidationError("A new paper cannot use a revision's prepared content.")
     return _publish(user, prepared)
 
 
-def prepare_proposal(data, base, section=None):
-    from .documents import prepare
-
-    prepared = prepare(data, base, section)
-    data = prepared.data
-    if section:
-        from . import sections
-        from .subjects import METADATA_FIELDS
-
-        from .drafts import section_source
-
-        current_source = section_source(base, section)
-        supplied_source = next(
-            (p["markdown"] for p in data.get("chapters", []) if p["id"] == section.get("chapter")),
-            data["markdown"],
-        )
-        boundary = {k: v for k, v in section.items() if k != "chapter"}
-        if sections.find(current_source, section.get("anchor")) != boundary:
-            raise ValidationError("The section boundary does not match the accepted base.")
-        replacement = sections.extract(current_source, section, supplied_source)
-        if sections.combine(current_source, section, replacement) != supplied_source:
-            raise ValidationError("The section does not form a complete document.")
-        if section.get("chapter"):
-            if (
-                [p["id"] for p in data["chapters"]] != [p["id"] for p in base.chapters]
-                or any(
-                    p != q
-                    for p, q in zip(data["chapters"], base.chapters)
-                    if p["id"] != section["chapter"]
-                )
-                or data.get("bibliography", "") != base.bibliography
-            ):
-                raise ValidationError(
-                    "Section PRs cannot change other chapters or the bibliography."
-                )
-        if any(data.get(k) != getattr(base, k) for k in METADATA_FIELDS):
-            raise ValidationError("Section PRs cannot change paper metadata.")
-    return prepared
-
-
 def propose(
-    user, paper_id, base_id, data, *, pull_request_id=None, expected_head=None, section=None
-):
+    user: User,
+    paper_id: UUID,
+    base_id: UUID | str,
+    data: dict[str, Any] | PreparedDocument,
+    *,
+    pull_request_id: UUID | None = None,
+    expected_head: UUID | None = None,
+) -> Submission:
     require_verified(user)
     from .licensing import require_agreement
 
     require_agreement(user)
-    from .documents import PreparedDocument
-
     if isinstance(data, PreparedDocument):
         prepared = data
     else:
@@ -78,9 +44,9 @@ def propose(
             raise ValidationError(
                 "This paper has a newer accepted version. Update your base before submitting."
             )
-        prepared = prepare_proposal(data, paper.current, section)
-    if str(prepared.base_id) != str(base_id) or prepared.section != section:
-        raise ValidationError("Prepared content does not match this submission's base and section.")
+        prepared = prepare(data, paper.current)
+    if str(prepared.base_id) != str(base_id):
+        raise ValidationError("Prepared content does not match this submission's base.")
     return _propose(
         user,
         paper_id,
@@ -88,12 +54,11 @@ def propose(
         prepared,
         pull_request_id=pull_request_id,
         expected_head=expected_head,
-        section=section,
     )
 
 
 @transaction.atomic
-def _publish(user, prepared):
+def _publish(user: User, prepared: PreparedDocument) -> Paper:
     require_verified(user)
     from .licensing import require_agreement, LICENSES, VERSION, document_hash
     from .models import PaperLicense
@@ -138,8 +103,14 @@ def _publish(user, prepared):
 
 @transaction.atomic
 def _propose(
-    user, paper_id, base_id, prepared, *, pull_request_id=None, expected_head=None, section=None
-):
+    user: User,
+    paper_id: UUID,
+    base_id: UUID | str,
+    prepared: PreparedDocument,
+    *,
+    pull_request_id: UUID | None,
+    expected_head: UUID | None,
+) -> Submission:
     require_verified(user)
     from .licensing import require_agreement, paper_license
 
@@ -167,7 +138,7 @@ def _propose(
             raise PermissionDenied("Only the PR contributor can add snapshots.")
         if str(pr.head_id) != str(expected_head) or pr.head.status != "pending":
             raise ValidationError(
-                "This PR has changed or closed. Your draft has been preserved. Open the PR to review its latest state."
+                "This PR has changed or closed. Review its latest snapshot before submitting another update."
             )
     submission = Submission.objects.create(
         paper=paper,
@@ -189,9 +160,7 @@ def _propose(
     else:
         pr = PullRequest.objects.create(paper=paper, contributor=user, head=submission)
         number = 1
-    PullRequestCommit.objects.create(
-        request=pr, submission=submission, number=number, section=section or {}
-    )
+    PullRequestCommit.objects.create(request=pr, submission=submission, number=number)
     from .notifications import notify
 
     notify([paper.owner_id], user, paper, "proposal", pr=pr)
@@ -199,7 +168,7 @@ def _propose(
 
 
 @transaction.atomic
-def decide(user, submission_id, action):
+def decide(user: User, submission_id: UUID, action: str) -> Decision:
     require_verified(user)
     proposal = Submission.objects.select_related("paper").get(
         pk=submission_id, paper__is_hidden=False
@@ -233,7 +202,4 @@ def decide(user, submission_id, action):
     from .notifications import notify
 
     notify([proposal.contributor_id], user, paper, "decision", pr=pr if commit else None)
-    if commit:
-        for link in pr.linked_threads.select_related("thread"):
-            notify([link.thread.user_id], user, paper, "decision", thread=link.thread, pr=pr)
     return event

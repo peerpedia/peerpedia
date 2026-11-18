@@ -62,7 +62,7 @@ They are not encrypted at rest. The plugin does not read or print them. You must
 personally accept the website submission agreement and choose each new paper's
 license. All plugin submissions are declared AI-assisted. New papers publish
 immediately; corrections become public PRs for the corresponding author to accept.
-AI cannot post comments, rate, vote, resolve discussions or accept PRs.
+Use the website to post comments, rate papers or accept PRs.
 
 If the network fails, local work remains. A lost submission response requires the
 CLI's saved-payload retry, not a fresh duplicate submission. No unattended retries
@@ -71,7 +71,7 @@ or background publication are installed.
 ## Verification
 
 The repository's Django/PostgreSQL suite covers public discovery, hidden-content
-exclusion, CLI search and feedback, immutable PR snapshots, expired credentials,
+exclusion, CLI search and paper reviews, immutable PR snapshots, expired credentials,
 interrupted submissions and publication. `scripts/test_plugin_unit.py` checks
 setup behavior and both manifest layouts. `python scripts/check_plugin.py` validates
 packaging, links and the marketplace path. Testing does not publish to Peerpedia.

@@ -1,20 +1,21 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { JSDOM } from "jsdom";
-import { renderDocument, scan } from "./render-document.mjs";
-import { chapterTitle } from "./chapter-title.js";
+import { renderDocument } from "./render-document.mjs";
+import { inspectChapter } from "./chapter-title.js";
 
-test("chapter names come from headings without treating examples as titles", async () => {
+test("chapter names come from headings without treating examples as titles", /** @returns {Promise<void>} */ async () => {
   assert.equal(
-    chapterTitle("```md\n# Example\n```\n\n# **Actual** title {@ch:title}"),
+    inspectChapter("```md\n# Example\n```\n\n# **Actual** title {@ch:title}")
+      .title,
     "Actual title",
   );
   assert.equal(
-    chapterTitle("A title\n=======\n\nUnfinished $\\badcommand"),
+    inspectChapter("A title\n=======\n\nUnfinished $\\badcommand").title,
     "A title",
   );
-  assert.equal(chapterTitle("> # Quoted\n\n# Real"), "Real");
-  assert.equal(chapterTitle("No heading"), "Untitled chapter");
+  assert.equal(inspectChapter("> # Quoted\n\n# Real").title, "Real");
+  assert.equal(inspectChapter("No heading").title, "Untitled chapter");
   const result = await renderDocument({
     pages: [
       {
@@ -63,30 +64,18 @@ test("native book numbering, bibliography and version links", async () => {
   assert.match(result.pages[1].html, /bm-bibliography/);
 });
 
-test("passage atoms and source ranges agree with native rendering", /** @returns {Promise<void>} */ async () => {
-  const source =
-    "# Title\n\n🌱 $x$.\n\n## Section\n\nLine.  \nNext.\n\n$$y=2$$\n\n| A | B |\n|---|---|\n| 1 | 2 |\n\n```js\nx()\n```";
-  const {
-    pages: [page],
-  } = await renderDocument({
-    source,
-    numberSections: false,
-    passageComments: true,
-  });
+test("image scans ignore Markdown examples", /** @returns {Promise<void>} */ async () => {
   assert.deepEqual(
-    page.blocks.slice(-3).map((b) => b.kind),
-    ["equation", "table", "code"],
+    await renderDocument({
+      action: "scan",
+      source: "![test](https://example.org/x.png)",
+    }),
+    { images: true },
   );
-  assert.equal(page.blocks[1].text, "🌱 $x$.");
-  assert.equal(page.blocks[2].text, "Section");
-  assert.equal(page.blocks[3].text, "Line.\nNext.");
-  assert.equal(
-    [...source].slice(page.headings[1].start).join("").slice(0, 10),
-    "## Section",
+  assert.deepEqual(
+    await renderDocument({ action: "scan", source: "`![not an image](x)`" }),
+    { images: false },
   );
-  assert.match(page.html, /data-passage-math="\$x\$\."/);
-  assert.equal(scan("![test](https://example.org/x.png)").images, true);
-  assert.equal(scan("`![not an image](x)`").images, false);
 });
 
 test("validation rejects broken labels and formulas with source locations", async () => {
@@ -101,7 +90,7 @@ test("validation rejects broken labels and formulas with source locations", asyn
     );
 });
 
-test("TikZ compilation and cache use the same blackboard-bold fonts", async () => {
+test("TikZ compilation and cache use the same blackboard-bold fonts", /** @returns {Promise<void>} */ async () => {
   const input = {
     prefix: "example-",
     source:
@@ -113,7 +102,6 @@ test("TikZ compilation and cache use the same blackboard-bold fonts", async () =
   assert.equal(first.pages[0].html, second.pages[0].html);
   assert.match(first.pages[0].html, /<svg/);
   assert.match(first.pages[0].html, /tikzjax-msbm10/);
-  assert.equal(first.pages[0].blocks[0].kind, "equation");
   assert.doesNotMatch(first.pages[0].html, /bm-tikz-source/);
   const document = new JSDOM(first.pages[0].html).window.document;
   for (const node of document.querySelectorAll("svg *")) {
@@ -128,27 +116,13 @@ test("TikZ compilation and cache use the same blackboard-bold fonts", async () =
   }
 });
 
-test("automatic equation numbers do not change discussion anchors", /** @returns {Promise<void>} */ async () => {
+test("automatic equation numbers follow chapter order", /** @returns {Promise<void>} */ async () => {
   const a = { id: "a", markdown: "```math {@eq:a}\nx = 1\n```" };
   const b = { id: "b", markdown: "Other chapter." };
-  const first = await renderDocument({ passageComments: true, pages: [a, b] });
-  const second = await renderDocument({ passageComments: true, pages: [b, a] });
-  assert.equal(first.pages[0].blocks[0].text, "x = 1");
-  assert.equal(second.pages[1].blocks[0].text, "x = 1");
+  const first = await renderDocument({ pages: [a, b] });
+  const second = await renderDocument({ pages: [b, a] });
   assert.match(first.pages[0].html, /tag\{1.1\}/);
   assert.match(second.pages[1].html, /tag\{2.1\}/);
-});
-
-test("section preview keeps full-book numbering and only selected content", async () => {
-  const {
-    pages: [page],
-  } = await renderDocument({
-    source: "## First\n\nFirst.\n\n## Second\n\nSecond.\n\n## Third\n\nThird.",
-    section: { chapter: "main", line: 5, end: 9 },
-  });
-  assert.match(page.html, /Second/);
-  assert.doesNotMatch(page.html, /First|Third/);
-  assert.equal(page.headings[0].number, "1.2");
 });
 
 test("unsafe author HTML and links are rejected", async () => {
@@ -158,34 +132,6 @@ test("unsafe author HTML and links are rejected", async () => {
   ]) {
     await assert.rejects(renderDocument({ source }));
   }
-});
-
-test("selected chapter preview retains book numbering and cross-chapter references", async () => {
-  const result = await renderDocument({
-    pages: [
-      { id: "a", title: "First", markdown: "::: theorem {@thm:a}\nA.\n:::" },
-      {
-        id: "b",
-        title: "Second",
-        markdown: "::: theorem {@thm:b}\nSee @thm:a.\n:::",
-      },
-    ],
-    renderChapter: "b",
-    diagrams: true,
-  });
-  assert.deepEqual(
-    result.pages.map((p) => p.id),
-    ["b"],
-  );
-  assert.match(result.pages[0].html, /Theorem 2.1/);
-  assert.match(result.pages[0].html, /\?chapter=a#thm:a/);
-  assert.equal(result.targets.filter((target) => target.explicit).length, 2);
-  assert.deepEqual(
-    result.targets
-      .filter((target) => target.kind === "chapter")
-      .map((target) => target.chapter),
-    ["a", "b"],
-  );
 });
 
 test("cache maintenance expires old diagrams and applies the capacity budget", async () => {
@@ -232,28 +178,17 @@ async function reuseChapter(t) {
     { id: "earlier", markdown: "First." },
     { id: "later", markdown: "A formula $x_{unique}$." },
   ];
-  const first = await renderDocument({ pages, passageComments: true });
+  const first = await renderDocument({ pages });
   const coldCalls = render.mock.callCount();
   render.mock.resetCalls();
   pages[0].markdown += "\n\nAdded paragraph.";
-  const second = await renderDocument({ pages, passageComments: true });
-  // The cached chapter skips KaTeX even after an earlier block moves.
+  const second = await renderDocument({ pages });
+  // Editing another chapter must not recompile the unchanged formula.
   assert.ok(coldCalls > 0);
   assert.ok(render.mock.callCount() < coldCalls);
-  assert.equal(first.pages[1].blocks[0].id, "b1");
-  assert.equal(second.pages[1].blocks[0].id, "b2");
-  assert.match(second.pages[1].html, /data-passage="b2"/);
-  const preview = await renderDocument({
-    pages,
-    renderChapter: "later",
-    passageComments: true,
-  });
-  assert.match(preview.pages[0].html, /data-passage="b0"/);
+  assert.equal(first.pages[1].html, second.pages[1].html);
 }
-test(
-  "reuse chapter HTML while renumbering passages for a different book or preview",
-  reuseChapter,
-);
+test("reuse unaffected chapter HTML in the complete book", reuseChapter);
 
 /** @returns {Promise<void>} */
 async function invalidateReferences() {
@@ -261,26 +196,20 @@ async function invalidateReferences() {
     { id: "first", markdown: "::: theorem {@thm:key}\nA.\n:::" },
     {
       id: "second",
-      markdown:
-        "See @thm:key and [companion](?chapter=first#extra). Cite [@ref].",
+      markdown: "See @thm:key. Cite [@ref].",
     },
   ];
   const input = {
-    passageComments: true,
     pages,
     bibliography:
       "ref:\n  type: book\n  title: My Book\n  author: Adams\n  year: 2023",
   };
   const old = await renderDocument(input);
-  assert.doesNotMatch(old.pages[1].html, /data-reference="extra"/);
-  pages[0].markdown =
-    "::: lemma {@lem:other}\nB.\n:::\n\n" +
-    pages[0].markdown +
-    "\n\n## Extra {@extra}";
+  assert.match(old.pages[1].html, /Theorem 1.1/);
+  pages[0].markdown = "::: lemma {@lem:other}\nB.\n:::\n\n" + pages[0].markdown;
   input.bibliography = input.bibliography.replace("2023", "2024");
   const updated = await renderDocument(input);
   assert.match(updated.pages[1].html, /Theorem 1.2/);
-  assert.match(updated.pages[1].html, /data-reference="extra"/);
   assert.match(updated.pages[1].html, /Adams 2024/);
   pages[0].markdown = "Definition removed.";
   await assert.rejects(renderDocument(input), { code: "label_missing" });
@@ -291,24 +220,6 @@ test(
 );
 
 /** @returns {Promise<void>} */
-async function invalidatePlainLink() {
-  const pages = [
-    { id: "target", markdown: "# Intro\n\n## Example" },
-    { id: "linker", markdown: "[Section 1.1](?chapter=target#example)" },
-  ];
-  const before = await renderDocument({ pages, passageComments: true });
-  assert.doesNotMatch(before.pages[1].html, /data-reference=/);
-  pages[0].markdown += " {@section-label}";
-  const after = await renderDocument({ pages, passageComments: true });
-  assert.match(after.pages[1].html, /data-reference="section-label"/);
-  assert.equal(after.pages[1].blocks[0].text, "@section-label");
-}
-test(
-  "a manual link acquires its canonical label when only the target chapter changes",
-  invalidatePlainLink,
-);
-
-/** @returns {Promise<void>} */
 async function nativeArticle() {
   const { createBook, createRenderer, defineDialect } =
     await import("bananamark");
@@ -316,7 +227,7 @@ async function nativeArticle() {
   const dialect = defineDialect(dialectOptions);
   const book = createBook({ dialect, numbering });
   const source =
-    "# Heading\n\n> A *quote* with $x$.\n\n- One\n- Two\n\n`data-passage`.";
+    "# Heading\n\n> A *quote* with $x$.\n\n- One\n- Two\n\n`example`.";
   const info = { key: "main", file: "main.md", lang: "en" };
   const handle = book.add(source, {
     key: "main",
@@ -329,31 +240,10 @@ async function nativeArticle() {
     info,
   );
   const result = await renderDocument({ source });
-  assert.deepEqual(result.pages[0].blocks, []);
   assert.equal(result.pages[0].html, expected.html);
-  assert.equal(result.pages[0].nativeHtml, true);
-  assert.equal(result.pages[0].headings[0].line, 1);
+  assert.equal(result.pages[0].headings[0].label, "Heading");
 }
 test("ordinary article HTML is byte-for-byte BananaMark output", nativeArticle);
-
-/** @returns {Promise<void>} */
-async function externalDefinitions() {
-  const source =
-    "## Other\n\n[doc]: https://example.org/\n\n## Selected\n\nSee [link][doc] and note[^a].\n\n## Last\n\n[^a]: An external footnote.";
-  const {
-    pages: [page],
-  } = await renderDocument({
-    source,
-    section: { chapter: "main", line: 5, end: 9 },
-  });
-  assert.match(page.html, /href="https:\/\/example.org\/"/);
-  assert.match(page.html, /An external footnote/);
-  assert.doesNotMatch(page.html, />Other<|>Last</);
-}
-test(
-  "section previews keep link and footnote definitions from the complete chapter",
-  externalDefinitions,
-);
 
 /** @returns {Promise<void>} */
 async function unusedFootnoteMath() {

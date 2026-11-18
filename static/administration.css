@@ -1,7 +1,7 @@
 /* Keep Django's accessible controls and layout; share Peerpedia's visual language. */
 :root, html[data-theme="light"] {
   --primary:#23514b; --secondary:#23514b; --accent:#23514b;
-  --primary-fg:#fff; --body-fg:#232a30; --body-bg:#fafbf9;
+  --primary-fg:#fff; --body-fg:#232a30; --body-bg:#fff;
   --body-quiet-color:#697078; --body-loud-color:#232a30;
   --header-color:#232a30; --header-branding-color:#232a30;
   --header-bg:#fff; --header-link-color:#23514b;
@@ -52,20 +52,17 @@ html[data-theme="dark"] {
 body { font-size:14px; line-height:1.6; }
 a { text-underline-offset:3px; }
 a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible { outline:3px solid #529082; outline-offset:3px; }
-#header { box-sizing:border-box; flex-shrink:0; height:auto; min-height:84px; padding:20px 36px; border-bottom:1px solid var(--border-color); gap:20px; flex-wrap:wrap; }
+#header { box-sizing:border-box; flex-shrink:0; height:auto; min-height:56px; padding:6px 36px; border-bottom:1px solid var(--border-color); gap:20px; flex-wrap:wrap; }
 #branding { display:flex; align-items:center; gap:22px; flex-wrap:wrap; }
-#header .admin-wordmark { font:700 29px Georgia,serif; letter-spacing:-1.5px; color:var(--body-fg); }
-.admin-wordmark span { font-weight:400; }
-.admin-wordmark i { font-style:normal; color:var(--link-fg); }
 #header .admin-area { font-size:12px; border-left:1px solid var(--border-color); padding-left:22px; color:var(--body-quiet-color); }
 #user-tools { display:flex; align-items:center; gap:18px; flex-wrap:wrap; font-size:12px; font-weight:400; letter-spacing:0; text-transform:none; margin:0; }
 #user-tools a, #logout-form button { border:0; font-size:12px; text-transform:none; }
 .admin-user { color:var(--body-quiet-color); }
 div.breadcrumbs { padding:14px 36px; font-size:12px; border-bottom:1px solid var(--border-color); }
 #content { padding:34px 36px 60px; }
-#content h1 { font:400 clamp(27px,3vw,36px)/1.25 Georgia,serif; color:var(--body-loud-color); letter-spacing:-.025em; margin:0 0 24px; overflow-wrap:anywhere; }
-#content h2 { font-size:17px; }
-.module { border-radius:7px; background:var(--admin-card); }
+#content h1 { font:400 clamp(27px,3vw,36px)/1.25 var(--serif); color:var(--body-loud-color); letter-spacing:-.025em; margin:0 0 24px; overflow-wrap:anywhere; }
+#content h2 { font:italic 400 1.45rem/1.25 var(--serif); }
+.module { border-radius:0; background:var(--admin-card); }
 .module h2, .module caption, .inline-group h2 { background:var(--admin-soft); color:var(--body-fg); padding:13px 16px; font-weight:600; font-size:13px; }
 .module caption a.section { color:var(--link-fg); }
 table thead th { background:var(--admin-soft); color:var(--body-quiet-color); font-size:11px; letter-spacing:.04em; }
@@ -77,7 +74,7 @@ table td, table th { padding:13px 14px; line-height:1.6; }
 #changelist #toolbar { background:var(--admin-card); padding:18px; border-bottom:1px solid var(--border-color); }
 #changelist #toolbar form { display:flex; align-items:center; flex-wrap:wrap; gap:8px; }
 #changelist #toolbar input[type=text] { padding:10px 12px; min-height:40px; }
-#changelist #toolbar input[type=submit], #changelist .actions .button { background:var(--button-bg); color:var(--primary-fg); border:1px solid var(--button-bg); border-radius:5px; padding:9px 14px; box-shadow:none; min-height:38px; }
+#changelist #toolbar input[type=submit], #changelist .actions .button { background:var(--button-bg); color:var(--primary-fg); border:1px solid var(--button-bg); border-radius:0; padding:9px 14px; box-shadow:none; min-height:38px; }
 #changelist #toolbar input[type=submit]:hover, #changelist .actions .button:hover { background:var(--button-hover-bg); }
 #changelist .actions { padding:12px 18px; background:var(--admin-card); }
 #changelist .paginator { background:var(--admin-card); padding:16px 18px; }
@@ -90,30 +87,28 @@ table td, table th { padding:13px 14px; line-height:1.6; }
 #nav-sidebar .module { margin-bottom:16px; }
 #nav-sidebar td, #nav-sidebar th { padding:10px 12px; }
 #nav-sidebar .current-model { background:var(--selected-bg); }
-#nav-filter { border:1px solid var(--border-color); border-radius:5px; margin:16px 10px; width:calc(100% - 20px); padding:10px; }
+#nav-filter { border:1px solid var(--border-color); border-radius:0; margin:16px 10px; width:calc(100% - 20px); padding:10px; }
 .toggle-nav-sidebar { background:var(--admin-soft); border-right-color:var(--border-color); color:var(--link-fg); }
-input[type=text],input[type=password],input[type=email],input[type=url],input[type=number],input[type=search],textarea,select { border:1px solid var(--border-color); border-radius:5px; padding:9px 11px; font-size:14px; background:var(--admin-card); color:var(--body-fg); box-sizing:border-box; max-width:100%; }
+input[type=text],input[type=password],input[type=email],input[type=url],input[type=number],input[type=search],textarea,select { border:1px solid var(--border-color); border-radius:0; padding:9px 11px; font-size:14px; background:var(--admin-card); color:var(--body-fg); box-sizing:border-box; max-width:100%; }
 select { height:auto; min-height:36px; }
 .form-row { padding:18px; }
 .form-row label { font-weight:600; }
 .readonly { overflow-wrap:anywhere; }
 .aligned .form-row .readonly { max-width:900px; }
 .help, p.help, .form-row div.help { font-size:12px; color:var(--body-quiet-color); }
-.button, input[type=submit], input[type=button], .submit-row input, a.button { border-radius:5px; padding:11px 17px; font-size:13px; font-weight:600; }
-.submit-row { border:1px solid var(--border-color); border-radius:7px; background:var(--admin-soft); padding:18px; }
-.object-tools a { border-radius:5px; padding:10px 15px; font-size:11px; letter-spacing:.02em; }
+.button, input[type=submit], input[type=button], .submit-row input, a.button { border-radius:0; padding:11px 17px; font-size:13px; font-weight:600; }
+.submit-row { border:1px solid var(--border-color); border-radius:0; background:var(--admin-soft); padding:18px; }
+.object-tools a { border-radius:0; padding:10px 15px; font-size:11px; letter-spacing:.02em; }
 .object-tools a.addlink { padding-right:28px; }
 .admin-footer { padding:22px 36px; border-top:1px solid var(--border-color); font-size:12px; color:var(--body-quiet-color); }
-body.peerpedia-dashboard #content { max-width:1240px; box-sizing:border-box; margin:auto; }
+body.peerpedia-dashboard #content { max-width:50rem; box-sizing:border-box; margin:auto; }
 .admin-intro { margin:10px 0 38px; }
-.admin-eyebrow { font-size:10px; letter-spacing:1.8px; font-weight:650; color:var(--link-fg); }
 #content .admin-intro h1 { font-size:clamp(32px,4vw,44px); margin:12px 0; }
 .admin-intro > p:last-child { color:var(--body-quiet-color); font-size:15px; }
-.admin-dashboard-layout { display:grid; grid-template-columns:minmax(0,1fr) 260px; gap:44px; align-items:start; }
 .admin-section { margin-bottom:32px; }
 .admin-section-heading h2 { margin:0 0 6px; font-weight:600; color:var(--body-fg); }
 .admin-section-heading p { color:var(--body-quiet-color); font-size:13px; margin:0 0 16px; }
-.admin-tool-list { border:1px solid var(--border-color); background:var(--admin-card); border-radius:8px; overflow:hidden; }
+.admin-tool-list { border:1px solid var(--border-color); background:var(--admin-card); border-radius:0; overflow:hidden; }
 .admin-tool { display:flex; align-items:center; border-bottom:1px solid var(--hairline-color); }
 .admin-tool:last-child { border:0; }
 .admin-tool-main { flex:1; min-width:0; display:grid; grid-template-columns:minmax(0,1fr) auto; gap:3px 18px; padding:18px 22px; }
@@ -121,18 +116,15 @@ a.admin-tool-main:hover, a.admin-tool-main:focus-visible { background:var(--admi
 .admin-tool-title { font-weight:600; font-size:14px; }
 .admin-tool-description { grid-column:1; font-size:12px; color:var(--body-quiet-color); }
 .admin-tool-arrow { grid-column:2; grid-row:1/3; align-self:center; color:var(--body-quiet-color); }
-.admin-add-link { padding:8px 12px; margin-right:18px; border:1px solid var(--border-color); border-radius:5px; font-size:12px; }
+.admin-add-link { padding:8px 12px; margin-right:18px; border:1px solid var(--border-color); border-radius:0; font-size:12px; }
 .admin-activity { padding-top:2px; }
 .admin-activity h2 { margin:0 0 18px; font-weight:600; }
-.admin-activity > p, .admin-activity li, .admin-history-note p { font-size:12px; color:var(--body-quiet-color); overflow-wrap:anywhere; }
+.admin-activity > p, .admin-activity li { font-size:12px; color:var(--body-quiet-color); overflow-wrap:anywhere; }
 .admin-activity ul { padding:0; margin:0; }
 .admin-activity li { list-style:none; padding:0 0 14px; margin:0 0 14px; border-bottom:1px solid var(--hairline-color); }
 .admin-activity small { display:block; margin-top:5px; font-size:11px; }
-.admin-history-note { margin-top:28px; padding:18px; border:1px solid var(--border-color); border-radius:7px; background:var(--admin-soft); }
-.admin-history-note h3 { margin:0 0 8px; font-size:12px; }
-.admin-history-note p { margin:0; }
 body.login { background:var(--body-bg); }
-.login #container { border:1px solid var(--border-color); border-radius:9px; max-width:440px; width:calc(100% - 32px); }
+.login #container { border:1px solid var(--border-color); border-radius:0; max-width:440px; width:calc(100% - 32px); }
 .login #header { justify-content:center; padding:24px; }
 .login #branding { justify-content:center; gap:14px; }
 .login #content { padding:28px; }
@@ -143,14 +135,12 @@ body.login { background:var(--body-bg); }
   #header { padding:18px 24px; }
   #content { padding:28px 24px 44px; }
   div.breadcrumbs { padding:12px 24px; }
-  .admin-dashboard-layout { grid-template-columns:minmax(0,1fr) 220px; gap:28px; }
 }
 @media(max-width:767px) {
   #header { padding:18px 20px; align-items:flex-start; flex-direction:row; }
   #user-tools { justify-content:flex-start; gap:12px; text-align:left; }
   #content { padding:26px 20px 40px; }
   div.breadcrumbs { padding:12px 20px; }
-  .admin-dashboard-layout { grid-template-columns:minmax(0,1fr); gap:6px; }
   .admin-tool-main { padding:17px; }
   .admin-activity { border-top:1px solid var(--border-color); padding-top:24px; }
   #changelist-filter { border-left:0; border-bottom:1px solid var(--border-color); }

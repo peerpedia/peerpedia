@@ -1,5 +1,9 @@
 """Grouped, account-private activity. No email delivery or comment excerpts."""
 
+from collections.abc import Iterable
+from accounts.models import User
+from django.http import HttpRequest, HttpResponse
+from django.db.models import QuerySet
 from django.contrib.auth.decorators import login_required
 from django.db import transaction
 from django.core.paginator import Paginator
@@ -8,31 +12,32 @@ from django.urls import reverse
 from django.utils import timezone
 from django.utils.dateparse import parse_datetime
 from django.views.decorators.http import require_POST
-from .models import Notification
+from .models import Notification, Paper, PullRequest
 
 LABELS = {
-    "passage": "New passage discussion",
-    "reply": "Replies to a discussion",
-    "edit": "A discussion was updated",
-    "vote": "Votes on your comment",
-    "linked_fix": "A proposed fix was linked",
     "decision": "A PR received a decision",
-    "resolved": "Discussion status changed",
     "proposal": "New PR activity",
     "review": "A paper review was posted or updated",
     "pr_comment": "New PR comments",
-    "report": "A comment needs moderation",
 }
 
 
-def visible(user):
-    query = Notification.objects.filter(user=user, paper__is_hidden=False)
-    return query if user.is_staff else query.exclude(kind="report")
+def visible(user: User) -> QuerySet[Notification]:
+    return Notification.objects.filter(
+        user=user, paper__is_hidden=False, thread__isnull=True, kind__in=LABELS
+    )
 
 
 @transaction.atomic
-def notify(recipients, actor, paper, kind, *, thread=None, pr=None):
-    key = f"{kind}:{thread.pk if thread else pr.pk if pr else paper.pk}"
+def notify(
+    recipients: Iterable[int],
+    actor: User,
+    paper: Paper,
+    kind: str,
+    *,
+    pr: PullRequest | None = None,
+) -> None:
+    key = f"{kind}:{pr.pk if pr else paper.pk}"
     for user_id in sorted(set(recipients) - {actor.pk}):
         record, created = Notification.objects.get_or_create(
             user_id=user_id,
@@ -40,7 +45,6 @@ def notify(recipients, actor, paper, kind, *, thread=None, pr=None):
             defaults={
                 "actor": actor,
                 "paper": paper,
-                "thread": thread,
                 "pull_request": pr,
                 "kind": kind,
             },
@@ -58,46 +62,16 @@ def notify(recipients, actor, paper, kind, *, thread=None, pr=None):
             )
 
 
-def discussion_activity(comment, actor, kind):
-    root = comment.root or comment
-    paper = root.passage.submission.paper
-    recipients = {paper.owner_id, root.user_id}
-    if comment.parent_id:
-        recipients.add(comment.parent.user_id)
-    if comment.parent_id or kind in {"resolved", "edit"}:
-        recipients.update(root.descendants.values_list("user_id", flat=True))
-    notify(recipients, actor, paper, kind, thread=root)
-
-
-def link_activity(link):
-    notify(
-        [link.thread.user_id, link.pull_request.paper.owner_id],
-        link.user,
-        link.pull_request.paper,
-        "linked_fix",
-        thread=link.thread,
-        pr=link.pull_request,
-    )
-
-
-def destination(item):
-    if item.kind == "report":
-        return reverse("admin:publishing_passagereport_changelist")
-    if item.thread_id:
-        return (
-            item.thread.passage.submission.read_url + "?discussion=" + str(item.thread.passage_id)
-        )
+def destination(item: Notification) -> str:
     if item.pull_request_id:
         return reverse("pull_request", args=[item.pull_request_id])
     return item.paper.get_absolute_url() + "#reviews"
 
 
 @login_required
-def inbox(request):
+def inbox(request: HttpRequest) -> HttpResponse:
     seen_before = timezone.now().isoformat()
-    query = visible(request.user).select_related(
-        "actor", "paper__current", "thread__passage__submission__paper"
-    )
+    query = visible(request.user).select_related("actor", "paper__current")
     only_unread = request.GET.get("filter") == "unread"
     if only_unread:
         query = query.filter(unread=True)
@@ -115,15 +89,12 @@ def inbox(request):
 
 @login_required
 @require_POST
-def open_notification(request, notification_id):
+def open_notification(request: HttpRequest, notification_id: int) -> HttpResponse:
     if request.headers.get("Authorization"):
         from django.http import HttpResponseForbidden
 
         return HttpResponseForbidden("Use the website to manage your inbox.")
-    item = get_object_or_404(
-        visible(request.user).select_related("thread__passage__submission__paper"),
-        pk=notification_id,
-    )
+    item = get_object_or_404(visible(request.user), pk=notification_id)
     try:
         revision = int(request.POST.get("revision", ""))
     except ValueError:

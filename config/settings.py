@@ -145,7 +145,7 @@ FILE_UPLOAD_MAX_MEMORY_SIZE = 1024 * 1024
 MAX_MARKDOWN_BYTES = 1024 * 1024
 OTP_TOTP_ISSUER = "Peerpedia"
 
-# Only the Google social routes are exposed; password and email flows remain ours.
+# Account routes expose the Peerpedia screens and the Google authorization flow.
 GOOGLE_CLIENT_ID = os.environ.get("GOOGLE_CLIENT_ID", "")
 GOOGLE_CLIENT_SECRET = os.environ.get("GOOGLE_CLIENT_SECRET", "")
 GOOGLE_LOGIN_ENABLED = bool(GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET)
@@ -166,12 +166,16 @@ SOCIALACCOUNT_EMAIL_AUTHENTICATION_AUTO_CONNECT = False
 SOCIALACCOUNT_STORE_TOKENS = False
 SOCIALACCOUNT_LOGIN_ON_GET = False
 # The adapter requires Google's verified email before any signup/link operation.
-ACCOUNT_EMAIL_VERIFICATION = "none"
+ACCOUNT_EMAIL_VERIFICATION = "optional"
 SOCIALACCOUNT_EMAIL_VERIFICATION = "none"
-ACCOUNT_SIGNUP_FIELDS = ["username*", "email*"]
+ACCOUNT_SIGNUP_FIELDS = ["username*", "email*", "password1*", "password2*"]
+ACCOUNT_CHANGE_EMAIL = True
+ACCOUNT_EMAIL_CONFIRMATION_EXPIRE_DAYS = 1
+ACCOUNT_EMAIL_SUBJECT_PREFIX = ""
+# Signup and resend use our shared, database-backed limits.
+ACCOUNT_RATE_LIMITS = {"signup": None, "confirm_email": None}
 ACCOUNT_LOGIN_METHODS = {"username", "email"}
 ACCOUNT_EMAIL_NOTIFICATIONS = False
 
 # Empty in development: a persistent Node renderer per Python process.
 BANANAMARK_URL = os.environ.get("BANANAMARK_URL", "")
-PASSAGE_COMMENTS_ENABLED = os.environ.get("PASSAGE_COMMENTS_ENABLED", "0") == "1"

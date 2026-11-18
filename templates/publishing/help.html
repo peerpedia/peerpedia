@@ -1,15 +1,14 @@
 {% extends 'publishing/help_base.html' %}
 {% block title %}Website guide · Peerpedia{% endblock %}
 {% block guide_heading %}Using Peerpedia{% endblock %}
-{% block guide_intro %}Read research, write a note, and improve it together. Start here if you use Peerpedia in your browser.{% endblock %}
 {% block guide_tabs %}{% include 'publishing/includes/help_tabs.html' with current='website' %}{% endblock %}
 {% block guide_contents %}
 <a href="#read">Find and read a paper</a>
-<a href="#publish">Publish your first note</a>
-<a href="#chapters">Organize a longer work</a>
+<a href="#mobile-contents">Read chapters on a phone</a>
+<a href="#publish">Upload a paper</a>
+<a href="#chapters">Upload a work with chapters</a>
 <a href="#contribute">Suggest an improvement</a>
 <a href="#review">Review a paper</a>
-<a href="#passage-discussions">Passage discussions</a>
 <a href="#history">Read earlier versions</a>
 <a href="#inbox">Follow the conversation</a>
 <a href="#account">Your account</a>
@@ -18,107 +17,62 @@
 {% block guide_body %}
 <section id="read">
   <h2>Find and read a paper</h2>
-  <p>You can read every public paper and its discussions without signing in. On <a href="{% url 'browse' %}">Browse</a>, search for a title, an author, or words from the text. Sort by the latest accepted update or by average reader rating.</p>
-  <p id="subjects">Use <strong>Subject</strong> to narrow your search. Subjects follow arXiv’s categories. A paper can appear in several subjects when its authors choose more than one.</p>
-  <div class="help-choice-grid">
-    <div><h3>Open the title</h3><p>See the abstract, authors, overall rating, reviews, and proposed changes.</p></div>
-    <div><h3>Choose Read paper</h3><p>Open the current accepted text. Use the contents on the left to move between sections and chapters.</p></div>
-  </div>
-  <p>While reading, choose the Peerpedia icon to return home. Your browser’s Back button returns to the page you came from.</p>
+  <p>On <a href="{% url 'browse' %}">Papers</a>, search by title, author, or keyword. Select a title to see the abstract and whole-paper reviews. Choose <strong>Read paper</strong> for the accepted text. Reading is public.</p>
+  <p id="subjects">Open <strong>Filters</strong> to choose an arXiv subject or sort by rating. Choose <strong>Search</strong> to apply your choices.</p>
+  <h3 id="mobile-contents">Read chapters on a phone</h3>
+  <p>The contents start closed. In the top bar, tap <strong>Contents</strong> to see the chapters and the headings in the current chapter. Scroll inside the list to reach later entries. Tap <strong>Close contents</strong> at the top to return to the same spot, or tap an entry to jump there and close the list.</p>
+  <p>Choose <strong>Abstract</strong> in the reading toolbar to return to the paper’s overview. Choose <strong>Peerpedia Home</strong> to return directly to the list of papers.</p>
   <p>For a course with chapters, mark a chapter complete when you finish it. Your progress follows your account if you sign in. Otherwise, it stays in that browser. If a completed chapter changes, an <strong>Updated</strong> mark lets you know.</p>
 </section>
 <section id="publish">
-  <h2>Publish your first note</h2>
-  <p>A note begins as a <strong>draft</strong>, a private document you can keep editing. Publishing makes a copy available for everyone to read. Peerpedia uses the same process for short notes, courses, and research papers.</p>
+  <h2>Upload a paper</h2>
   <ol class="help-steps">
-    <li><strong>Create an account.</strong> <a href="{% url 'signup' %}">Sign up</a> and verify your email before publishing.</li>
-    <li><strong>Choose <a href="{% url 'write' %}">New note</a>.</strong> Write on the left and read the preview on the right. The editor uses Markdown, plain text with a few marks for headings, equations, and other formatting. The <a href="{% url 'help_writing' %}">writing guide</a> starts with a small example you can copy.</li>
-    <li><strong>Fill in Paper details.</strong> Add a title, an abstract, author names in publication order, and a primary subject. Put each author on a separate line. Use <strong>Cross-list subjects</strong> for other relevant subjects.</li>
-    <li><strong>Choose Review &amp; publish.</strong> Read the preview and check the details. Choose a license and confirm that you have permission to publish the work.</li>
-    <li><strong>Choose Publish initial submission.</strong> Your note is now public. You become its <strong>corresponding author</strong>, the account responsible for accepting or rejecting future edits.</li>
+    <li>Prepare a Markdown file. See the <a href="{% url 'help_writing' %}">writing guide</a> for equations, diagrams, and references.</li>
+    <li>Sign in with a verified account. Choose <a href="{% url 'publish' %}">Upload paper</a>, select the file, and fill in the publication details.</li>
+    <li>Choose <strong>Preview paper</strong> to check the text and authors. Use <strong>Edit upload</strong> to change the details or replace the file. Your current file and details are kept when you go back this way.</li>
+    <li>Choose a <a href="{% url 'licenses' %}">license</a>, confirm your submission rights, and select <strong>Publish paper</strong>.</li>
   </ol>
-  <figure class="help-flow">
-    <ol><li><strong>Draft</strong><span>Private and editable</span></li><li><strong>Review</strong><span>Check text and details</span></li><li><strong>Publish</strong><span>Public and saved in history</span></li></ol>
-    <figcaption>Your first publication. Saving a draft does not publish it.</figcaption>
-  </figure>
-  <h3>Pause and come back</h3>
-  <p>The checklist above the editor shows what still needs attention. Choose an item to jump to its field. If you try to review an incomplete draft, a popup lists the problems and the fields turn red. Correct them and choose Review again. For a PR, <strong>What changed?</strong> explains your edits to the author. For example, “Correct the sign in Equation 2 and add the missing assumption to its proof.”</p>
-  <p>Drafts save automatically. Wait for <strong>Saved</strong> before closing the page, then return through <a href="{% url 'drafts' %}">My drafts</a>. Use <strong>Split view</strong> to write and preview together, or <strong>Edit</strong> and <strong>Preview</strong> to give either pane more room.</p>
-  <p>To remove a draft, choose <strong>Discard draft</strong> in the editor toolbar and confirm. This removes the private draft. Published papers and submitted snapshots remain in their history.</p>
-  <h3>Start from a file</h3>
-  <p>In the editor, open <strong>Files</strong> and choose <strong>Import Markdown</strong> to load a <code>.md</code> file. You can edit it, preview it, and submit it from the same draft. PDF and image uploads are not supported.</p>
-  <h3>Choose a license</h3>
-  <p>A license tells other people how they may reuse your work. Read the <a href="{% url 'licenses' %}">license choices</a> before publishing. The paper keeps that license for later revisions. Contributors must have permission to submit their changes under it.</p>
-  <p class="notice"><strong>Check before publishing.</strong> A confirmed submission preserves its text and details in the public history. Corrections become new versions. Check claims, references, and attribution yourself, including when AI helped write the note.</p>
 </section>
 <section id="chapters">
-  <h2>Organize a longer work</h2>
-  <p>Chapters divide one paper into separate reading pages. For example, a course might have <em>Introduction</em>, <em>Examples</em>, and <em>Exercises</em>. They share a title, author list, license, and overall rating.</p>
-  <p>Choose <strong>Add chapter</strong> in the editor’s left sidebar. Select a chapter to edit it. Use the pencil to rename it and the up and down arrows to change its order. One proposed edit can change several chapters together.</p>
-  <p>The <a href="{% url 'help_writing' %}#references">writing guide</a> explains how to link to another chapter, a numbered equation, or another Peerpedia paper. It also covers a shared bibliography for the whole work.</p>
-  <p id="diagrams">For mathematical drawings, see <a href="{% url 'help_writing' %}#diagrams">the diagram examples</a>. You can write commutative diagrams and TikZ drawings directly in Markdown.</p>
+  <h2>Upload a work with chapters</h2>
+  <p>Keep the chapter files and shared bibliography together. Follow the <a href="{% url 'help_cli' %}#chapters">CLI chapter guide</a> to publish or revise them together.</p>
+  <p id="diagrams">For drawings in Markdown, see the <a href="{% url 'help_writing' %}#diagrams">diagram examples</a>.</p>
 </section>
 <section id="contribute">
   <h2>Suggest an improvement</h2>
-  <p>A <strong>pull request</strong>, or <strong>PR</strong>, is a proposed edit. It lets people read and discuss a change before it replaces the published text. Any verified user can propose one, without an invitation. You use this process to revise your own paper too.</p>
-  <ol class="help-steps">
-    <li><strong>Open the paper in the reader.</strong> Choose the pencil beside a section heading to edit that section and its subsections. Use the reader’s main Edit control to work on the whole paper.</li>
-    <li><strong>Make your changes in the private draft.</strong> Describe what you changed in <strong>Paper details</strong>, or <strong>Change description</strong> for a section draft.</li>
-    <li><strong>Choose Review &amp; submit PR.</strong> Check the preview and the comparison showing added and removed text. Confirm your submission rights, then choose <strong>Submit PR</strong>.</li>
-    <li><strong>Discuss the proposal.</strong> The PR is public. Only the corresponding author can accept or reject it. You can withdraw your own pending PR.</li>
-  </ol>
-  <div class="help-example"><h3>Example change description</h3><p>“The proof used compactness without stating it. I added the assumption and an example showing why it is needed.”</p><p>Tell the reader what changed and why. A useful description makes the proposal easier to review.</p></div>
-  <h3>Improve the same PR</h3>
-  <p>Choose <strong>Update PR</strong> in the PR conversation to continue editing it. After reviewing your changes, choose <strong>Submit PR update</strong>. Each submission saves a <strong>snapshot</strong>, a fixed copy of the complete paper at that point. Earlier snapshots remain available. Acceptance applies to the newest one.</p>
-  <p>Once accepted, your changes appear in the current paper and your contribution appears in its history. Contributing does not automatically add your name to the author list.</p>
-  <h3>If the paper changes while you work</h3>
-  <p>The editor warns you when a newer version has been accepted. Follow <strong>Compare and update your base</strong> to compare it with the version your draft started from. Keep the changes you need from both copies, then review your proposal again. For a section draft, unrelated changes elsewhere can be carried forward automatically when your section is unchanged.</p>
+  <p>Download the accepted Markdown from <strong>Publication details</strong> and edit it locally. Choose <strong>Propose a change</strong>, upload the revised file, and describe what you changed. Choose <strong>Preview proposal</strong> to inspect the changes, then <strong>Submit proposal</strong>. The accepted text changes only when the corresponding author accepts the proposal.</p>
+  <p>For a multi-chapter paper, clone the paper with the <a href="{% url 'help_cli' %}#propose">CLI</a>. If the paper changes before submission, apply your changes to the latest accepted version. To add another snapshot to your pending proposal, follow <a href="{% url 'help_cli' %}#update-pr">Update a PR</a>.</p>
 </section>
 <section id="review">
   <h2>Review a paper</h2>
-  <p>Open the paper’s title, then its <strong>Reviews</strong> tab. Choose one to five stars and write your assessment. Both are required. You can update your review later, and authors may review their own work.</p>
-  <p>The overall rating is the average of visible reviews. A review applies to the paper as a whole, even after it is revised. {% if passage_comments_enabled %}Use a passage discussion when your feedback concerns one sentence, equation, or proof.{% endif %}</p>
-</section>
-<section id="passage-discussions">
-  <h2>Passage discussions</h2>
-  {% if passage_comments_enabled %}
-  <p>A passage discussion stays beside the text it concerns. Select one or more sentences in the reader, then choose <strong>Comment &amp; rate</strong>. For an equation, table, or code block, use its plus button. The small counts in the margin open existing discussions.</p>
-  <div class="help-example"><h3>A comment that someone can act on</h3><p>“Does this argument require the space to be compact? Please state the assumption before the proof. The real line seems to be a counterexample.”</p></div>
-  <p>Starting a discussion requires a written comment and a rating. This rating concerns that passage only and is separate from the overall paper rating. Replies need only text. You can reply to replies, and use thumbs up or down to vote on comments.</p>
-  <p>Open the three-dot menu beside your comment to edit it. Earlier edits remain in <strong>History</strong>. The menu also offers reporting and links to proposed fixes. Only the person who started a discussion can mark it resolved or reopen it. Accepting a linked PR does not resolve the discussion automatically.</p>
-  <p>Use <strong>Discussions</strong> in the reader to find conversations throughout the paper. A discussion can follow unchanged text into a new version. When its passage changes, the earlier discussion remains linked to the old text, and its rating is not applied to the replacement.</p>
-  {% else %}
-  <p>Passage comments and ratings are paused. You can read existing comments, replies, and edit histories using the <a href="{% url 'help_cli' %}#feedback">feedback commands</a>.</p>
-  {% endif %}
-  <p>Comments on a PR discuss that proposal as a whole. They appear in a chronological conversation, separate from the nested passage discussions.</p>
-  {% if passage_comments_enabled %}<p>Comments and ratings are written by people on the website. AI tools can read them and help prepare a proposed fix, but cannot post comments, vote, rate, or resolve discussions.</p>{% endif %}
+  <p>Under the abstract, choose <strong>Write a review</strong> or <strong>Sign in to write a review</strong>. Select one to five stars, write your assessment, and choose <strong>Publish review</strong>. Use <strong>Edit your review</strong> to update it later.</p>
+  <p>The overall rating is the average of visible reviews. A review applies to the paper as a whole, even after it is revised.</p>
 </section>
 <section id="history">
   <h2>Read earlier versions</h2>
-  <p>A published paper has a permanent number such as <code>261025.a7c92e4b10d3</code>. The first six digits mean 25 October 2026, its first publication date in UTC. The rest comes from its first snapshot’s hash. This number appears in the paper’s address and stays the same after revisions.</p>
-  <p>On a paper’s details page, <strong>History</strong> lists accepted versions. Open one to read or download it, or compare two versions. <strong>Submissions</strong> also includes proposals that are pending, rejected, or withdrawn.</p>
-  <p>Each submitted snapshot has its own label, such as <code>261103.8b7e219c4a63</code>. Its date is when it was submitted, in UTC. Acceptance does not change that label. The reader shows whether the snapshot is pending, accepted, or superseded. Use the link icon beside the paper details in the reader to copy a citation of that exact snapshot, or copy the paper link to share the latest accepted text.</p>
-  <p>Each snapshot has a <strong>hash</strong>, a long code that can be used to check that its saved contents have not changed. Accepting or rejecting it does not alter those contents. Reviews and discussions are stored separately.</p>
-  <p>For a reference to an exact statement, use the link icon beside it in the reader. The reference window offers links to the fixed version. The <a href="{% url 'help_writing' %}#references">writing guide</a> explains how to insert these references into a note.</p>
+  <p>On the paper’s overview, expand <strong>Publication details</strong> below <strong>Read paper</strong> and choose <strong>History</strong>. Select <strong>Read this version</strong> beside an entry. Once there are two accepted versions, <strong>Compare versions</strong> shows their differences.</p>
+  <p>For pending, rejected, or withdrawn proposals, open <strong>Proposed changes</strong> under <strong>Publication details</strong>.</p>
+  <p>In the reader, choose <strong>Cite</strong> for a link to the exact version or a paper link that follows the latest accepted text. To cite a specific chapter or heading, choose the link icon beside it. See the <a href="{% url 'help_writing' %}#references">writing guide</a> for Markdown references.</p>
   <p>Administrators can hide inappropriate material. For a copyright, privacy, or withdrawal concern, use the private <a href="{% url 'rights_request' %}">rights request form</a>.</p>
 </section>
 <section id="inbox">
   <h2>Follow the conversation</h2>
-  <p>The bell in the navigation opens your <a href="{% url 'inbox' %}">inbox</a>. It collects replies, reviews, proposed edits, and decisions related to your work and conversations.</p>
+  <p>Open your <a href="{% url 'inbox' %}">inbox</a> from <strong>Account</strong>. It collects reviews, proposals, decisions, and comments on proposals you are involved in.</p>
   <p>Open an update to visit the discussion or paper and mark it read. Choose <strong>Unread</strong> to catch up, or <strong>Mark all read</strong> to clear the list. These notifications stay on the website. They are not sent by email.</p>
 </section>
 <section id="account">
   <h2>Your account</h2>
-  <p>You can create an account with a username and password or choose <strong>Continue with Google</strong>. Your username is public and your email address is private. Verify your email and accept the <a href="{% url 'agreements' %}">submission and discussion agreement</a> before contributing.</p>
-  <p>If you already have an account with the same email as your Google account, sign in with your password first. Open <strong>Account</strong> to connect Google.</p>
+  <p>Create an account with a username and password.{% if google_login_enabled %} You can also choose <strong>Continue with Google</strong>.{% endif %} Your username is public and your email address is private. Verify your email and accept the <a href="{% url 'agreements' %}">submission and discussion agreement</a> before contributing.</p>
+  {% if google_login_enabled %}<p>If you already have an account with the same email as your Google account, sign in with your password first. Open <strong>Account</strong> to connect Google.</p>{% endif %}
+  <p>To submit local files with an AI assistant, open <strong>Account → Access tokens</strong> and follow <a href="{% url 'help_cli' %}#login">Connect your account</a>.</p>
   <p>If a verification email does not arrive, check your spam folder and <a href="{% url 'verification_needed' %}">request another</a>. Verification links expire after 24 hours. Use <a href="{% url 'password_reset' %}">Forgot password?</a> to recover access.</p>
 </section>
 <section id="trouble">
   <h2>When something goes wrong</h2>
-  <h3>The editor has not saved my work</h3>
-  <p>Keep the tab open. Use <strong>Files</strong> to download your text before reloading. If you worked on the same draft in two tabs, compare the copies before choosing which one to keep. For a paper with chapters, choose <strong>Download all files</strong>.</p>
+  <h3>Recover a draft from the old editor</h3>
+  <p>If you have saved drafts, open <strong>Account → Export old drafts</strong> to download your files.</p>
   <h3>A formula, reference, or diagram looks wrong</h3>
-  <p>Check the examples in the <a href="{% url 'help_writing' %}">writing guide</a>. Keep the preview open while making a small correction. Correct any formula or diagram errors and missing or duplicate reference labels before submitting. Incomplete drafts can still be saved.</p>
+  <p>Compare your source with the <a href="{% url 'help_writing' %}">writing examples</a>, correct the file locally, and upload it again for preview.</p>
   <h3>I need to report a problem</h3>
   <p><a href="{{ repository_url }}/issues">Report a bug on GitHub</a> with the page address, what you did, and what happened. A screenshot can help. Leave out passwords, access tokens, and private information. Contact details are on the <a href="{% url 'about' %}">About page</a>.</p>
   <p id="local-tools">Prefer to work in a local editor or with an AI assistant? The separate <a href="{% url 'help_cli' %}">CLI guide</a> covers installation, reading feedback, and submitting local files.</p>

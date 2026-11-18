@@ -1,5 +1,6 @@
 /** @returns {void} */
 (() => {
+  document.body.classList.add("reader-interactive");
   const data = document.getElementById("reading-config");
   const config = data ? JSON.parse(data.textContent) : null;
   const csrf = document.querySelector("[name=csrfmiddlewaretoken]")?.value;

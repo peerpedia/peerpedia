@@ -3,39 +3,19 @@
 <head>
   <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{% block title %}Peerpedia{% endblock %}</title>
-  {% include "includes/icons.html" %}
+  <link rel="stylesheet" href="{% static 'theme.css' %}">
+  {% include 'includes/icons.html' %}
   <link rel="stylesheet" href="{% static 'site.css' %}">
-  <link rel="stylesheet" href="{% static 'inbox.css' %}">
   {% block head %}{% endblock %}
-<link rel="stylesheet" href="{% static 'controls.css' %}"></head>
-<body>
+</head>
+<body class="site">
   <a class="skip-link" href="#main">Skip to content</a>
-  <header class="site-header"><div class="header-inner">
-    <a class="wordmark" href="{% url 'browse' %}" aria-label="Peerpedia home">peer<span>pedia</span><i aria-hidden="true">.</i></a>
-    <nav aria-label="Main navigation">
-      <a href="{% url 'browse' %}">Browse</a>
-      <a href="{% url 'write' %}">New note</a>
-      <a href="{% url 'help' %}">Help</a>
-      {% if user.is_authenticated %}
-        <a class="inbox-link" href="{% url 'inbox' %}" aria-label="Inbox{% if unread_notifications %}, {{ unread_notifications }} unread{% endif %}" title="Inbox"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4"/></svg>{% if unread_notifications %}<span class="inbox-count" aria-hidden="true">{% if unread_notifications > 99 %}99+{% else %}{{ unread_notifications }}{% endif %}</span>{% endif %}<span class="sr-only">Inbox</span></a>
-        <a href="{% url 'drafts' %}">My drafts</a><span class="account-name">{{ user.username }}</span>
-        {% if user.is_staff %}<a href="{% url 'admin:index' %}">Admin</a><a href="{% url 'staff_mfa' %}" class="quiet-link">Security</a>{% endif %}
-        <a href="{% url 'socialaccount_connections' %}" class="quiet-link">Account</a>
-        <a href="{% url 'access_tokens' %}" class="quiet-link">Access tokens</a>
-        <form action="{% url 'logout' %}" method="post" class="inline-form">{% csrf_token %}<button class="nav-button">Sign out</button></form>
-      {% else %}
-        <a href="{% url 'login' %}" class="quiet-link">Sign in</a><a href="{% url 'signup' %}" class="button small">Create account</a>
-      {% endif %}
-    </nav>
-  </div></header>
-  <main id="main" class="main-shell">
-    {% if messages %}<div class="messages" role="status">{% for message in messages %}<div class="notice {{ message.tags }}">{{ message }}</div>{% endfor %}</div>{% endif %}
-    {% if user.is_authenticated and not user.email_verified %}<div class="notice">Verify your email to publish, submit changes, and write reviews. <a href="{% url 'verification_needed' %}">Verify email</a></div>{% endif %}
-    {% if needs_agreement %}<div class="notice">Before publishing or commenting, <a href="{% url 'agreements' %}?next={{ request.get_full_path|urlencode }}">review the submission and discussion agreement</a>.</div>{% endif %}{% block content %}{% endblock %}
+  {% include 'includes/masthead.html' %}
+  <main id="main" class="main-shell {% block layout %}{% endblock %}">
+    {% if messages %}<div class="messages" role="status">{% for message in messages %}<p class="notice {{ message.tags }}">{{ message }}</p>{% endfor %}</div>{% endif %}
+    {% block content %}{% endblock %}
   </main>
-  <footer class="site-footer">
-    <span>Peerpedia <a href="{{ repository_url }}/releases/tag/v{{ project_version }}">v{{ project_version }}</a> · {% include 'includes/motto.html' %}</span>
-    <div class="footer-links"><a href="{% url 'terms' %}">Terms</a><a href="{% url 'licenses' %}">Licenses</a><a href="{% url 'rights_request' %}">Rights requests</a><a href="{% url 'privacy' %}">Privacy</a><a href="{% url 'help' %}">Help</a><a href="{% url 'about' %}">About</a></div>
-  </footer>
-</body>
-</html>
+  <footer class="site-footer"><nav aria-label="Site information">
+    <a href="{% url 'help' %}">Help</a><a href="{% url 'about' %}">About</a><a href="{% url 'privacy' %}">Privacy</a><a href="{% url 'terms' %}">Terms</a>
+  </nav></footer>
+</body></html>

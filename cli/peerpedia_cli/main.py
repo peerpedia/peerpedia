@@ -10,6 +10,7 @@ import os
 from pathlib import Path
 import sys
 import tempfile
+from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode, urlsplit
 from urllib.request import HTTPRedirectHandler, Request, build_opener
@@ -572,15 +573,14 @@ def initialize(args):
     }
 
 
-def push(root, state, args):
+def push(root: Path, state: dict[str, Any], args: argparse.Namespace) -> dict[str, Any]:
     pr_id = getattr(args, "pr", None)
     expected_head = getattr(args, "expected_head", None)
-    discussion_ids = getattr(args, "address", []) or []
     ai_assisted = getattr(args, "ai_assisted", False)
-    if args.retry and (pr_id or expected_head or discussion_ids or ai_assisted):
+    if args.retry and (pr_id or expected_head or ai_assisted):
         raise ClientError(
             "invalid_arguments",
-            "Retry reuses the saved request. Do not add PR, discussion, or AI flags.",
+            "Retry reuses the saved request. Do not add PR or AI flags.",
         )
     if bool(pr_id) != bool(expected_head):
         raise ClientError(
@@ -628,10 +628,6 @@ def push(root, state, args):
             pending["payload"].update(
                 pull_request_id=str(uuid.UUID(pr_id)), expected_head=expected_head
             )
-        if discussion_ids:
-            pending["payload"]["discussion_ids"] = [
-                str(uuid.UUID(value)) for value in discussion_ids
-            ]
         if ai_assisted:
             pending["payload"]["ai_assisted"] = True
         previous_path = root / ".peerpedia/last-push.json"
@@ -666,7 +662,6 @@ def push(root, state, args):
             "insufficient_scope",
             "not_found",
             "stale_pr",
-            "invalid_discussion",
             "forbidden",
             "agreement_required",
             "license_required",
@@ -718,96 +713,50 @@ def push(root, state, args):
     }
 
 
-READ_COMMANDS = {
-    "feedback",
-    "discussion",
-    "replies",
-    "comment-history",
-    "reviews",
-    "prs",
-    "pr",
-    "pr-comments",
-}
+READ_COMMANDS = {"reviews", "prs", "pr", "pr-comments"}
 
 
-def read_feedback(args):
+def read_feedback(args: argparse.Namespace) -> dict[str, Any]:
     if args.server:
         server = server_for(args)
         paper_id = getattr(args, "paper", None)
     else:
         _, state = project()
         server, paper_id = state["server"], getattr(args, "paper", None) or state["paper_id"]
-    if args.offset < 0:
+    offset = args.offset
+    if offset < 0:
         raise ClientError("invalid_arguments", "Offset must be nonnegative.")
 
-    def uid(value):
-        if not value:
+    if args.command in {"reviews", "prs"}:
+        if not paper_id:
             raise ClientError(
                 "paper_required",
                 "Use --paper with --server, or run inside a published paper directory.",
             )
-        return str(uuid.UUID(value))
-
-    if paper_id and args.command in {"feedback", "reviews", "prs"}:
         reference = paper_reference(paper_id, server)
         paper_id = (
             resolve_paper(server, reference)["manifest"]["paper_id"]
             if "." in reference
             else reference
         )
-
-    if args.command == "feedback":
-        submission_id = getattr(args, "submission", None)
-        if submission_id:
-            target = snapshot_reference(submission_id, server)
-            submission_id = (
-                resolve_snapshot(server, target)["manifest"]["submission_id"]
-                if "." in target
-                else target
-            )
-        path = (
-            f"/api/v1/submissions/{uid(submission_id)}/feedback/"
-            if submission_id
-            else f"/api/v1/papers/{uid(paper_id)}/feedback/"
-        )
-        key = "passages"
-    elif args.command in {"reviews", "prs"}:
-        path, key = f"/api/v1/papers/{uid(paper_id)}/{args.command}/", args.command
+        key = args.command
+        path = f"/api/v1/papers/{uuid.UUID(paper_id)}/{key}/"
     else:
-        target = uid(args.target)
+        target = uuid.UUID(args.target)
         path, key = {
-            "discussion": (f"/api/v1/passages/{target}/", "threads"),
-            "replies": (f"/api/v1/discussion-comments/{target}/replies/", "replies"),
-            "comment-history": (f"/api/v1/discussion-comments/{target}/history/", "revisions"),
             "pr": (f"/api/v1/prs/{target}/", "snapshots"),
             "pr-comments": (f"/api/v1/prs/{target}/comments/", "comments"),
         }[args.command]
 
-    def pages(path, key, offset=0):
-        result = request(server, path + "?offset=" + str(offset))
-        seen = {offset}
-        while args.all and result.get("next") is not None:
-            at = result["next"]
-            if type(at) is not int or at <= offset or at in seen:
-                raise ClientError("invalid_response", "The server returned an invalid page cursor.")
-            seen.add(at)
-            offset = at
-            page = request(server, path + "?offset=" + str(at))
-            result[key].extend(page[key])
-            result["next"] = page.get("next")
-        return result
-
-    result = pages(path, key, args.offset)
-    if args.all and args.command == "discussion":
-        for thread in result["threads"]:
-            if thread["next_replies"] is not None:
-                extra = pages(
-                    f"/api/v1/discussion-comments/{uid(thread['id'])}/replies/",
-                    "replies",
-                    thread["next_replies"],
-                )
-                thread["replies"].extend(extra["replies"])
-                thread["next_replies"] = None
+    result = request(server, path + "?offset=" + str(offset))
+    while args.all and result.get("next") is not None:
+        at = result["next"]
+        if type(at) is not int or at <= offset:
+            raise ClientError("invalid_response", "The server returned an invalid page cursor.")
+        offset = at
+        page = request(server, path + "?offset=" + str(at))
+        result[key].extend(page[key])
+        result["next"] = page.get("next")
     return result
 
 
@@ -946,7 +895,7 @@ def run(args):
             }
 
 
-def main(argv=None):
+def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--json", action="store_true", help="Machine-readable output")
     parser.add_argument("--version", action="version", version=f"peerpedia {__version__}")
@@ -990,28 +939,14 @@ def main(argv=None):
         if command in READ_COMMANDS:
             child.add_argument("--server")
             child.add_argument("--offset", type=int, default=0)
-            child.add_argument(
-                "--all",
-                action="store_true",
-                help="Read all pages; discussion also includes all replies",
-            )
-            if command in {"feedback", "reviews", "prs"}:
-                targets = child.add_mutually_exclusive_group()
-                targets.add_argument("--paper")
-                if command == "feedback":
-                    targets.add_argument("--submission")
+            child.add_argument("--all", action="store_true", help="Read every page of results")
+            if command in {"reviews", "prs"}:
+                child.add_argument("--paper")
             else:
-                child.add_argument("target", help="Passage, comment, or PR UUID")
+                child.add_argument("target", help="PR UUID")
         if command == "push":
             child.add_argument("--pr", help="Append an immutable snapshot to your existing PR")
             child.add_argument("--expected-head", help="Full hash currently at the PR head")
-            child.add_argument(
-                "--address",
-                action="append",
-                default=[],
-                metavar="THREAD_ID",
-                help="Link a top-level discussion; repeat for several",
-            )
             child.add_argument(
                 "--ai-assisted", action="store_true", help="Declare AI assistance on this snapshot"
             )

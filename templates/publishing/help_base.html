@@ -1,17 +1,17 @@
 {% extends 'base.html' %}{% load static %}
 {% block head %}<link rel="stylesheet" href="{% static 'help.css' %}">{% endblock %}
+{% block layout %}guide-page{% endblock %}
 {% block content %}
 <header class="page-heading help-heading">
-  <div class="eyebrow">HELP</div>
   <h1>{% block guide_heading %}{% endblock %}</h1>
-  <p class="lede">{% block guide_intro %}{% endblock %}</p>
+  {% block guide_intro %}{% endblock %}
 </header>
 {% block guide_tabs %}{% endblock %}
-<div class="help-layout">
+<details class="help-index">
+  <summary>On this page</summary>
   <nav class="help-contents" aria-label="On this page">
-    <strong>On this page</strong>
     {% block guide_contents %}{% endblock %}
   </nav>
-  <div class="help-content">{% block guide_body %}{% endblock %}</div>
-</div>
+</details>
+<div class="help-content">{% block guide_body %}{% endblock %}</div>
 {% endblock %}

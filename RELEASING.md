@@ -1,13 +1,13 @@
 # Releasing Peerpedia
 
-The public website, CLI, editor, and plugin share a release number.
+The public website, CLI, renderer, and plugin share a release number.
 Content hashes, API paths, document formats, and database migrations use
 independent versions. Do not rename those when making a software release.
 
 ## Prepare a release
 
 Update `VERSION`, `cli/peerpedia_cli/__init__.py`, both plugin manifests,
-and the editor package files. Update the release notes and download links.
+and the renderer package files in `editor/`. Update the release notes and download links.
 Run `python scripts/check_version.py` to catch mismatched labels, including the
 root package entry in the npm lock file. Keep dependency versions and historical
 release notes unchanged. Check the CLI compatibility floor in the plugin setup

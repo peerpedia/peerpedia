@@ -1,6 +1,8 @@
 """Google authentication through allauth, without a second password/account system."""
 
+import logging
 import time
+from smtplib import SMTPException
 from copy import deepcopy
 from functools import wraps
 from django.conf import settings
@@ -9,23 +11,28 @@ from django.contrib.auth import login
 from django.contrib.auth.decorators import login_required
 from django.core.exceptions import PermissionDenied
 from django.db import IntegrityError, transaction
+from django.dispatch import receiver
+from django.http import HttpRequest, HttpResponse
+from django.urls import reverse
 from django.shortcuts import redirect, render
 from django.views.decorators.cache import never_cache
 from django.views.decorators.debug import sensitive_post_parameters
 from django.views.decorators.http import require_POST
 from allauth.utils import get_request_param
 from allauth.account.adapter import DefaultAccountAdapter
+from allauth.account.models import EmailAddress, EmailConfirmation, EmailConfirmationHMAC
 from allauth.core.exceptions import ImmediateHttpResponse
 from allauth.socialaccount.adapter import DefaultSocialAccountAdapter
 from allauth.socialaccount.forms import SignupForm as SocialSignupForm
-from allauth.socialaccount.models import SocialAccount
+from allauth.socialaccount.models import SocialAccount, SocialLogin
+from allauth.socialaccount.signals import social_account_added
 from allauth.socialaccount.providers.google.views import GoogleOAuth2Adapter
 from allauth.socialaccount.providers.oauth2.views import OAuth2LoginView, OAuth2CallbackView
 from allauth.socialaccount.views import SignupView
 from .forms import SignupForm
 from .mfa import PasswordForm
 from .models import User
-from .security import limited
+from .security import limited, local_destination
 
 
 def unavailable(request, detail, status=400):
@@ -44,8 +51,23 @@ def enabled(view):
     return wrapped
 
 
-def verified_email(sociallogin):
+def verified_email(sociallogin: SocialLogin) -> str | None:
     return next((e.email.lower() for e in sociallogin.email_addresses if e.verified), None)
+
+
+def verify_google_address(user: User, sociallogin: SocialLogin) -> None:
+    email = verified_email(sociallogin)
+    if user.is_active and email and user.email.casefold() == email.casefold():
+        address, _ = EmailAddress.objects.get_or_create(user=user, email=email)
+        address.set_verified()
+
+
+@receiver(social_account_added)
+def google_connected(
+    sender: type[SocialLogin], request: HttpRequest, sociallogin: SocialLogin, **kwargs: object
+) -> None:
+    if sociallogin.account.provider == "google":
+        verify_google_address(request.user, sociallogin)
 
 
 class GoogleAdapter(GoogleOAuth2Adapter):
@@ -58,6 +80,32 @@ class GoogleAdapter(GoogleOAuth2Adapter):
 
 
 class AccountAdapter(DefaultAccountAdapter):
+    def get_email_confirmation_url(
+        self: "AccountAdapter",
+        request: HttpRequest,
+        emailconfirmation: EmailConfirmation | EmailConfirmationHMAC,
+    ) -> str:
+        target = local_destination(
+            get_request_param(request, "next") or request.session.get("verification_next", "")
+        )
+        return settings.SITE_URL + reverse(
+            "verify_email", args=[emailconfirmation.key], query={"next": target} if target else None
+        )
+
+    def send_confirmation_mail(
+        self: "AccountAdapter",
+        request: HttpRequest,
+        emailconfirmation: EmailConfirmation | EmailConfirmationHMAC,
+        signup: bool,
+    ) -> None:
+        try:
+            super().send_confirmation_mail(request, emailconfirmation, signup)
+        except (OSError, SMTPException):
+            if not signup:
+                raise
+            logging.getLogger(__name__).exception("Signup verification email delivery failed")
+            messages.error(request, "Email delivery failed. Please resend the verification email.")
+
     def login(self, request, user):
         # Our existing backend resolves sessions; no additional password entry point is exposed.
         login(request, user, backend="accounts.backends.UsernameOrEmailBackend")
@@ -69,7 +117,9 @@ class AccountAdapter(DefaultAccountAdapter):
 
 
 class SocialAdapter(DefaultSocialAccountAdapter):
-    def pre_social_login(self, request, sociallogin):
+    def pre_social_login(
+        self: "SocialAdapter", request: HttpRequest, sociallogin: SocialLogin
+    ) -> None:
         sociallogin.token = (
             None  # Never retain Google access/refresh tokens, even in signup sessions.
         )
@@ -99,19 +149,13 @@ class SocialAdapter(DefaultSocialAccountAdapter):
                 request,
                 "You already have a Peerpedia account. Sign in with your password, then open Account to connect Google.",
             )
-            raise ImmediateHttpResponse(redirect("login"))
+            target = local_destination(sociallogin.state.get("next") or "")
+            raise ImmediateHttpResponse(
+                redirect(reverse("login", query={"next": target} if target else None))
+            )
         # Existing accounts are found by Google's stable subject, never by an email match.
-        if sociallogin.is_existing and email.casefold() == sociallogin.user.email.casefold():
-            if sociallogin.user.is_active and not sociallogin.user.email_verified:
-                sociallogin.user.email_verified = True
-                sociallogin.user.save(update_fields=["email_verified"])
-
-    def save_user(self, request, sociallogin, form=None):
-        email = verified_email(sociallogin)
-        if not email:
-            raise PermissionDenied
-        sociallogin.user.email_verified = True
-        return super().save_user(request, sociallogin, form)
+        if sociallogin.is_existing and sociallogin.state.get("process") != "connect":
+            verify_google_address(sociallogin.user, sociallogin)
 
 
 class GoogleSignupForm(SocialSignupForm):
@@ -172,7 +216,9 @@ def google_callback(request):
 @never_cache
 @limited("google_disconnect", limit=10)
 @sensitive_post_parameters("password")
-def connections(request):
+def connections(request: HttpRequest) -> HttpResponse:
+    from publishing.drafts import archived_drafts
+
     form = PasswordForm(request.POST or None)
     if request.method == "POST" and form.is_valid():
         with transaction.atomic():
@@ -190,6 +236,8 @@ def connections(request):
         "accounts/connections.html",
         {
             "form": form,
+            "has_archived_drafts": request.user.email_verified
+            and archived_drafts(request.user).exists(),
             "google_account": SocialAccount.objects.filter(
                 user=request.user, provider="google"
             ).first(),

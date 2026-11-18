@@ -1,4 +1,6 @@
 import hashlib
+from collections.abc import Callable
+from typing import Concatenate, ParamSpec
 from datetime import timedelta
 from functools import wraps
 from django.conf import settings
@@ -6,7 +8,9 @@ from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.db import transaction
 from django.db.models import Q
+from django.http import HttpRequest, HttpResponse
 from django.shortcuts import redirect, render
+from django.utils.http import url_has_allowed_host_and_scheme
 from django.utils import timezone
 from .models import RateLimit, User
 
@@ -74,12 +78,25 @@ def limited(scope, limit=10, seconds=900, account_field=None):
     return decorate
 
 
-def verified_required(view):
+def local_destination(value: str) -> str:
+    if value.startswith("/") and url_has_allowed_host_and_scheme(value, allowed_hosts=set()):
+        return value
+    return ""
+
+
+P = ParamSpec("P")
+
+
+def verified_required(
+    view: Callable[Concatenate[HttpRequest, P], HttpResponse],
+) -> Callable[Concatenate[HttpRequest, P], HttpResponse]:
     @login_required
     @wraps(view)
-    def wrapped(request, *args, **kwargs):
+    def wrapped(request: HttpRequest, /, *args: P.args, **kwargs: P.kwargs) -> HttpResponse:
         if not request.user.email_verified:
-            messages.info(request, "Verify your email before publishing or participating.")
+            messages.info(request, "Verify your email to continue.")
+            if request.method == "GET":
+                request.session["verification_next"] = local_destination(request.get_full_path())
             return redirect("verification_needed")
         return view(request, *args, **kwargs)
 

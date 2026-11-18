@@ -10,7 +10,7 @@ django-otp==1.7.5
 Django==5.2.18
 gunicorn==23.0.0
 idna==3.20
-oauthlib==4.0.0
+oauthlib==4.0.1
 packaging==26.3
 psycopg-binary==3.3.6
 psycopg==3.3.6
