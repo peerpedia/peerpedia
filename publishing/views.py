@@ -140,7 +140,7 @@ def read_submission(request, submission_id):
 
 
 def reader(request: HttpRequest, submission: Submission) -> HttpResponse:
-    from .documents import pages, digest
+    from .documents import pages
     from urllib.parse import urlencode
 
     chapters = pages(submission)
@@ -215,15 +215,12 @@ def reader(request: HttpRequest, submission: Submission) -> HttpResponse:
                 if request.user.is_authenticated
                 else "",
                 "user": request.user.pk if request.user.is_authenticated else "visitor",
-                "chapters": [
-                    {
-                        "id": p["id"],
-                        "hash": digest(p["markdown"]),
-                        "url": reader_url + "?" + urlencode({"chapter": p["id"]}),
-                    }
-                    for p in chapters
-                ],
-            },
+                "chapters": {
+                    p["id"]: reader_url + "?" + urlencode({"chapter": p["id"]}) for p in chapters
+                },
+            }
+            if submission.chapters
+            else None,
         },
     )
     response["Cache-Control"] = "private, no-store"

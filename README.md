@@ -728,9 +728,8 @@ Markdown. This combined field supports search and older read-only integrations;
 chapter-aware clients verify every component. v1–v3 histories are unchanged.
 The chapter migration refuses a rollback once v4 snapshots exist.
 
-Reading completion and position are private account data. Visitors keep progress
-in their browser. Completion retains the hash of the chapter read, allowing the
-sidebar to indicate later changes without erasing the reader's achievement.
+Signed-in readers can resume at their last chapter and position. Visitors keep
+their place in the same browser.
 
 ### Browser rendering and durable reading copies
 
