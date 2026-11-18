@@ -1,4 +1,4 @@
-# Peerpedia CLI 0.1.1
+# Peerpedia CLI 0.1.2
 
 Read research notes, edit Markdown on your computer, and submit proposed changes
 to [Peerpedia](https://peerpedia.dev). Public reading needs no account.
@@ -15,12 +15,12 @@ pipx install peerpedia-cli
 peerpedia --version
 ```
 
-The output should be `peerpedia 0.1.1`. The package is published on
-[PyPI](https://pypi.org/project/peerpedia-cli/).
+This installs the version available on [PyPI](https://pypi.org/project/peerpedia-cli/).
 
-You can also download the `.whl` file from the
-[GitHub release](https://github.com/peerpedia/peerpedia/releases/tag/v0.1.1)
-and run `pipx install PATH_TO_DOWNLOADED_FILE`.
+To install CLI 0.1.2, download its wheel from the
+[GitHub release](https://github.com/peerpedia/peerpedia/releases/tag/v0.1.2)
+and run `pipx install PATH_TO_DOWNLOADED_FILE` in a fresh environment.
+`peerpedia --version` should print `peerpedia 0.1.2`.
 
 Without pipx, use a Python environment
 
