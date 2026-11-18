@@ -1,9 +1,6 @@
 /** @returns {void} */
 (() => {
   document.body.classList.add("reader-interactive");
-  const data = document.getElementById("reading-config");
-  const config = data ? JSON.parse(data.textContent) : null;
-  const csrf = document.querySelector("[name=csrfmiddlewaretoken]")?.value;
   const returnButton = document.getElementById("reading-return");
   const rememberReturn = () => {
     try {
@@ -103,103 +100,4 @@
       }
     } catch (_) {}
   }
-  if (!config) return;
-  const key = `peerpedia:reading:${config.user}:${config.paper}`;
-  let ready = false;
-  let timer;
-  let saveQueue = Promise.resolve();
-
-  /** @returns {Promise<void>} */
-  async function savePosition() {
-    const position = Math.min(
-      1,
-      Math.max(
-        0,
-        scrollY /
-          Math.max(1, document.documentElement.scrollHeight - innerHeight),
-      ),
-    );
-    const state = { chapter: config.chapter, position };
-    if (config.progress_url) {
-      await fetch(config.progress_url, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "X-CSRFToken": csrf },
-        body: JSON.stringify({ submission: config.submission, ...state }),
-        keepalive: true,
-      });
-    } else {
-      localStorage.setItem(key, JSON.stringify(state));
-    }
-  }
-
-  /** @returns {void} */
-  function ignoreStorageError() {}
-
-  /** @returns {void} */
-  function store() {
-    if (ready)
-      saveQueue = saveQueue.then(savePosition).catch(ignoreStorageError);
-  }
-
-  /** @returns {Promise<void>} */
-  async function resumeReading() {
-    try {
-      let state;
-      if (config.progress_url) {
-        const response = await fetch(config.progress_url);
-        if (!response.ok) throw new Error("Progress unavailable");
-        state = await response.json();
-      } else state = JSON.parse(localStorage.getItem(key));
-      if (!location.hash && state?.chapter) {
-        if (
-          !config.explicit &&
-          state.chapter !== config.chapter &&
-          Object.hasOwn(config.chapters, state.chapter)
-        ) {
-          location.replace(config.chapters[state.chapter] + "&resume=1");
-          return;
-        }
-        if (
-          state.chapter === config.chapter &&
-          (!config.explicit ||
-            new URLSearchParams(location.search).has("resume"))
-        ) {
-          /** @returns {void} */
-          function restore() {
-            scrollTo(
-              0,
-              state.position *
-                Math.max(
-                  1,
-                  document.documentElement.scrollHeight - innerHeight,
-                ),
-            );
-          }
-          if (document.readyState === "complete") restore();
-          else window.addEventListener("load", restore, { once: true });
-        }
-      }
-    } catch (_) {
-      if (config.progress_url) {
-        document.getElementById("reading-status").textContent =
-          "Could not load reading progress. Reload the page to try again.";
-        return;
-      }
-    }
-    ready = true;
-  }
-
-  /** @returns {void} */
-  function scheduleSave() {
-    clearTimeout(timer);
-    timer = setTimeout(store, 1200);
-  }
-  /** @returns {void} */
-  function saveOnExit() {
-    clearTimeout(timer);
-    store();
-  }
-  resumeReading();
-  window.addEventListener("scroll", scheduleSave, { passive: true });
-  window.addEventListener("pagehide", saveOnExit);
 })();

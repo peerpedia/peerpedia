@@ -2,7 +2,7 @@
   <p class="record-meta">{% if paper.current.primary_category %}<span>{{ paper.current.primary_category }}</span>{% endif %}<time datetime="{{ paper.accepted_at|date:'Y-m-d' }}">Updated {{ paper.accepted_at|date:'j M Y' }}</time></p>
   <h1>{{ paper.current.title }}</h1>
   <p class="byline">{{ paper.current.authors.splitlines|join:", " }}</p>
-  <div class="actions paper-actions"><a class="button" href="{{ paper.read_url }}">Read paper</a><a href="{% url 'propose' paper.pk %}">Propose a change</a></div>
+  <div class="actions paper-actions"><a class="button" href="{{ paper.read_url }}{% if paper.current.chapters and user.is_authenticated %}?resume=1{% endif %}"{% if paper.current.chapters and not user.is_authenticated %} data-resume-paper="{{ paper.pk }}"{% endif %}>Read paper</a><a href="{% url 'propose' paper.pk %}">Propose a change</a></div>
 </header>
 <section class="abstract" aria-labelledby="abstract-title">
   <h2 id="abstract-title">Abstract</h2>
