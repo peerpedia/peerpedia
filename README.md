@@ -1,10 +1,10 @@
-# Peerpedia 0.1.1
+# Peerpedia 0.1.2
 
 A small, public research-publishing application built with Django and PostgreSQL. Researchers write or upload Markdown, organize chapters, propose frozen changes, review papers, and preserve their publication history.
 
 [Website](https://peerpedia.dev) · [Usage guide](https://peerpedia.dev/help/) · [Source](https://github.com/peerpedia/peerpedia)
 
-[Download 0.1.1](https://github.com/peerpedia/peerpedia/releases/tag/v0.1.1) · [Install the CLI](cli/README.md) · [Release notes](CHANGELOG.md)
+[Download 0.1.2](https://github.com/peerpedia/peerpedia/releases/tag/v0.1.2) · [Install the CLI](cli/README.md) · [Release notes](CHANGELOG.md)
 
 The software uses the [MIT license](LICENSE). Papers have their own author-selected licenses. Developer information is on the [About page](https://peerpedia.dev/about/).
 
@@ -667,7 +667,7 @@ A paper can contain up to 64 ordered Markdown chapters and one shared UTF-8
 Existing single-file papers continue to work. List chapter files in the CLI working copy’s `paper.json`. A single PR can include all chapter changes. Readers
 see one chapter at a time. Chapter IDs survive file renaming and reordering.
 
-For chaptered papers in 0.1.1, `paper.json` includes:
+For chaptered papers, `paper.json` includes:
 
 ```json
 {

@@ -1,5 +1,11 @@
 # Release notes
 
+## 0.1.2
+
+- Use the single-column journal layout for paper discovery, abstracts, full-text reading, accounts, uploads and Help. The mobile contents menu folds away while reading.
+- Navigate chapters with Previous chapter and Next chapter. Readers can resume their saved position without marking chapters complete.
+- Publish and revise papers by uploading source files, and discuss the paper as a whole on its abstract page.
+
 ## 0.1.1
 
 - Use BananaMark for Markdown, theorem blocks, references, bibliography, editor completion, and server-rendered KaTeX and TikZ.
