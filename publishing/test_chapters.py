@@ -145,6 +145,29 @@ class ChapterTests(TestCase):
         self.client.logout()
         self.assertEqual(self.client.get(url).status_code, 403)
 
+    def test_resume_serves_saved_chapter_in_first_response(self: "ChapterTests") -> None:
+        snapshot = self.paper.current
+        url = snapshot.read_url
+        self.client.post(
+            reverse("reading_progress", args=[self.paper.pk]),
+            {"submission": str(snapshot.pk), "chapter": "proof", "position": 0.55},
+            content_type="application/json",
+        )
+        response = self.client.get(url, {"resume": "1"})
+        self.assertEqual(response.context["chapter"]["id"], "proof")
+        self.assertEqual(response.context["reading_config"]["saved"]["position"], 0.55)
+        self.assertIn("private", response["Cache-Control"])
+        self.assertEqual(
+            self.client.get(url, {"chapter": "intro"}).context["chapter"]["id"], "intro"
+        )
+        self.assertEqual(self.client.get(url, {"chapter": "missing"}).status_code, 404)
+        self.assertEqual(
+            self.client.get(url, {"chapter": "missing", "resume": "1"}).context["chapter"]["id"],
+            "intro",
+        )
+        self.client.logout()
+        self.assertIsNone(self.client.get(url).context["reading_config"]["saved"])
+
     def test_legacy_hash_survives_and_revision_can_add_chapters(self):
         old = publish(self.user, document()).current
         before = old.hash

@@ -1,5 +1,5 @@
 {% extends 'base.html' %}{% load static %}
-{% block head %}<link rel="stylesheet" href="{% static 'rating.css' %}">{% endblock %}
+{% block head %}{% if not user.is_authenticated %}<script defer src="{% static 'resume.js' %}"></script>{% endif %}<link rel="stylesheet" href="{% static 'rating.css' %}">{% endblock %}
 {% block layout %}paper-page{% if tab == 'reviews' %} paper-overview{% endif %}{% endblock %}
 {% block title %}{{ paper.current.title }} · Peerpedia{% endblock %}
 {% block content %}
@@ -48,7 +48,7 @@
     {% for item in history_page %}<article class="history-row"><div>
       <h2 class="entry-title"><a href="{{ item.get_absolute_url }}">{{ item.explanation|truncatechars:140 }}</a></h2>
       <p class="meta-line">{{ item.contributor_name }} · {{ item.decision.created_at|date:'j M Y' }} · <code>{{ item.public_id }}</code></p>
-      <a href="{{ item.read_url }}">Read this version</a>
+      <a href="{{ item.read_url }}{% if item.chapters and user.is_authenticated %}?resume=1{% endif %}"{% if item.chapters and not user.is_authenticated %} data-resume-paper="{{ paper.pk }}"{% endif %}>Read this version</a>
     </div>{% if item.pk == paper.current_id %}<span class="status accepted">Current</span>{% endif %}</article>{% endfor %}
     {% include 'includes/pagination.html' with page=history_page %}
     {% if contributions %}<details class="disclosure"><summary>Accepted contributions</summary>{% for credit in contributions %}<p>{{ credit.contributor_name }} · {{ credit.total }} accepted change{{ credit.total|pluralize }}</p>{% endfor %}</details>{% endif %}

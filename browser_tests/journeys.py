@@ -15,7 +15,7 @@ from django.core import mail
 from django.db import connections
 from django.test import override_settings
 from django.urls import reverse
-from playwright.sync_api import expect, sync_playwright
+from playwright.sync_api import Request, expect, sync_playwright
 from accounts.models import User
 from django_otp.oath import totp
 from django_otp.plugins.otp_totp.models import TOTPDevice
@@ -1008,3 +1008,29 @@ C \arrow[r, "k"'] & D
         self.page.get_by_role("link", name="Previous chapter").click()
         expect(self.page).to_have_url(re.compile(r"chapter=intro$"))
         self.assert_no_page_overflow()
+
+    def test_visitor_resume_opens_saved_chapter_in_one_navigation(self: "BrowserJourneys") -> None:
+        from publishing.test_chapters import course
+
+        paper = self.database_call(lambda: publish(self.owner, course()))
+        self.page.goto(self.live_server_url + paper.get_absolute_url())
+        self.page.evaluate(
+            "key => localStorage.setItem(key, JSON.stringify({chapter: 'proof', position: 0.5}))",
+            f"peerpedia:reading:visitor:{paper.pk}",
+        )
+        self.page.reload()
+        documents: list[str] = []
+
+        def record_document(request: Request) -> None:
+            if request.is_navigation_request():
+                documents.append(request.url)
+
+        self.page.on("request", record_document)
+        self.page.get_by_role("link", name="Read paper", exact=True).click()
+        expect(self.page.locator(".chapter-heading")).to_contain_text("Chapter 2 of 2")
+        self.assertEqual(
+            documents, [self.live_server_url + paper.current.read_url + "?chapter=proof&resume=1"]
+        )
+        self.page.goto(self.live_server_url + paper.current.read_url + "#motivation")
+        expect(self.page.locator(".chapter-heading")).to_contain_text("Chapter 1 of 2")
+        expect(self.page.locator("#motivation")).to_be_in_viewport()

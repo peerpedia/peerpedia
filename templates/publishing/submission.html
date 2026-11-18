@@ -1,4 +1,5 @@
-{% extends "base.html" %}
+{% extends "base.html" %}{% load static %}
+{% block head %}{% if submission.chapters and not user.is_authenticated %}<script defer src="{% static 'resume.js' %}"></script>{% endif %}{% endblock %}
 {% block title %}{% if submission.base_id %}Proposal{% else %}Published version{% endif %} · {{ submission.title }} · Peerpedia{% endblock %}
 {% block content %}
 <article class="proposal-page">
@@ -19,7 +20,7 @@
       {% if submission.pr_commit.section %}<p>{% if submission.pr_commit.section.kind == "chapter" %}Chapter{% else %}Section{% endif %} · {{ submission.pr_commit.section.label }}</p>{% endif %}
     </section>
   {% endif %}
-  <p><a href="{{ submission.read_url }}">Read this version</a></p>
+  <p><a href="{{ submission.read_url }}{% if submission.chapters and user.is_authenticated %}?resume=1{% endif %}"{% if submission.chapters and not user.is_authenticated %} data-resume-paper="{{ paper.pk }}"{% endif %}>Read this version</a></p>
   {% if stale %}
     <p class="notice warning">A newer version has been accepted. To have these changes reviewed for acceptance, <a href="{% url 'propose' paper.pk %}">start a proposal from the latest version</a>.</p>
   {% elif pr and submission.pk != pr.head_id %}

@@ -9,6 +9,8 @@
   {% include "includes/math.html" %}
   <link rel="stylesheet" href="{% static 'reader.css' %}">
   <link rel="stylesheet" href="{% static 'controls.css' %}">
+  {% if reading_config %}{{ reading_config|json_script:"reading-config" }}
+  <script src="{% static 'resume.js' %}"></script>{% endif %}
   <script defer src="{% static 'reader.js' %}"></script>
   <script defer src="{% static 'reading.js' %}"></script>
   {% if desktop %}
@@ -82,7 +84,6 @@
         <nav class="chapter-footer" aria-label="Chapter navigation">
           {% if previous_chapter %}<a href="{{ previous_chapter }}">← Previous chapter</a>{% endif %}
           {% if next_chapter %}<a href="{{ next_chapter }}" id="next-chapter">Next chapter →</a>{% endif %}
-          <span id="reading-status" role="status"></span>
         </nav>
       {% endif %}
       {% include 'includes/license.html' %}
@@ -91,6 +92,5 @@
   <div hidden>{% csrf_token %}</div>
   {% include "includes/reference_tools.html" %}
   {{ citation_config|json_script:"citation-config" }}
-  {% if reading_config %}{{ reading_config|json_script:"reading-config" }}{% endif %}
 </body>
 </html>

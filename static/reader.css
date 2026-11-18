@@ -92,7 +92,7 @@
 .chapter-heading,.chapter-footer,.reader .license-notice { font: .8125rem/1.55 var(--sans); color: var(--muted); }
 .chapter-heading { display: flex; align-items: center; gap: .3rem; margin-bottom: .65rem; }
 .chapter-footer { display: flex; align-items: center; flex-wrap: wrap; gap: .75rem 1.25rem; margin-top: 3rem; padding-top: 1.25rem; border-top: 1px solid var(--line); }
-#reading-status:empty { display: none; }
+.resuming .reader { visibility: hidden; }
 #next-chapter { margin-left: auto; }
 .reader .license-notice { margin: 3rem 0 0; border-top: 1px solid var(--line); padding-top: 1rem; }
 .reader [hidden] { display: none !important; }

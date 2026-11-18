@@ -19,7 +19,15 @@ from django.views.decorators.http import require_http_methods, require_POST
 from accounts.security import limited, verified_required
 from .forms import CommentForm, ReviewForm, UploadForm
 from .licensing import PublicationConsentForm, agreement_required
-from .models import Comment, Paper, Review, Submission, PullRequest, PullRequestCommit
+from .models import (
+    Comment,
+    Paper,
+    ReadingProgress,
+    Review,
+    Submission,
+    PullRequest,
+    PullRequestCommit,
+)
 from .documents import PreparedDocument, prepare
 from .services import decide, propose, publish
 from .subjects import (
@@ -162,10 +170,22 @@ def reader(request: HttpRequest, submission: Submission) -> HttpResponse:
         )
         response["Retry-After"] = "30"
         return response
-    selected = request.GET.get("chapter") or chapters[0]["id"]
+    requested = request.GET.get("chapter")
+    resume = request.GET.get("resume") == "1"
+    saved = None
+    if submission.chapters and request.user.is_authenticated and (resume or not requested):
+        saved = (
+            ReadingProgress.objects.filter(user=request.user, paper_id=submission.paper_id)
+            .values("chapter", "position")
+            .first()
+        )
+    selected = requested or (saved["chapter"] if resume and saved else None)
     page = next((p for p in chapters if p["id"] == selected), None)
     if page is None:
-        raise Http404("This chapter is not in this version.")
+        if requested and not resume:
+            raise Http404("This chapter is not in this version.")
+        page = chapters[0]
+    selected = page["id"]
     index = chapters.index(page)
     reader_url = submission.read_url
     body, contents = refs.render(selected)
@@ -210,11 +230,10 @@ def reader(request: HttpRequest, submission: Submission) -> HttpResponse:
                 "paper": str(submission.paper_id),
                 "submission": str(submission.pk),
                 "chapter": selected,
-                "explicit": bool(request.GET.get("chapter")),
+                "saved": saved,
                 "progress_url": reverse("reading_progress", args=[submission.paper_id])
                 if request.user.is_authenticated
                 else "",
-                "user": request.user.pk if request.user.is_authenticated else "visitor",
                 "chapters": {
                     p["id"]: reader_url + "?" + urlencode({"chapter": p["id"]}) for p in chapters
                 },
