@@ -10,13 +10,14 @@ from .models import RenderedSubmission
 
 
 @lru_cache(maxsize=1)
-def renderer_version():
+def renderer_version() -> str:
     digest = hashlib.sha256()
     for name in (
         "editor/package-lock.json",
         "editor/dialect.js",
         "editor/chapter-title.js",
         "editor/render-document.mjs",
+        "editor/passage-html.mjs",
         "publishing/artifacts.py",
     ):
         digest.update(name.encode())

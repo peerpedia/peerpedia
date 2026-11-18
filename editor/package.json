@@ -15,9 +15,11 @@
     "bananamark": "0.1.0",
     "bananamark-codemirror": "0.1.0",
     "bananamark-tikz": "0.1.0",
+    "cheerio": "1.2.0",
     "codemirror": "6.0.2",
     "jsdom": "23.2.0",
     "katex": "0.18.4",
+    "lru-cache": "10.4.3",
     "node-tikzjax": "1.0.5"
   },
   "devDependencies": {

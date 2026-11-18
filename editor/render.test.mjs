@@ -219,3 +219,83 @@ test("cache maintenance expires old diagrams and applies the capacity budget", a
     await rm(cache, { recursive: true, force: true });
   }
 });
+
+/** @param {import("node:test").TestContext} t @returns {Promise<void>} */
+async function reuseChapter(t) {
+  const katex = (await import("katex")).default;
+  const render = t.mock.method(katex, "renderToString");
+  const pages = [
+    { id: "earlier", markdown: "First." },
+    { id: "later", markdown: "A formula $x_{unique}$." },
+  ];
+  const first = await renderDocument({ pages });
+  const coldCalls = render.mock.callCount();
+  render.mock.resetCalls();
+  pages[0].markdown += "\n\nAdded paragraph.";
+  const second = await renderDocument({ pages });
+  // BananaMark still checks the source while resolving the book; the cached
+  // chapter must skip the second KaTeX call that produces the final HTML.
+  assert.ok(coldCalls > 0);
+  assert.ok(render.mock.callCount() < coldCalls);
+  assert.equal(first.pages[1].blocks[0].id, "b1");
+  assert.equal(second.pages[1].blocks[0].id, "b2");
+  assert.match(second.pages[1].html, /data-passage="b2"/);
+  const preview = await renderDocument({ pages, renderChapter: "later" });
+  assert.match(preview.pages[0].html, /data-passage="b0"/);
+}
+test(
+  "reuse chapter HTML while renumbering passages for a different book or preview",
+  reuseChapter,
+);
+
+/** @returns {Promise<void>} */
+async function invalidateReferences() {
+  const pages = [
+    { id: "first", markdown: "::: theorem {@thm:key}\nA.\n:::" },
+    {
+      id: "second",
+      markdown:
+        "See @thm:key and [companion](?chapter=first#extra). Cite [@ref].",
+    },
+  ];
+  const input = {
+    pages,
+    bibliography:
+      "ref:\n  type: book\n  title: My Book\n  author: Adams\n  year: 2023",
+  };
+  const old = await renderDocument(input);
+  assert.doesNotMatch(old.pages[1].html, /data-reference="extra"/);
+  pages[0].markdown =
+    "::: lemma {@lem:other}\nB.\n:::\n\n" +
+    pages[0].markdown +
+    "\n\n## Extra {@extra}";
+  input.bibliography = input.bibliography.replace("2023", "2024");
+  const updated = await renderDocument(input);
+  assert.match(updated.pages[1].html, /Theorem 1.2/);
+  assert.match(updated.pages[1].html, /data-reference="extra"/);
+  assert.match(updated.pages[1].html, /Adams 2024/);
+  pages[0].markdown = "Definition removed.";
+  await assert.rejects(renderDocument(input), { code: "label_missing" });
+}
+test(
+  "resolved chapter dependencies follow renumbering, bibliography and removed labels",
+  invalidateReferences,
+);
+
+/** @returns {Promise<void>} */
+async function invalidatePlainLink() {
+  const pages = [
+    { id: "target", markdown: "# Intro\n\n## Example" },
+    { id: "linker", markdown: "[Section 1.1](?chapter=target#example)" },
+  ];
+  const before = await renderDocument({ pages });
+  assert.doesNotMatch(before.pages[1].html, /data-reference=/);
+  pages[0].markdown += " {@section-label}";
+  const after = await renderDocument({ pages });
+  assert.match(after.pages[1].html, /data-reference="section-label"/);
+  assert.equal(after.pages[1].blocks[0].text, "@section-label");
+}
+test(
+  "a manual link acquires its canonical label when only the target chapter changes",
+  invalidatePlainLink,
+);
