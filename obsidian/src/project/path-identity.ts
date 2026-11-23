@@ -6,3 +6,7 @@ export function isRelativePath(path: string): boolean {
 export function pathKey(path: string): string {
   return path.normalize("NFD").toLowerCase();
 }
+
+export function vaultPath(root: string, path: string): string {
+  return root ? `${root}/${path}` : path;
+}

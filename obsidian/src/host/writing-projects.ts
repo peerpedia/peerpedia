@@ -5,6 +5,7 @@ import type { Text } from "@codemirror/state";
 import type { EditorView } from "@codemirror/view";
 import { MarkdownView, type App, type Editor } from "obsidian";
 
+import { vaultPath } from "../project/path-identity";
 import type { ChapterLanguage, ProjectAnalysis, WritingAnalysis } from "../language/analysis";
 import { isRelativePath, pathKey } from "../project/paths";
 import { CONFIG_PATH, projectMembers, projectRevision, sourceDigest, type ProjectEvent } from "../project/store";
@@ -52,9 +53,7 @@ const scratchConfig: PaperConfig = {
   title: "", authors: "", abstract: "", primary_category: "", secondary_categories: [], license: "",
 };
 
-export function vaultPath(root: string, path: string): string {
-  return root ? `${root}/${path}` : path;
-}
+export { vaultPath } from "../project/path-identity";
 
 export function editorText(text: string): string {
   return text.replace(/\r\n?/g, "\n");

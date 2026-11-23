@@ -1,4 +1,5 @@
 import type { RenderPage, SourceTarget } from "../../renderer/protocol";
+import { viewportTarget, type ReaderLocation } from "./source-map";
 import { articleFragment, type PreviewTheme } from "./article";
 
 const frameDocument = `<!doctype html><html><head><meta charset="utf-8">
@@ -33,6 +34,7 @@ export class PreviewReader {
   private page?: RenderPage;
   private anchor: string | null = null;
   private anchoredScroll = 0;
+  private anchorExact = false;
 
   constructor(frame: HTMLIFrameElement, theme: PreviewTheme, css: string, link: (value: string) => void, unavailable: () => void) {
     frame.setAttribute("sandbox", "allow-same-origin");
@@ -61,8 +63,9 @@ export class PreviewReader {
     this.paint();
   }
 
-  scroll(id: string | null): boolean {
+  scroll(id: string | null, exact: boolean = true): boolean {
     this.anchor = id;
+    this.anchorExact = exact;
     const doc = this.article?.ownerDocument;
     const target = id ? doc?.getElementById(id) : this.article;
     if (target) {
@@ -73,29 +76,22 @@ export class PreviewReader {
   }
 
   /** Determine intent at button-click time, without a scroll listener or a write to the editing pane. */
-  visibleTarget(): SourceTarget | null {
+  visibleTarget(): ReaderLocation {
     const doc = this.article?.ownerDocument;
-    if (!doc || !this.page) return null;
+    if (!doc || !this.page) return {target: null, exact: false};
     // An explicit reference may land near the bottom of a short page, where its
     // viewport top cannot reach the target. Remember that anchor until the reader scrolls.
     if (this.anchor && doc.scrollingElement?.scrollTop === this.anchoredScroll) {
       const selected = this.page.targets.find((target: SourceTarget): boolean => target.id === this.anchor);
-      if (selected && doc.getElementById(selected.id)) return selected;
+      if (selected && doc.getElementById(selected.id)) return {target: selected, exact: this.anchorExact};
     }
-    let nearest: SourceTarget | null = null;
-    let distance = Infinity;
-    for (const target of this.page.targets) {
-      const el = doc.getElementById(target.id);
-      if (!el) continue;
-      const gap = Math.abs(el.getBoundingClientRect().top - 12);
-      if (gap < distance) { nearest = target; distance = gap; }
-    }
-    return nearest;
+    return viewportTarget(this.page.targets, (id: string): DOMRect | null =>
+      doc.getElementById(id)?.getBoundingClientRect() ?? null);
   }
 
   private paint(): void {
     if (!this.page || !this.article) return;
     this.article.replaceChildren(articleFragment(this.article.ownerDocument, this.page.html));
-    this.scroll(this.anchor);
+    this.scroll(this.anchor, this.anchorExact);
   }
 }

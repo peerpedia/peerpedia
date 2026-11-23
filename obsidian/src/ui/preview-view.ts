@@ -5,12 +5,13 @@ import { FileSystemAdapter, ItemView, MarkdownView, Notice, type Editor, type Vi
 import type { RenderPage, RenderSuccess } from "../../renderer/protocol";
 import { openBuffers } from "../host/file-events";
 import { openSourceTarget, warnNavigationFailure } from "../host/source-navigation";
-import { vaultPath, withEditorSources } from "../host/writing-projects";
+import { withEditorSources } from "../host/writing-projects";
 import { localTheme } from "../preview/article";
 import { PreviewController } from "../preview/controller";
 import { PreviewReader } from "../preview/reader";
 import { previewRenderer } from "../preview/runtime";
-import { bindSourceButton, chapterPath, locatePreview, pageForSource, rawCoordinates, targetPath } from "../preview/source-map";
+import { bindSourceButton, chapterPath, locatePreview, pageForSource, previewMember, rawCoordinates, targetPath } from "../preview/source-map";
+import { pathKey } from "../project/path-identity";
 import { CONFIG_PATH, type ProjectStore } from "../project/store";
 import type { ProjectSnapshot, SourceFile } from "../project/types";
 import { errorMessage } from "./conflict-modal";
@@ -37,6 +38,7 @@ export class PreviewView extends ItemView {
   private sourceLeaf?: WorkspaceLeaf;
   private pendingSource?: MarkdownView;
   private followed?: string;
+  private sourceHint?: {revision: string; path: string; from: number; to: number; text: string};
   private coordinates?: {source: SourceFile; raw: (offset: number) => number};
   private closed = false;
 
@@ -126,16 +128,16 @@ export class PreviewView extends ItemView {
     if (!this.disk) return;
     this.project = withEditorSources(this.disk, (path: string): string | undefined => {
       const source = this.sourceLeaf?.view;
-      if (source instanceof MarkdownView && source.file?.path === path) return source.editor.getValue();
+      if (source instanceof MarkdownView && source.file && pathKey(source.file.path) === pathKey(path)) return source.editor.getValue();
       return openBuffers(this.app, path)[0];
     });
     this.controller.update(this.project);
   }
 
-  editorMoved(leaf: WorkspaceLeaf, editor: Editor, file: string, changed: boolean, active: boolean): void {
-    if (this.closed || !(leaf.view instanceof MarkdownView) || leaf.view.file?.path !== file) return;
+  editorMoved(leaf: WorkspaceLeaf, editor: Editor, file: string, changed: boolean, active: boolean, activated: boolean = false): void {
+    if (this.closed || !(leaf.view instanceof MarkdownView) || !leaf.view.file || pathKey(leaf.view.file.path) !== pathKey(file)) return;
     if (!this.disk) { if (active) this.pendingSource = leaf.view; return; }
-    const member = this.disk.files.find((source: SourceFile): boolean => vaultPath(this.disk!.root, source.path) === file);
+    const member = previewMember(this.disk, file);
     if (!member || member.path === CONFIG_PATH) return;
     if (active) {
       this.sourceLeaf = leaf;
@@ -143,7 +145,7 @@ export class PreviewView extends ItemView {
       this.cursor = {path: member.path, offset: editor.posToOffset(cursor)};
     }
     if (changed) this.updateBuffers();
-    if (active) this.follow();
+    if (active) this.follow(activated);
   }
 
   private refresh(): void {
@@ -180,7 +182,7 @@ export class PreviewView extends ItemView {
     this.position.textContent = "";
   }
 
-  private follow(): void {
+  private follow(activated: boolean = false): void {
     const { project, shown, cursor } = this;
     if (!project || !shown || !cursor || shown.revision !== project.revision || !this.reader) return;
     const page = pageForSource(cursor.path, shown, project);
@@ -190,12 +192,16 @@ export class PreviewView extends ItemView {
     if (this.coordinates?.source !== source) this.coordinates = {source, raw: rawCoordinates(source.text)};
     const offset = this.coordinates.raw(cursor.offset);
     const target = locatePreview(cursor.path, offset, shown, project);
-    const exact = target && target.from <= offset && offset <= target.to;
+    const hint = this.sourceHint;
+    if (hint && (hint.revision !== shown.revision || hint.path !== cursor.path || offset < hint.from || offset > hint.to)) {
+      this.sourceHint = undefined;
+    }
+    const exact = target && target.from <= offset && offset <= target.to && !this.sourceHint;
     const key = JSON.stringify([page.id, target?.id, offset]);
-    if (this.followed === key) return;
+    if (!activated && this.followed === key) return;
     this.followed = key;
     this.show(page);
-    if (target && this.reader.scroll(target.id)) this.position.textContent = exact ? "" : "近似定位 · 最近的结构";
+    if (target && this.reader.scroll(target.id, Boolean(exact))) this.position.textContent = this.sourceHint?.text ?? (exact ? "" : "近似定位 · 最近的结构");
     else { this.reader.scroll(null); this.position.textContent = "近似定位 · 章首"; }
   }
 
@@ -206,19 +212,32 @@ export class PreviewView extends ItemView {
       const page = this.shown?.pages.find((item: RenderPage): boolean => item.id === id);
       if (!page) return;
       this.show(page);
-      try { this.reader?.scroll(decodeURIComponent(url.hash.slice(1)) || null); } catch { /* Invalid fragment. */ }
+      let fragment: string | null = null;
+      try { fragment = decodeURIComponent(url.hash.slice(1)); } catch { /* Malformed link. */ }
+      if (fragment !== null && this.reader?.scroll(fragment || null)) return;
+      const nearest = this.reader?.visibleTarget().target;
+      this.reader?.scroll(nearest?.id ?? null, false);
+      this.position.textContent = nearest ? "近似定位 · 最近的结构" : "近似定位 · 章首";
     } else void shell.openExternal(link).catch((): void => { new Notice("无法打开外链。"); });
   }
 
   private async goToSource(): Promise<void> {
     const { project, shown, page } = this;
     if (!project || !page || project.revision !== shown?.revision || this.sourceButton.disabled) return;
-    const target = this.reader?.visibleTarget();
+    this.sourceHint = undefined;
+    const location = this.reader?.visibleTarget();
+    const target = location?.target;
     const path = target ? targetPath(target, project) : chapterPath(page.id, project);
     if (!path) return;
-    if (!target) this.position.textContent = "近似定位 · 章首";
     const leaf = this.sourceLeaf && this.app.workspace.getLeavesOfType("markdown").includes(this.sourceLeaf)
       ? this.sourceLeaf : this.app.workspace.getLeaf("tab");
-    if (!await openSourceTarget(this.app, leaf, project, { path, from: target?.from ?? 0, to: target?.to ?? 0 })) warnNavigationFailure();
+    if (!await openSourceTarget(this.app, leaf, project, { path, from: target?.from ?? 0, to: target?.to ?? 0 })) {
+      warnNavigationFailure();
+    } else if (!location?.exact && this.shown === shown && !this.closed) {
+      // Host focus/selection events may follow this programmatic selection later.
+      const text = target ? "近似定位 · 最近的结构" : "近似定位 · 章首";
+      this.sourceHint = {revision: shown.revision, path, from: target?.from ?? 0, to: target?.to ?? 0, text};
+      this.position.textContent = text;
+    }
   }
 }

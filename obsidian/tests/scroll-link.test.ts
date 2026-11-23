@@ -1,6 +1,6 @@
 import { expect, test, vi } from "vitest";
 import type { RenderSuccess, SourceTarget } from "../renderer/protocol";
-import { bindSourceButton, locatePreview, rawCoordinates, targetPath } from "../src/preview/source-map";
+import { bindSourceButton, locatePreview, previewMember, rawCoordinates, targetPath, viewportTarget } from "../src/preview/source-map";
 import { projectFixture } from "./fixtures";
 
 test("the source button responds only to an explicit click, including while the preview scrolls", (): void => {
@@ -31,4 +31,26 @@ test("maps chapter and bibliography offsets separately, picks nearest known stru
 test("raw offsets preserve astral characters and mixed-newline boundaries", (): void => {
   const raw = rawCoordinates("😀\r\nx\ny\r\nz");
   expect([0, 2, 3, 5, 6, 7, 8].map(raw)).toEqual([0, 2, 4, 6, 7, 9, 10]);
+});
+
+test("viewport navigation distinguishes a heading at the reading line from a distant nearest structure", (): void => {
+  const first: SourceTarget = {id:"first", chapterId:"intro", kind:"heading", source:"chapter", from:0, to:4};
+  const last: SourceTarget = {...first, id:"last", from:200, to:205};
+  const targets = [first, last];
+  const locate = (a: number, b: number): ReturnType<typeof viewportTarget> =>
+    viewportTarget(targets, (id: string): {top: number; bottom: number} => {
+      const top = id === "first" ? a : b;
+      return {top, bottom: top + 20};
+    });
+  expect(locate(-900, 780)).toEqual({target:last, exact:false});
+  expect(locate(-4, 1000)).toEqual({target:first, exact:true});
+  expect(locate(-400, 12)).toEqual({target:last, exact:true});
+  expect(viewportTarget(targets, (_id: string): null => null)).toEqual({target:null, exact:false});
+});
+
+test("an NFD native editor path resolves to the declared NFC chapter spelling", (): void => {
+  const project = projectFixture();
+  const file = {...project.files[1], path:"é.md"};
+  expect(previewMember({...project, files:[file]}, "paper/e\u0301.md")).toBe(file);
+  expect(previewMember({...project, files:[file]}, "other/e\u0301.md")).toBeUndefined();
 });

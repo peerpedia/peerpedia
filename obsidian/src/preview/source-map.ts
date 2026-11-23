@@ -1,5 +1,28 @@
+import { pathKey, vaultPath } from "../project/path-identity";
 import type { RenderPage, RenderSuccess, SourceTarget } from "../../renderer/protocol";
-import type { ChapterSpec, ProjectSnapshot } from "../project/types";
+import type { ChapterSpec, ProjectSnapshot, SourceFile } from "../project/types";
+
+export function previewMember(project: ProjectSnapshot, path: string): SourceFile | undefined {
+  const key = pathKey(path);
+  return project.files.find((file: SourceFile): boolean => pathKey(vaultPath(project.root, file.path)) === key);
+}
+
+export interface ReaderLocation { target: SourceTarget | null; exact: boolean }
+
+export function viewportTarget(
+  targets: readonly SourceTarget[], bounds: (id: string) => Pick<DOMRect, "top" | "bottom"> | null,
+): ReaderLocation {
+  let nearest: SourceTarget | null = null;
+  let distance = Infinity;
+  const readingLine = 12;
+  for (const target of targets) {
+    const rect = bounds(target.id);
+    if (!rect || rect.bottom <= rect.top) continue;
+    const gap = Math.max(rect.top - readingLine, readingLine - rect.bottom, 0);
+    if (gap < distance) { nearest = target; distance = gap; }
+  }
+  return {target: nearest, exact: distance === 0};
+}
 
 export function chapterPath(id: string, project: ProjectSnapshot): string | null {
   const chapters = project.config.chapters;

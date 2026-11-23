@@ -101,25 +101,25 @@ export default class PeerpediaPlugin extends Plugin {
           await leaf.setViewState({ type: PREVIEW_VIEW, state: {root}, active: false });
         }
         await this.app.workspace.revealLeaf(leaf);
-        if (leaf.view instanceof PreviewView) leaf.view.editorMoved(info.leaf, info.editor, file.path, true, true);
+        if (leaf.view instanceof PreviewView) leaf.view.editorMoved(info.leaf, info.editor, file.path, true, true, true);
         this.app.workspace.setActiveLeaf(info.leaf, {focus: true});
       } catch (error: unknown) { new Notice(errorMessage(error)); }
     } });
-    const notifyPreviews = (info: MarkdownView, changed: boolean): void => {
+    const notifyPreviews = (info: MarkdownView, changed: boolean, activated: boolean): void => {
       const path = info.file?.path;
       if (!path) return;
       for (const leaf of this.app.workspace.getLeavesOfType(PREVIEW_VIEW)) {
         if (leaf.view instanceof PreviewView) leaf.view.editorMoved(info.leaf, info.editor, path, changed,
-          this.app.workspace.activeLeaf === info.leaf);
+          this.app.workspace.activeLeaf === info.leaf, activated);
       }
     };
     this.registerEvent(this.app.workspace.on("active-leaf-change", (leaf: WorkspaceLeaf | null): void => {
-      if (leaf?.view instanceof MarkdownView) notifyPreviews(leaf.view, true);
+      if (leaf?.view instanceof MarkdownView) notifyPreviews(leaf.view, true, true);
     }));
     this.registerEditorExtension(EditorView.updateListener.of((update: ViewUpdate): void => {
       if (!update.docChanged && !update.selectionSet && !(update.focusChanged && update.view.hasFocus)) return;
       const info = update.state.field(editorInfoField, false);
-      if (info instanceof MarkdownView) queueMicrotask((): void => notifyPreviews(info, update.docChanged));
+      if (info instanceof MarkdownView) queueMicrotask((): void => notifyPreviews(info, update.docChanged, update.focusChanged && update.view.hasFocus));
     }));
     const showPanel = (create: boolean): void => {
       void openPanel().then((panel: ProjectPanel): void => { if (create) panel.createForm(); })

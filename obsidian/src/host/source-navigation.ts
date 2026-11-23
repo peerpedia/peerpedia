@@ -5,6 +5,7 @@ import {
 import type { LabelTarget, Range } from "../language/index";
 import { editorOffset } from "../language/coordinates";
 import type { ProjectSnapshot, SourceFile } from "../project/types";
+import { pathKey } from "../project/path-identity";
 import { editorText, vaultPath } from "./writing-projects";
 
 export const BIBLIOGRAPHY_SOURCE_VIEW = "peerpedia-bibliography-source";
@@ -56,10 +57,11 @@ export async function openSourceTarget(
     destination.view.show(path, source, target);
     return true;
   }
-  const file: TFile | null = app.vault.getFileByPath(path);
+  const key = pathKey(path);
+  const file = app.vault.getFileByPath(path) ?? app.vault.getMarkdownFiles().find((item: TFile): boolean => pathKey(item.path) === key);
   if (!file) return false;
   await leaf.openFile(file, { active: true, state: { mode: "source", source: true } });
-  if (!(leaf.view instanceof MarkdownView) || leaf.view.file?.path !== path) return false;
+  if (!(leaf.view instanceof MarkdownView) || !leaf.view.file || pathKey(leaf.view.file.path) !== key) return false;
   const editor: Editor = leaf.view.editor;
   if (editor.getValue() !== editorText(source)) return false;
   const from = editor.offsetToPos(editorOffset(source, target.from));
