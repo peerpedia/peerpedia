@@ -29,6 +29,7 @@ declare module "bananamark-codemirror/katex-commands.json" {
 }
 
 declare module "bananamark/scan" {
+  export const labelledMarkerSource: string;
   export function fenceMarker(line: string): string | undefined;
   export function closesFence(marker: string | undefined, open: string): boolean;
   export function escaped(source: string, offset: number): boolean;
@@ -37,4 +38,8 @@ declare module "bananamark/scan" {
 declare module "bananamark/internal/scan.mjs" {
   export const referenceStop: RegExp;
   export function validReferenceName(value: string): boolean;
+}
+
+declare module "bananamark/internal/lists.mjs" {
+  export function parseLists(source: string): { items: readonly { id: string; start: number; end: number }[] };
 }

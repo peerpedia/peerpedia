@@ -75,7 +75,7 @@ export default class PeerpediaPlugin extends Plugin {
         if (!file || !cm || cm.compositionStarted || cm.state.selection.ranges.length !== 1) return false;
         const doc = cm.state.doc;
         const offset = editor.posToOffset(editor.getCursor());
-        const current = projects.current(file.path, doc);
+        const current = projects.current(cm);
         if (current) {
           if (!current.chapter.references.some((item: Reference): boolean => item.from <= offset && offset <= item.to)) return false;
         } else if (!editor.getLine(editor.getCursor().line).includes("@")) return false;

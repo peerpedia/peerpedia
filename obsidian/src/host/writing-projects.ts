@@ -70,7 +70,7 @@ export class WritingProjects {
   private readonly roots = new Map<string, ProjectEntry>();
   private readonly editors = new Map<EditorView, string>();
   private readonly knownRoots = new Map<string, string | null>();
-  private readonly contexts = new Map<string, ReadyContext>();
+  private readonly contexts = new Map<EditorView, ReadyContext>();
   private readonly generations = new Map<string, number>();
   private readonly previous = new Map<string, WritingAnalysis>();
   private generation = 0;
@@ -89,6 +89,7 @@ export class WritingProjects {
 
   attach(view: EditorView, path: string | null): void {
     if (this.disposed || (this.editors.get(view) ?? null) === path) return;
+    this.contexts.delete(view);
     if (path === null) this.editors.delete(view);
     else this.editors.set(view, path);
     this.refreshRoots();
@@ -118,23 +119,22 @@ export class WritingProjects {
     if (this.disposed) return;
     const root = path === undefined ? null : this.rootFor(path);
     let related = false;
-    for (const editorPath of this.editors.values()) {
+    for (const [view, editorPath] of this.editors) {
       if (path === undefined || path === editorPath || (root !== null && this.rootFor(editorPath) === root)) {
-        this.contexts.delete(editorPath);
+        this.contexts.delete(view);
         this.generations.set(editorPath, ++this.generation);
         related = true;
       }
     }
-    if (path === undefined) this.contexts.clear();
     if (!related) return;
     this.changed();
     clearTimeout(this.timer);
     this.timer = setTimeout((): void => { void this.rebuild(); }, CHECK_DELAY_MS);
   }
 
-  current(path: string, doc: Text): WritingContext | null {
-    const ready = this.contexts.get(path);
-    return ready?.doc === doc ? ready.context : null;
+  current(view: EditorView): WritingContext | null {
+    const ready = this.contexts.get(view);
+    return ready?.doc === view.state.doc ? ready.context : null;
   }
 
   async completionSnapshot(path: string, source: string): Promise<CompletionSnapshot | null> {
@@ -278,7 +278,7 @@ export class WritingProjects {
     for (const [view, path] of this.editors) {
       const doc = view.state.doc;
       const generation = this.generations.get(path);
-      if (generation === undefined || view.compositionStarted || this.current(path, doc)) continue;
+      if (generation === undefined || view.compositionStarted || this.current(view)) continue;
       const entry = this.entryFor(path);
       if (entry?.read) continue;
       const { project } = this.snapshotFor(path, doc.toString(), entry?.disk ?? null, buffers);
@@ -315,7 +315,7 @@ export class WritingProjects {
           const context = path ? this.context({ project, path }, result) : null;
           if (context) {
             this.previous.set(key, result);
-            this.contexts.set(editor.path, { doc: editor.doc, context });
+            this.contexts.set(editor.view, { doc: editor.doc, context });
             this.changed();
           }
         }

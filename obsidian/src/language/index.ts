@@ -1,7 +1,8 @@
 import { EditorState } from "@codemirror/state";
 import type { SyntaxNode, SyntaxNodeRef, Tree } from "@lezer/common";
 import { defineDialect } from "bananamark";
-import { escaped } from "bananamark/scan";
+import { escaped, labelledMarkerSource } from "bananamark/scan";
+import { parseLists } from "bananamark/internal/lists.mjs";
 import { validReferenceName } from "bananamark/internal/scan.mjs";
 import { declaredLabels } from "bananamark-codemirror";
 import { isMap, isScalar, isSeq, parseDocument, type Scalar, type YAMLMap } from "yaml";
@@ -34,6 +35,7 @@ const parser = dialect.language.language.parser;
 const literals = new Set(["InlineCode", "FencedCode", "CodeBlock", "Comment", "FrontMatter", "HTMLComment"]);
 const math = new Set(["InlineMath", "DisplayMath"]);
 const heading = /^(?:ATX|Setext)Heading[1-6]$/;
+const possibleItemLabel = new RegExp(String.raw`(?:\d{1,9}[.)]|${labelledMarkerSource})[ \t]+\{@`);
 const labelAttribute = /\{([^{}\n]*)\}(?=[ \t]*\*?[ \t]*(?:#+[ \t]*)?\r?$)/;
 
 export function parseSource(source: string): Tree {
@@ -98,20 +100,27 @@ function attributeLabels(
   return [defineLabel(path, kind, contents.slice(1), offset + 1, offset + contents.length)];
 }
 
+function itemLabels(source: string, path: string): LabelTarget[] {
+  if (!possibleItemLabel.test(source)) return [];
+  const normalizedBreaks = Array.from(source.matchAll(/\r\n/g),
+    (match: RegExpMatchArray, removed: number): number => (match.index ?? 0) - removed,
+  );
+  const items = parseLists(source.replace(/\r\n?/g, "\n")).items;
+  const labels: LabelTarget[] = [];
+  let removed = 0;
+  for (const { id, start, end } of items) {
+    // parseLists walks the source in order. The declaration is on one line.
+    while (removed < normalizedBreaks.length && normalizedBreaks[removed] < start) removed++;
+    labels.push(defineLabel(path, "item", id, start + removed + 2, end + removed - 1));
+  }
+  return labels;
+}
+
 function attrsFrom(source: string, node: SyntaxNode, path: string): LabelTarget[] {
   if (heading.test(node.name)) {
     const end = node.name.startsWith("Setext") ? node.lastChild?.from ?? node.to : node.to;
     const text = source.slice(node.from, end).trimEnd();
     return attributeLabels(source, node.from, node.from + text.length, path, "heading");
-  }
-  if (node.name === "ListItem" || node.name === "LabelledItem") {
-    const paragraph = node.getChild("Paragraph");
-    const ref = paragraph?.firstChild;
-    if (ref?.name === "Reference" && ref.from === paragraph?.from && source.startsWith("{@", ref.from)) {
-      const from = ref.from + 2;
-      const to = ref.to - 1;
-      return [defineLabel(path, "item", source.slice(from, to), from, to)];
-    }
   }
   if (node.name === "EnvironmentFence" && node.getChild("EnvironmentName")) {
     return attributeLabels(source, node.from, node.to, path, "theorem");
@@ -182,6 +191,7 @@ export function scanChapter(source: string, path: string): {
     }
   };
 
+  addLabels(itemLabels(source, path));
   parseSource(source).iterate({
     enter(ref: SyntaxNodeRef): false | void {
       const { name, from, to, node } = ref;
@@ -229,6 +239,7 @@ export function scanChapter(source: string, path: string): {
     },
   });
 
+  labels.sort((left: LabelTarget, right: LabelTarget): number => left.from - right.from);
   return { labels, references, marks, diagnostics };
 }
 

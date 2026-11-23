@@ -126,3 +126,24 @@ test("indexes ordered and alphabetic list labels with their own precise ranges",
   }
   expect(analysis.diagnostics.filter((issue: { path: string }): boolean => issue.path === intro)).toEqual([]);
 });
+
+test.each(["-", "*", "+"])("keeps a braced reference inside a %s bullet from declaring an item", (marker: string): void => {
+  const source = `# Bullets\n\n${marker} {@item:bullet} A bullet.\n`;
+  const use = "# Other Chapter\n\nSee @item:bullet.";
+  const project = editFixture(editFixture(projectFixture(), intro, source), proof, use);
+  const analysis = analyzeProject(project);
+  expect(findTarget("item:bullet", analysis)).toBeNull();
+  expect(referenceAt(source, source.indexOf("item:bullet"))?.key).toBe("item:bullet");
+  expect(analysis.diagnostics).toContainEqual(expect.objectContaining({
+    path: proof, message: expect.stringContaining("item:bullet"),
+  }));
+});
+
+test("requires the renderer's label boundary and attributes items after CRLF and emoji", (): void => {
+  const source = "# 😀 List\r\n\r\n1. {@item:punctuated}!\r\n2. {@item:real} Text.\r\n";
+  const analysis = analyzeProject(editFixture(projectFixture(), intro, source));
+  expect(findTarget("item:punctuated", analysis)).toBeNull();
+  const real = findTarget("item:real", analysis);
+  expect(real).toMatchObject({ path: intro, kind: "item" });
+  expect(source.slice(real!.from, real!.to)).toBe("item:real");
+});
