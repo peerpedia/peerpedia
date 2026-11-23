@@ -1,6 +1,4 @@
 import { execFile } from "node:child_process";
-import { createHash } from "node:crypto";
-import { createReadStream } from "node:fs";
 import { cp, mkdir, mkdtemp, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { dirname, join, resolve } from "node:path";
@@ -8,6 +6,8 @@ import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 
 import { build } from "esbuild";
+
+import { cacheArchive, sha256 } from "./renderer-archive";
 
 const run = promisify(execFile);
 const obsidian = fileURLToPath(new URL("..", import.meta.url));
@@ -39,34 +39,17 @@ interface ThemeAssets {
   tikz: { fonts: string[]; license: string };
 }
 
-async function sha256(file: string): Promise<string> {
-  const hash = createHash("sha256");
-  for await (const bytes of createReadStream(file)) hash.update(bytes);
-  return hash.digest("hex");
-}
-
-async function downloadNode(staging: string): Promise<string> {
-  const downloads = join(obsidian, "dist/downloads");
-  await mkdir(downloads, { recursive: true });
-  const cached = join(downloads, archiveName);
-  try {
-    if (await sha256(cached) === nodeHash) return cached;
-  } catch (error: unknown) {
-    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
-  }
-  const download = join(staging, archiveName);
-  await run("/usr/bin/curl", [
-    "--fail", "--silent", "--show-error", "--max-time", "120", "--proto", "=https", "--output", download, nodeUrl,
-  ]);
-  if (await sha256(download) !== nodeHash) throw new Error("Node.js archive SHA-256 did not match the pinned release.");
-  // The staging parent can be on another volume from the download cache.
-  await cp(download, cached);
-  await rm(download);
-  return cached;
+async function downloadNode(): Promise<string> {
+  const cached = join(obsidian, "dist/downloads", archiveName);
+  return cacheArchive(cached, nodeHash, async (download: string): Promise<void> => {
+    await run("/usr/bin/curl", [
+      "--fail", "--silent", "--show-error", "--max-time", "120", "--proto", "=https", "--output", download, nodeUrl,
+    ]);
+  });
 }
 
 async function installNode(runtime: string, staging: string): Promise<object> {
-  const archive = await downloadNode(staging);
+  const archive = await downloadNode();
   await run("/usr/bin/tar", ["-xzf", archive, "-C", staging, `${nodeFolder}/bin/node`, `${nodeFolder}/LICENSE`]);
   const executable = join(runtime, "bin/node");
   await mkdir(dirname(executable), { recursive: true });
