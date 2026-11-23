@@ -106,11 +106,19 @@ function renderValue(doc: Document.Parsed, value: unknown, previous?: ParsedNode
   }).trimEnd();
 }
 
-function assertIndependentValue(node: ParsedNode | null | undefined, field: string): asserts node is ParsedNode {
-  const error = (): Error => new Error(`${field}使用共享 YAML 数据，请在 YAML 原文件中核对并调整。`);
-  if (!node) throw error();
-  visit(node, (_key: unknown, child: unknown): void => {
-    if ((isScalar(child) || isMap(child) || isSeq(child)) && child.anchor) throw error();
+function isAnchored(node: unknown): boolean {
+  return (isScalar(node) || isMap(node) || isSeq(node)) && Boolean(node.anchor);
+}
+
+function sharedDataError(field: string): Error {
+  return new Error(`${field}使用共享 YAML 数据，请在 YAML 原文件中核对并调整。`);
+}
+
+function assertIndependentEdit(field: string, owners: readonly unknown[], value?: ParsedNode): void {
+  if (owners.some(isAnchored)) throw sharedDataError(field);
+  if (!value) return;
+  visit(value, (_key: unknown, child: unknown): void => {
+    if (isAnchored(child)) throw sharedDataError(field);
   });
 }
 
@@ -166,13 +174,15 @@ export function patchEntry(source: string, key: string, patch: Fields): string {
   for (const [name, value] of Object.entries(patch)) {
     const parsed = parse(updated);
     const pair = entryPair(parsed.pairs, key);
-    const field = pair.value!.items.find((item: Pair<StringKey, ParsedNode | null>): boolean => item.key.value === name);
-    if (!field) {
-      updated = appendPairs(updated, parsed, pair.value!, { [name]: value });
-    } else if (field.value) {
-      if (isScalar(field.value) && Object.is(field.value.value, value)) continue;
-      assertIndependentValue(field.value, `字段「${name}」`);
-      updated = replaceValue(updated, parsed.doc, field.value, value);
+    const entry = pair.value!;
+    const field = entry.items.find((item: Pair<StringKey, ParsedNode | null>): boolean => item.key.value === name);
+    const current = field?.value;
+    if (isScalar(current) && Object.is(current.value, value)) continue;
+    assertIndependentEdit(`字段「${name}」`, [parsed.mapping, entry], current ?? undefined);
+    if (current) {
+      updated = replaceValue(updated, parsed.doc, current, value);
+    } else if (!field) {
+      updated = appendPairs(updated, parsed, entry, { [name]: value });
     } else {
       throw new Error(`无法用表单修改字段「${name}」。请编辑 YAML 原文件。`);
     }
@@ -246,6 +256,7 @@ export function removeEntry(source: string, key: string): string {
 export function renameEntry(source: string, from: string, to: string): string {
   const parsed = parse(source);
   const { key } = entryPair(parsed.pairs, from);
+  assertIndependentEdit(`引用键「${from}」`, [parsed.mapping], key);
   const replacement = renderValue(parsed.doc, to, key);
   const updated = replace(source, key.range[0], key.range[1], replacement);
   entryPair(parse(updated).pairs, to);
@@ -266,7 +277,7 @@ export function rewriteBibliographyProse(source: string, update: (field: Bibliog
   const parsed = parse(source);
   const edits: { node: ParsedNode; value: string }[] = [];
   const inspect = (
-    nodes: unknown, fields: Fields, key: StringKey, version?: number,
+    nodes: unknown, fields: Fields, key: StringKey, owners: readonly unknown[], version?: number,
   ): void => {
     for (const field of ["note", "howpublished"] as const) {
       const value = fields[field];
@@ -278,18 +289,22 @@ export function rewriteBibliographyProse(source: string, update: (field: Bibliog
       const [from, to] = node?.range ?? key.range;
       const after = update({ entry: key.value, version, field, value, from, to });
       if (after === value) continue;
-      assertIndependentValue(node, `条目「${key.value}」的 ${field} `);
+      const position = version === undefined ? "" : `版本 ${version} `;
+      const description = `条目「${key.value}」${position}的 ${field} `;
+      if (!node) throw sharedDataError(description);
+      assertIndependentEdit(description, [...owners, nodes], node);
       edits.push({ node, value: after });
     }
   };
   parsed.pairs.forEach((pair: EntryPair, index: number): void => {
     const { fields } = parsed.entries[index];
-    inspect(pair.value, fields, pair.key);
+    inspect(pair.value, fields, pair.key, [parsed.mapping]);
     if (!Array.isArray(fields.versions)) return;
     const versions = pair.value?.get("versions", true);
     for (const [number, version] of fields.versions.entries()) {
       if (!version || typeof version !== "object" || Array.isArray(version)) continue;
-      inspect(isSeq(versions) ? versions.items[number] : undefined, version, pair.key, number + 1);
+      inspect(isSeq(versions) ? versions.items[number] : undefined, version, pair.key,
+        [parsed.mapping, pair.value, versions], number + 1);
     }
   });
   edits.sort((left: { node: ParsedNode }, right: { node: ParsedNode }): number => right.node.range[0] - left.node.range[0]);

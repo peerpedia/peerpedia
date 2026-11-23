@@ -34,6 +34,21 @@ test("editing a shared anchor refuses a change to another field or a cited versi
   expect(patchEntry(aliasedVersion, "example", { title: "other" })).toBe(aliasedVersion);
 });
 
+const anchoredRecord = "example: &record\n  type: book\n  title: Original\n  note: 'See @example.'\n"
+  + "other:\n  type: book\n  title: Other\n  local-record: *record\n";
+
+test("editing or adding a field under an anchored entry refuses changes to aliased copies", (): void => {
+  expect((): string => patchEntry(anchoredRecord, "example", { title: "A new title" })).toThrow(/title.*原文件/);
+  expect((): string => patchEntry(anchoredRecord, "example", { year: 2026 })).toThrow(/year.*原文件/);
+  expect(patchEntry(anchoredRecord, "example", { title: "Original" })).toBe(anchoredRecord);
+});
+
+test("editing a different field leaves its anchored sibling and aliases intact", (): void => {
+  const updated = patchEntry(aliasedVersion, "example", { year: 2026 });
+  expect(updated).toBe(aliasedVersion + "  year: 2026\n");
+  expect(readEntries(updated)[0].fields).toMatchObject({ shorttitle: "other", versions: [{ key: "other" }] });
+});
+
 test("editing a block scalar preserves its header comment and neighboring bytes", (): void => {
   const updated = patchEntry("work:\r\n  title: |- # 标题\r\n    old\r\n  year: 2026\r\n", "work", {title: "更新\n标题"});
   expect(updated).toBe("work:\r\n  title: |- # 标题\r\n    更新\r\n    标题\r\n  year: 2026\r\n");
@@ -172,6 +187,27 @@ test("rename updates rendered YAML prose in shared, inline, and version fields",
     expect.objectContaining({ path: "references.yaml", entry: "other", field: "note", version: 1 }),
     expect.objectContaining({ path: "chapters/z-intro.md", entry: "inline", field: "note" }),
   ]));
+});
+
+test("renaming a citation in YAML prose stops if the enclosing entry is aliased", (): void => {
+  const project = editFixture(projectFixture(), "references.yaml", anchoredRecord);
+  expect((): readonly FileChange[] => planCitationRename(project, "example", "updated")).toThrow(/example.*note.*原文件/);
+});
+
+test.each([
+  ["version mapping", "  versions:\n    - &shared\n      relation: edition\n      note: 'See @example.'\n"],
+  ["version sequence", "  versions: &shared\n    - relation: edition\n      note: 'See @example.'\n"],
+])("renaming a citation stops if its enclosing %s is aliased", (_kind: string, versions: string): void => {
+  const source = "example:\n  type: book\n  title: Original\n" + versions
+    + "other:\n  type: book\n  title: Other\n  local-version: *shared\n";
+  const project = editFixture(projectFixture(), "references.yaml", source);
+  expect((): readonly FileChange[] => planCitationRename(project, "example", "updated")).toThrow(/example.*note.*原文件/);
+});
+
+test("renaming an anchored citation key does not change an aliased title field", (): void => {
+  const source = "? &shared example\n: {type: book, title: A}\nother: {type: book, title: B, shorttitle: *shared}\n";
+  const project = editFixture(projectFixture(), "references.yaml", source);
+  expect((): readonly FileChange[] => planCitationRename(project, "example", "updated")).toThrow(/引用键.*example.*原文件/);
 });
 
 test("deleting an entry reports references to its alternate versions", (): void => {
