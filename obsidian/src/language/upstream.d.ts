@@ -43,3 +43,20 @@ declare module "bananamark/internal/scan.mjs" {
 declare module "bananamark/internal/lists.mjs" {
   export function parseLists(source: string): { items: readonly { id: string; start: number; end: number }[] };
 }
+
+declare module "bananamark/internal/markup.mjs" {
+  export function readReference(source: string, from: number, options?: { ignoreEscape: boolean }): { end: number; key?: string } | undefined;
+  export function readMarkdownLink(source: string, from: number): { end: number; reference?: string } | undefined;
+  export function transformMarkup(source: string, extensions: readonly unknown[], options: {
+    indentedCode: boolean;
+    resolveReference(key: string, from: number, label?: string): { label: string; node: object };
+  }): string;
+}
+
+declare module "bananamark/internal/nodes.mjs" {
+  export function withNodes<T>(nodes: unknown[], action: () => T): T;
+}
+
+declare module "bananamark/internal/switches.mjs" {
+  export function withSyntax<T>(options: { tikz: boolean }, action: () => T): T;
+}

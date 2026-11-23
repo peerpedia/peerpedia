@@ -1,7 +1,8 @@
 import { randomUUID } from "node:crypto";
-import { ItemView, Modal, Notice, type App, type ViewStateResult, type WorkspaceLeaf } from "obsidian";
+import { ItemView, Modal, Notice, type ViewStateResult, type WorkspaceLeaf } from "obsidian";
 import type { TitlePreview } from "../language/title-preview";
-import { FormRequest } from "./form-request";
+import { renderBibliography } from "./bibliography-panel";
+import { button, PaperForm } from "./paper-form";
 import { LanguageWorker } from "../host/language-worker";
 import { openBuffers } from "../host/file-events";
 import { VaultProjectStore } from "../host/vault-store";
@@ -13,46 +14,13 @@ import { ConflictModal, errorMessage, openLocalFile } from "./conflict-modal";
 
 export const PROJECT_PANEL = "peerpedia-project";
 
-function button(parent: HTMLElement, text: string, action: () => void): HTMLButtonElement {
-  const node = parent.createEl("button", { text });
-  node.onclick = action;
-  return node;
-}
-
-class PaperForm extends Modal {
-  readonly request = new FormRequest();
-  override onClose(): void { this.request.cancel(); }
-
-  constructor(app: App, title: string) { super(app); this.setTitle(title); this.contentEl.addClass("peerpedia-paper-form"); }
-
-  field(label: string, initial: string = "", multiline: boolean = false): HTMLInputElement | HTMLTextAreaElement {
-    const wrapper = this.contentEl.createEl("label");
-    wrapper.createSpan({ text: label });
-    const input = multiline ? wrapper.createEl("textarea") : wrapper.createEl("input", { type: "text" });
-    input.value = initial;
-    return input;
-  }
-
-  submit(label: string, action: () => Promise<void>): void {
-    const status = this.contentEl.createEl("p", { attr: { role: "alert" } });
-    const save = button(this.contentEl, label, (): void => {
-      save.disabled = true;
-      status.empty();
-      void action().then((): void => this.close()).catch((error: unknown): void => {
-        status.setText(errorMessage(error)); save.disabled = false;
-      });
-    });
-    save.addClass("mod-cta");
-  }
-}
-
 export class ProjectPanel extends ItemView {
   private root: string | null = null;
   private snapshot: ProjectSnapshot | null = null;
   private stop?: () => void;
   private readId = 0;
   private selection = 0;
-  private readonly titleWorker = new LanguageWorker();
+  private readonly languageWorker = new LanguageWorker();
   private readonly titles = new Map<string, {digest: string; title: Promise<string>}>();
   private records: readonly RecoveryNotice[] = [];
 
@@ -69,7 +37,7 @@ export class ProjectPanel extends ItemView {
     if (typeof root === "string") await this.selectRoot(root);
   }
   override async onOpen(): Promise<void> { this.render(); }
-  override async onClose(): Promise<void> { this.stop?.(); ++this.readId; ++this.selection; this.titleWorker.dispose(); this.titles.clear(); }
+  override async onClose(): Promise<void> { this.stop?.(); ++this.readId; ++this.selection; this.languageWorker.dispose(); this.titles.clear(); }
 
   async selectRoot(root: string): Promise<void> {
     this.stop?.();
@@ -207,7 +175,7 @@ export class ProjectPanel extends ItemView {
       if (file) {
         let cached = this.titles.get(file.path);
         if (!cached || cached.digest !== file.digest) {
-          cached = { digest: file.digest, title: this.titleWorker.run("title", file.text) };
+          cached = { digest: file.digest, title: this.languageWorker.run("title", file.text) };
           this.titles.set(file.path, cached);
         }
         void cached.title.then((title: string): void => {
@@ -223,6 +191,10 @@ export class ProjectPanel extends ItemView {
       button(tools, "移出论文", (): void => this.removeForm(project, chapter));
     });
     button(this.contentEl, "添加章节", (): void => this.addForm(project));
+    renderBibliography(this.contentEl, {
+      app: this.app, store: this.store, worker: this.languageWorker, project,
+      save: (snapshot: ProjectSnapshot, changes: readonly FileChange[]): Promise<void> => this.save(snapshot, changes),
+    });
   }
 
   private move(project: ProjectSnapshot, id: string, position: number): void {
@@ -268,13 +240,13 @@ export class ProjectPanel extends ItemView {
     const preview = form.contentEl.createDiv();
     const current = (): boolean => form.contentEl.isConnected && this.snapshot?.revision === project.revision && this.root === project.root;
     const initial = form.request.begin(current);
-    void this.titleWorker.run("title",original.text).then((name: string): void => {
+    void this.languageWorker.run("title",original.text).then((name: string): void => {
       if (initial()) title.value = name;
     }).catch((): void => {});
     button(form.contentEl, "预览源码修改", (): void => {
       preview.empty();
       const valid = form.request.begin(current);
-      void this.titleWorker.run("previewTitle",{source:original.text, title:title.value}).then((result: TitlePreview): void => {
+      void this.languageWorker.run("previewTitle",{source:original.text, title:title.value}).then((result: TitlePreview): void => {
         if (!valid()) return;
         const edits = chapterTitleEdit(project,chapter,result);
         preview.createEl("p", {text:chapter.file});
@@ -319,10 +291,10 @@ export class ProjectPanel extends ItemView {
       const chapters = [...project.config.chapters ?? []];
       if (!chapters.length && file !== "paper.md") {
         const body = project.files.find((f: SourceFile): boolean => f.path === "paper.md");
-        chapters.push({file:"paper.md", id:randomUUID(), title:body ? await this.titleWorker.run("title",body.text) : ""});
+        chapters.push({file:"paper.md", id:randomUUID(), title:body ? await this.languageWorker.run("title",body.text) : ""});
       }
       if (chapters.some((ch: ChapterSpec): boolean => ch.file === file)) throw new Error("此文件已是论文成员。");
-      chapters.push({file,id:randomUUID(),title:await this.titleWorker.run("title",existing?.text ?? "")});
+      chapters.push({file,id:randomUUID(),title:await this.languageWorker.run("title",existing?.text ?? "")});
       if (!current()) throw new Error("文件或表单已更改，请重新核对。");
       await this.save(project, [{ path: file, beforeDigest: existing?.digest ?? null, afterText: existing?.text ?? "" },
         changeMembership(project, chapters)]);

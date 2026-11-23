@@ -1,3 +1,4 @@
+import { citationImpact, previewCitationRename, validateNewCitationKey } from "../bibliography/rename";
 import { previewTitle } from "./title-preview";
 import { inspectChapter } from "../../../editor/chapter-title.js";
 import { analyzeWriting, projectLabels, type SourceAnalysisCache } from "./analysis";
@@ -16,6 +17,17 @@ port.addEventListener("message", ({ data: request }: MessageEvent<LanguageReques
   let response: LanguageResponse;
   try {
     switch (request.kind) {
+      case "validateCitationKey":
+        validateNewCitationKey(request.value.project, request.value.key);
+        response = { id: request.id, kind: "validateCitationKey", value: undefined };
+        break;
+      case "citationImpact":
+        response = { id: request.id, kind: "citationImpact", value: citationImpact(request.value.project, request.value.key) };
+        break;
+      case "citationRename":
+        response = { id: request.id, kind: "citationRename",
+          value: previewCitationRename(request.value.project, request.value.from, request.value.to) };
+        break;
       case "previewTitle":
         response = {id: request.id, kind: "previewTitle", value: previewTitle(request.value.source, request.value.title)};
         break;

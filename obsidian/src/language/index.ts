@@ -1,7 +1,10 @@
 import { EditorState } from "@codemirror/state";
 import type { SyntaxNode, SyntaxNodeRef, Tree } from "@lezer/common";
-import { defineDialect } from "bananamark";
+import { BananamarkError, defineDialect } from "bananamark";
 import { escaped, labelledMarkerSource } from "bananamark/scan";
+import { readMarkdownLink, readReference, transformMarkup } from "bananamark/internal/markup.mjs";
+import { withNodes } from "bananamark/internal/nodes.mjs";
+import { withSyntax } from "bananamark/internal/switches.mjs";
 import { parseLists } from "bananamark/internal/lists.mjs";
 import { validReferenceName } from "bananamark/internal/scan.mjs";
 import { declaredLabels } from "bananamark-codemirror";
@@ -172,17 +175,60 @@ export function scanBibliography(source: string, path: string, start: number = 0
   return { labels, diagnostics };
 }
 
+// The editor grammar treats TikZ fence metadata and ordinary link text as
+// opaque for reference resolution. Ask the renderer's own inline scanner for
+// references in the captions it actually renders, with offsets into the input.
+function captionReferences(source: string, offset: number, tikz: boolean): Reference[] {
+  const references: Reference[] = [];
+  try {
+    withSyntax({ tikz }, (): void => {
+      withNodes([], (): void => {
+        transformMarkup(source, [], {
+          indentedCode: false,
+          resolveReference(key: string, position: number, label?: string): { label: string; node: object } {
+            if (label === undefined) {
+              const token = readReference(source, position);
+              if (token?.key !== undefined) {
+                references.push({ key: key.replace(/^-/, "").normalize("NFC"), from: offset + position, to: offset + token.end });
+              }
+            } else {
+              const link = readMarkdownLink(source, position);
+              if (link?.reference !== undefined) {
+                references.push(...captionReferences(label, offset + position + 1, false));
+                const to = offset + link.end - 1;
+                references.push({ key: key.normalize("NFC"), from: to - key.length - 1, to });
+              }
+            }
+            return { label: "", node: { type: "reference" } };
+          },
+        });
+      });
+    });
+  } catch (error: unknown) {
+    // Drafts can have incomplete or invalid markup in their captions.
+    if (!(error instanceof BananamarkError)) throw error;
+  }
+  return references;
+}
+
+export function inlineReferences(source: string): readonly Reference[] {
+  return captionReferences(source, 0, false);
+}
+
 export function scanChapter(source: string, path: string): {
   labels: LabelTarget[];
   references: Reference[];
   marks: SyntaxMark[];
   diagnostics: Diagnostic[];
+  bibliographies: Range[];
 } {
   const labels: LabelTarget[] = [];
   const references: Reference[] = [];
   const marks: SyntaxMark[] = [];
   const diagnostics: Diagnostic[] = [];
+  const bibliographies: Range[] = [];
   const definitions = new Set<number>();
+  let escapedReferenceEnd = 0;
   const addLabels = (targets: readonly LabelTarget[]): void => {
     for (const target of targets) {
       definitions.add(target.from);
@@ -191,10 +237,20 @@ export function scanChapter(source: string, path: string): {
     }
   };
 
+  const addReference = (reference: Reference): void => {
+    references.push(reference);
+    marks.push({ from: reference.from, to: reference.to, kind: "reference" });
+  };
+
   addLabels(itemLabels(source, path));
   parseSource(source).iterate({
     enter(ref: SyntaxNodeRef): false | void {
       const { name, from, to, node } = ref;
+      if (from < escapedReferenceEnd) return false;
+      if (name === "Escape" && source.startsWith("\\{@", from)) {
+        const literal = readReference(source, from + 1, { ignoreEscape: true });
+        if (literal?.key !== undefined) escapedReferenceEnd = literal.end;
+      }
       addLabels(attrsFrom(source, node, path));
       if (name === "FencedCode") {
         const language = fenceLanguage(source, node);
@@ -202,12 +258,21 @@ export function scanChapter(source: string, path: string): {
           const lineEnd = source.indexOf("\n", from);
           if (lineEnd >= 0 && lineEnd < to) {
             const end = node.lastChild?.name === "CodeMark" ? node.lastChild.from : to;
-            const bib = scanBibliography(source.slice(lineEnd + 1, end), path, lineEnd + 1);
+            const start = lineEnd + 1;
+            bibliographies.push({ from: start, to: end });
+            const bib = scanBibliography(source.slice(start, end), path, start);
             addLabels(bib.labels);
             diagnostics.push(...bib.diagnostics);
           }
         } else if (language && /^(?:math|tikz|tex|latex)$/.test(language)) {
           marks.push({ from, to, kind: "formula" });
+          if (language === "tikz" && node.lastChild?.name === "CodeMark") {
+            const opening = source.slice(from, source.indexOf("\n", from)).trimEnd();
+            if (opening.includes("caption=")) {
+              const closing = source.slice(node.lastChild.from, node.lastChild.to);
+              captionReferences(opening + "\n" + closing, from, true).forEach(addReference);
+            }
+          }
         }
         // Code examples can contain a mounted Markdown grammar.
         return false;
@@ -223,16 +288,12 @@ export function scanChapter(source: string, path: string): {
         const start = from + (braced ? 2 : 1);
         if (definitions.has(start)) return false;
         const key = source.slice(start, braced ? to - 1 : to).replace(/^-/, "").normalize("NFC");
-        references.push({ key, from, to });
-        marks.push({ from, to, kind: "reference" });
+        addReference({ key, from, to });
         return false;
       }
-      if (name === "Link" && !escaped(source, from)) {
-        const link = /\]\((@([^\s()]+))\)$/.exec(source.slice(from, to));
-        if (link) {
-          const start = from + link.index + 2;
-          references.push({ key: link[2].normalize("NFC"), from: start, to: to - 1 });
-          marks.push({ from: start, to: to - 1, kind: "reference" });
+      if (name === "Link") {
+        if (readMarkdownLink(source, from)?.reference !== undefined) {
+          captionReferences(source.slice(from, to), from, false).forEach(addReference);
         }
         return false;
       }
@@ -240,7 +301,8 @@ export function scanChapter(source: string, path: string): {
   });
 
   labels.sort((left: LabelTarget, right: LabelTarget): number => left.from - right.from);
-  return { labels, references, marks, diagnostics };
+  references.sort((left: Reference, right: Reference): number => left.from - right.from);
+  return { labels, references, marks, diagnostics, bibliographies };
 }
 
 export function isValidLabel(key: string): boolean {

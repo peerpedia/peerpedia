@@ -76,3 +76,13 @@
   overflow: auto;
   white-space: pre-wrap;
 }
+
+.peerpedia-bibliography-editor {
+  min-height: min(50vh, 28rem);
+  resize: vertical;
+}
+
+.peerpedia-citation-impact {
+  max-height: 14rem;
+  overflow: auto;
+}
