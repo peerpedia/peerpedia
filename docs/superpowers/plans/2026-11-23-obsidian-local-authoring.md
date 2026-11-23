@@ -53,6 +53,21 @@
 
 测试命令在新增 `obsidian/package.json` 中定义：`test` 为 `vitest run`，`typecheck` 为 `tsc --noEmit`，`build` 为 `tsx esbuild.config.ts production`，`package` 为 `tsx scripts/package-plugin.ts`，`check:types` 使用 ESLint 的显式函数返回与参数声明规则（禁用允许未标注回调的豁免）。测试 fixture 文件提供 `projectFixture():ProjectSnapshot` 和 `editFixture(base:ProjectSnapshot,path:string,text:string):ProjectSnapshot`，后者重新计算文件摘要与修订；fixture 固定为含 `intro`、`proof` 两章、一个定理标签和一份 YAML 文献的有效论文。
 
+## Task 0：提取共享文章主题，并让网站使用它
+
+**Files:** 创建 `packages/peerpedia-theme/{package.json,package-lock.json,README.md,LICENSE,src/tokens.css,src/article.css,src/bananamark.css,scripts/build.mjs,tests/theme.test.mjs}`；按实际需要添加构建/视觉测试 fixture。修改网站 `editor/{package.json,package-lock.json,build.mjs}`、`static/{theme.css,brand.css,reader.css,bananamark.css}`、`templates/includes/math.html` 及实际使用正文样式的模板。若图形字体资源路径迁移，更新 `editor/render-document.mjs` 相应路径及有关验证入口。此任务路径均相对仓库根目录。
+
+**Interfaces:** 包名 `@peerpedia/theme`，稳定入口 `@peerpedia/theme/style.css` 指向构建产物；公开资源清单明确列出 KaTeX/TikZ 字体与许可证。正文容器使用 `.peerpedia-article`，主题变量使用 `--pp-` 前缀；网站的原有变量通过网站端适配读取同一组定义。用户安装消费包不应需要 Django、网站模板或完整 Peerpedia checkout。
+
+- [ ] 先记录当前网站 reader 与上传预览/帮助示例的样式基线，覆盖标题、正文、定理、公式、表格、代码、书目、宽图形、窄屏与打印。新建独立消费 fixture，同一页放文章容器和普通宿主元素，验证样式只能影响文章区；可使用现有 Python Playwright 环境。
+- [ ] 提取正文排版、字体栈、颜色 token 和 BananaMark 外观，网站工具栏、目录、导航及 `.site-header` 保留在网站静态样式。不要复制维护两套正文样式，也不要将整份 website CSS 加前缀冒充模块化。
+- [ ] 明确封装 BananaMark、KaTeX 以及字体资源依赖，构建自包含 CSS/资产目录，使用相对可搬移 URL；上游全局 `:root`、`body` 和元素选择器也须处理，必要 `@font-face` 可保留。采用 CSS 解析器处理作用域/URL，不用字符串正则粗暴改写。打包前构建，确保 tarball 包含实际可用产物；此任务不向 npm 发布。
+- [ ] 网站通过本地包依赖和正常构建消费这一入口，阅读页、上传预览、帮助示例都加载共享主题；无关网站 UI 维持原视觉。若保留旧 CSS 路径作为兼容入口，应是明确适配且不能残留第二份正文实现。
+- [ ] 编写有意义的包契约测试：真实解析 CSS 检查作用域和资源存在，`npm pack` 到临时目录后独立安装/加载验证相对路径；在浏览器对比基线关键 computed styles/几何和页面截图，检查普通宿主的字体、配色、按钮不受影响。异常字体路径或未构建包应让测试失败，不只检查固定字符串。
+- [ ] 运行 `npm --prefix packages/peerpedia-theme test`、`npm --prefix packages/peerpedia-theme run build`、`npm --prefix editor run build` 和 `npm --prefix editor test`；运行受影响的 Django 模板/帮助测试以及针对上述范围的浏览器核验。所有新增或改动函数均显式参数和返回类型，JavaScript 使用完整 JSDoc。提交 `refactor: extract reusable Peerpedia article theme`，记录包消费例子和验证结果。
+
+任务 2 与 7 必须依赖此模块的资源清单和 CSS 入口，不再复制网站 `reader.css`/`bananamark.css`。先完成本任务再开始 Obsidian 产品实现。
+
 ## Task 1：验证原生编辑器适配，并建立最小插件
 
 **Files:** 创建 `obsidian/{manifest.json,package.json,package-lock.json,tsconfig.json,esbuild.config.ts,eslint.config.mjs,styles.css}`，`src/main.ts`、`src/project/{types.ts,document.ts}`、`src/language/probe.ts`、`src/host/editor-extension.ts`、`tests/editor-probe.test.ts`、`docs/compatibility.md`。本文除显式 `obsidian/` 路径外的 Files 路径都相对此目录。
@@ -132,7 +147,7 @@
 
 - [ ] 写失败测试：新请求 B 完成后旧请求 A 才返回，结果仍是 B；当前修订失败保留上次成功结果并标明不一致；首次失败 result 为 null；预览滚动事件不调用源码编辑器定位。
 - [ ] 运行 `npm --prefix obsidian test -- tests/preview.test.ts tests/scroll-link.test.ts` 确认失败，实现 300ms 文本更新防抖、最新修订匹配与任务取消。全书上下文转换经 `toPublicationDocument`，不可按当前文件单独重置编号。
-- [ ] 使用限定作用域的 Peerpedia 阅读样式与本地字体，所有预览资源通过本地资源适配器处理。过滤主动内容和远程自动加载源，主动外链交给系统浏览器。
+- [ ] 消费任务 0 的 `@peerpedia/theme/style.css` 和资源清单，所有预览资源通过本地资源适配器处理，不在插件内复制网站正文样式。过滤主动内容和远程自动加载源，主动外链交给系统浏览器。
 - [ ] 编辑切换/定位通过 SourceTarget 使预览跟随；预览普通滚动不反向定位，只有明确点击“定位源码”才执行。目标缺失时定位最近已知结构并标注近似。
 - [ ] 通过本任务测试、真实双栏阅读操作、断网预览验证及类型检查，提交 `feat(obsidian): add linked offline paper preview`。
 
