@@ -35,7 +35,7 @@ def database_url(scratch):
         server.cleanup()
 
 
-def main():
+def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--python",
@@ -52,8 +52,11 @@ def main():
     root = Path(__file__).resolve().parent.parent
     # Preserve the virtualenv entry point; resolving its symlink bypasses the venv.
     app_python = os.path.abspath(args.python)
-    if not (root / "static/vendor/bananamark/katex.min.css").is_file():
-        raise SystemExit("First run: npm ci --prefix editor && npm run build --prefix editor")
+    if not (root / "static/vendor/bananamark/assets.json").is_file():
+        raise SystemExit(
+            "First run: npm ci --prefix packages/peerpedia-theme && "
+            "npm ci --prefix editor && npm run build --prefix editor"
+        )
     with tempfile.TemporaryDirectory(prefix="peerpedia-browser-") as folder:
         scratch = Path(folder)
         with database_url(scratch) as uri:

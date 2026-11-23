@@ -7,6 +7,8 @@ __pycache__
 *.pyc
 staticfiles
 static/vendor
+**/node_modules
+packages/peerpedia-theme/dist
 backups
 .test-tools
 .test-postgres

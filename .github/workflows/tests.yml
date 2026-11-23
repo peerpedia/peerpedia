@@ -23,6 +23,7 @@ jobs:
         with:
           node-version: "22"
       - run: npm audit --prefix editor --audit-level=high
+      - run: npm audit --prefix packages/peerpedia-theme --audit-level=high
   quality:
     if: github.event_name != 'schedule'
     runs-on: ubuntu-latest
@@ -38,9 +39,13 @@ jobs:
         with:
           node-version: "22"
           cache: npm
-          cache-dependency-path: editor/package-lock.json
+          cache-dependency-path: |
+            editor/package-lock.json
+            packages/peerpedia-theme/package-lock.json
+      - run: npm ci --ignore-scripts --prefix packages/peerpedia-theme
       - run: npm ci --ignore-scripts --prefix editor
-      - run: editor/node_modules/.bin/prettier --check 'editor/*.js' 'editor/*.mjs' 'static/*.js'
+      - run: npm test --prefix packages/peerpedia-theme
+      - run: editor/node_modules/.bin/prettier --check 'editor/*.js' 'editor/*.mjs' 'static/*.js' 'packages/peerpedia-theme/{scripts,tests}/*.mjs'
       - run: for source in static/*.js editor/*.js editor/*.mjs; do node --check "$source"; done
       - run: python -m unittest discover -s scripts -p 'test_*_unit.py'
       - run: python scripts/check_dependencies.py
@@ -104,7 +109,10 @@ jobs:
         with:
           node-version: "22"
           cache: npm
-          cache-dependency-path: editor/package-lock.json
+          cache-dependency-path: |
+            editor/package-lock.json
+            packages/peerpedia-theme/package-lock.json
+      - run: npm ci --ignore-scripts --prefix packages/peerpedia-theme
       - run: npm ci --ignore-scripts --prefix editor
       - run: npm run build --prefix editor
       - run: python manage.py collectstatic --noinput
@@ -142,7 +150,10 @@ jobs:
         with:
           node-version: "22"
           cache: npm
-          cache-dependency-path: editor/package-lock.json
+          cache-dependency-path: |
+            editor/package-lock.json
+            packages/peerpedia-theme/package-lock.json
+      - run: npm ci --ignore-scripts --prefix packages/peerpedia-theme
       - run: npm ci --ignore-scripts --prefix editor
       - run: npm run build --prefix editor
       - run: python scripts/test_browser.py

@@ -3,20 +3,21 @@
   --frame: 50rem;
   --measure: 43rem;
   --gutter: clamp(1.25rem, 5vw, 4rem);
-  --ground: #fff;
-  --paper: #fff;
-  --ink: #202422;
-  --muted: #59615d;
-  --line: #d2dad5;
-  --control-border: #848e89;
-  --accent: #1a513b;
-  --accent-hover: #103d2e;
-  --soft: #f3f5f4;
-  --alert: #483d57;
-  --sans: system-ui, -apple-system, "Segoe UI", sans-serif;
-  --mono: ui-monospace, "SFMono-Regular", Consolas, monospace;
+  --ground: var(--pp-ground);
+  --paper: var(--pp-ground);
+  --ink: var(--pp-ink);
+  --muted: var(--pp-muted);
+  --line: var(--pp-line);
+  --control-border: var(--pp-control-border);
+  --accent: var(--pp-accent);
+  --accent-hover: var(--pp-accent-hover);
+  --soft: var(--pp-soft);
+  --alert: var(--pp-alert);
+  --serif: var(--pp-serif);
+  --sans: var(--pp-sans);
+  --mono: var(--pp-mono);
 }
-::selection { color: var(--ink); background: #dcebe4; }
+::selection { color: var(--ink); background: var(--pp-selection); }
 
 .site-header .header-inner {
   width:min(calc(100% - 2 * var(--gutter)),var(--frame)); margin-inline:auto;

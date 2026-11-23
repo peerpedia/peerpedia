@@ -1,9 +1,8 @@
 {% extends 'publishing/help_base.html' %}{% load static help_examples %}
 {% block title %}Writing and formatting · Peerpedia{% endblock %}
 {% block head %}
-<link rel="stylesheet" href="{% static 'reader.css' %}">
-{{ block.super }}
 {% include 'includes/math.html' %}
+{{ block.super }}
 <script defer src="{% static 'reading.js' %}"></script>
 {% endblock %}
 {% block guide_heading %}Writing and formatting{% endblock %}

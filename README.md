@@ -32,6 +32,7 @@ Use Python 3.12–3.14 and Node 22 or newer. Python 3.13 is used by the producti
 ```sh
 python3 -m venv .venv
 .venv/bin/python -m pip install -r requirements.lock
+npm ci --prefix packages/peerpedia-theme
 npm ci --prefix editor
 npm run build --prefix editor
 .venv/bin/python manage.py migrate
@@ -418,12 +419,14 @@ API no longer publish or accept passage discussions.
 ## Quality and release gates
 
 Install development-only checks with `pip install -r requirements-dev.txt` and
+`npm ci --ignore-scripts --prefix packages/peerpedia-theme` and
 `npm ci --ignore-scripts --prefix editor`. Run:
 
 ```sh
 python -m ruff check accounts publishing config cli/peerpedia_cli cli_tests browser_tests scripts
 python -m ruff format --check accounts publishing config cli/peerpedia_cli cli_tests browser_tests scripts
-editor/node_modules/.bin/prettier --check 'editor/*.js' 'editor/*.mjs' 'static/*.js'
+npm test --prefix packages/peerpedia-theme
+editor/node_modules/.bin/prettier --check 'editor/*.js' 'editor/*.mjs' 'static/*.js' 'packages/peerpedia-theme/{scripts,tests}/*.mjs'
 python -m unittest discover -s scripts -p 'test_*_unit.py'
 ```
 
@@ -647,8 +650,10 @@ Compilation is limited to 8 seconds per diagram and 20 seconds per rendering
 request, with at most 32 diagrams and 32 KB of source per diagram. Correct errors
 before publishing. Existing compiled diagrams share the package's cache.
 
-Run `npm ci --prefix editor` and `npm run build --prefix editor` to install the
-renderer and build local assets. Development uses a persistent Node child process.
+Install the renderer and theme dependencies using the commands in
+[Run locally](#run-locally). The editor build copies the packaged article theme
+and its fonts into the website's static assets. Development uses a persistent
+Node child process.
 Production sets `BANANAMARK_URL=http://renderer:8765` and uses the `renderer`
 Compose service: Node 22, an internal network, no database credentials, a read-only
 root filesystem and a writable cache volume. Docker provides process isolation.
@@ -656,8 +661,10 @@ The renderer returns native HTML/MathML/SVG; the browser retains its existing CS
 
 Build with `docker compose build web renderer`, run migrations, then start
 `renderer` and `web`. The old diagram queue and browser compiler are removed.
-`static/bananamark.css` supplies Peerpedia's article theme; it does not redefine the
-Markdown grammar. No old syntax compatibility
+[`@peerpedia/theme`](packages/peerpedia-theme/README.md) supplies the article
+typography, colors, and math fonts for the reader, upload preview, and writing
+guide examples. `static/bananamark.css` adapts the shared theme to the existing
+website layout. No old syntax compatibility
 renderer is retained. Desktop packaging is a separate follow-up.
 
 ### Chapters, references, and reading progress

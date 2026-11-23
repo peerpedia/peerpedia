@@ -6,7 +6,7 @@
   </div>
   <div class="help-sample-result">
     <h3>What the reader sees</h3>
-    <div class="markdown-body">{{ rendered|safe }}</div>
+    <div class="markdown-body peerpedia-article">{{ rendered|safe }}</div>
   </div>
   <figcaption>Rendered from the source shown here. {% if name == 'code' %}Code is displayed, not executed.{% elif name == 'tikzcd' or name == 'tikzpicture' %}The diagram uses the same compiler as an upload preview.{% endif %}</figcaption>
 </figure>

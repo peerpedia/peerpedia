@@ -1,0 +1,21 @@
+:where(.peerpedia-article) {
+  --pp-ground: #fff;
+  --pp-ink: #202422;
+  --pp-muted: #59615d;
+  --pp-line: #d2dad5;
+  --pp-control-border: #848e89;
+  --pp-accent: #1a513b;
+  --pp-accent-hover: #103d2e;
+  --pp-soft: #f3f5f4;
+  --pp-alert: #483d57;
+  --pp-selection: #dcebe4;
+  --pp-bm-faint: #8a918e;
+  --pp-hl-command: #23514b;
+  --pp-hl-command-mark: #5b8576;
+  --pp-hl-reference: #655181;
+  --pp-hl-structure: #98712c;
+  --pp-hl-string: #697078;
+  --pp-serif: Palatino, "Palatino Linotype", "Book Antiqua", "TeX Gyre Pagella", "Songti SC", serif;
+  --pp-sans: system-ui, -apple-system, "Segoe UI", sans-serif;
+  --pp-mono: ui-monospace, "SFMono-Regular", Consolas, monospace;
+}

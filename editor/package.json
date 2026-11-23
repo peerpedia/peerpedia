@@ -15,6 +15,7 @@
     "node-tikzjax": "1.0.5"
   },
   "devDependencies": {
+    "@peerpedia/theme": "file:../packages/peerpedia-theme",
     "prettier": "3.9.10",
     "jsdom": "23.2.0"
   },

@@ -1,0 +1,55 @@
+/* Peerpedia's presentation of BananaMark's native article structure. */
+.peerpedia-article {
+  --bm-link: var(--pp-accent);
+  --bm-accent-theorem: var(--pp-accent);
+  --bm-accent-definition: var(--pp-accent);
+  --bm-accent-example: var(--pp-muted);
+  --bm-accent-remark: var(--pp-muted);
+  --bm-muted: var(--pp-muted);
+  --bm-faint: var(--pp-bm-faint);
+  --bm-border: var(--pp-line);
+  --bm-surface: var(--pp-bm-surface, var(--pp-soft));
+  --bm-missing: var(--pp-alert);
+  --bm-target: var(--pp-soft);
+  --bm-target-border: var(--pp-bm-target-border, var(--pp-line));
+  --bm-hl-mark: var(--pp-bm-faint);
+  --bm-hl-command: var(--pp-hl-command);
+  --bm-hl-command-mark: var(--pp-hl-command-mark);
+  --bm-hl-reference: var(--pp-hl-reference);
+  --bm-hl-structure: var(--pp-hl-structure);
+  --bm-hl-string: var(--pp-hl-string);
+}
+.peerpedia-article .bm-env {
+  margin-block: 1.4em;
+  border-radius: 0;
+  background: transparent;
+}
+.peerpedia-article .bm-envtitle {
+  font-family: inherit;
+}
+.peerpedia-article .katex {
+  font-size: 1em;
+}
+.peerpedia-article .bm-math-display {
+  overflow-x: auto;
+  max-width: 100%;
+}
+.peerpedia-article .bm-tikz-rendered {
+  max-width: 100%;
+}
+.peerpedia-article .bm-bibliography {
+  font-size: 0.95em;
+}
+.peerpedia-article .bm-heading-link {
+  color: inherit;
+  opacity: 0.35;
+}
+.peerpedia-article .bm-heading-link:hover,
+.peerpedia-article .bm-heading-link:focus {
+  opacity: 1;
+}
+
+.peerpedia-article pre.bm-code-block {
+  padding: var(--pp-code-block-padding, 1rem 1.25rem);
+  background: var(--bm-surface);
+}
