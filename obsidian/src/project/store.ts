@@ -24,6 +24,7 @@ export interface ProjectEvent {
 
 export interface ProjectStore {
   read(root: string): Promise<ProjectSnapshot>;
+  /** Bound creation resolves only after the verified binding is durably published alongside the source project. */
   create(root: string, changes: readonly FileChange[], initialBinding?: RemoteBinding): Promise<ProjectSnapshot>;
   apply(root: string, expectedRevision: string, changes: readonly FileChange[]): Promise<ProjectSnapshot>;
   /** Report the initial disk state and subsequent changes with project-relative paths. */

@@ -1,13 +1,14 @@
 import { Notice, type App } from "obsidian";
 import type { ProjectSnapshot } from "../project/types";
 import { PeerpediaApi } from "../remote/api";
-import { importPaper, type ImportStore } from "../remote/import";
+import type { ProjectStore } from "../project/store";
+import { importPaper } from "../remote/import";
 import { parseRemoteLink } from "../remote/links";
 import type { Transport } from "../remote/types";
 import { PaperForm } from "./paper-form";
 
 export class ImportModal extends PaperForm {
-  constructor(app: App, origin: string, transport: Transport, store: ImportStore,
+  constructor(app: App, origin: string, transport: Transport, store: ProjectStore,
     complete: (project: ProjectSnapshot) => Promise<void>) {
     super(app,"从 Peerpedia 导入论文");
     const site = this.field("站点地址",origin);

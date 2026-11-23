@@ -16,7 +16,8 @@ import { readSource } from "../project/source-file";
 import { keepConflict, newJournal, PreconditionConflict, safePath, writeTransaction, type WriteHost } from "../project/transaction";
 import { recoverIn, inspectRecovery, type RecoveryFile, type RecoveryNotice } from "../project/recovery";
 
-import { finishImport, prepareImport, readVersion, writeVersion, type BindingVersion } from "../remote/binding";
+import { finishImport, prepareImport, readPendingImport, readVersion, writeVersion, type BindingVersion } from "../remote/binding";
+import { importChanges } from "../remote/import";
 import type { RemoteBinding } from "../remote/types";
 
 const WATCH_SETTLE_MS = 30;
@@ -243,8 +244,19 @@ export class VaultProjectStore implements ProjectStore {
 
   async recoverImport(root: string): Promise<void> {
     await this.exclusive(root, (): Promise<ProjectSnapshot> => this.anchored(root, async (tree: AnchoredFiles): Promise<ProjectSnapshot> => {
-      const project = await this.pinnedSnapshot(tree,root);
-      await finishImport(tree,root,project.revision);
+      const intent = await readPendingImport(tree,root);
+      await rejectNestedProject(this.basePath,root,join(this.basePath,root));
+      const changes = importChanges(intent.binding.workingBase);
+      for (const change of changes) {
+        const existing = await tree.source(join(root,change.path));
+        if (!existing) continue;
+        if (existing.text !== change.afterText) throw new Error(`导入文件已更改，请核对：${change.path}`);
+        change.beforeDigest = existing.digest;
+      }
+      // The transaction rechecks every observed digest and open buffer. Equal members
+      // are dependencies only. Missing ones use exclusive publication, manifest last.
+      const project = await writeTransaction(tree,root,null,changes,this.host,(): Promise<ProjectSnapshot> => this.pinnedSnapshot(tree,root));
+      await finishImport(tree,root,project.revision,intent.binding);
       return project;
     }));
   }
@@ -283,12 +295,14 @@ export class VaultProjectStore implements ProjectStore {
           }));
           await prepareImport(tree,root,initialBinding,projectRevision(files));
         }
-        const project = await writeTransaction(tree, root, null, changes, this.host, (): Promise<ProjectSnapshot> => this.pinnedSnapshot(tree,root));
-        if (initialBinding) {
-          try { await finishImport(tree,root,project.revision); }
-          catch (error: unknown) { throw new Error("导入绑定未完成，请从论文管理面板打开此文件夹并完成绑定。", {cause:error}); }
+        try {
+          const project = await writeTransaction(tree,root,null,changes,this.host,(): Promise<ProjectSnapshot> => this.pinnedSnapshot(tree,root));
+          if (initialBinding) await finishImport(tree,root,project.revision,initialBinding);
+          return project;
+        } catch (error: unknown) {
+          if (!initialBinding) throw error;
+          throw new Error("导入未完成，请从论文管理面板打开此文件夹并完成绑定。", {cause:error});
         }
-        return project;
       });
     });
   }

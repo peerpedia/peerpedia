@@ -30,11 +30,7 @@ export function importedRevision(snapshot: VerifiedSnapshot): string {
   })));
 }
 
-export interface ImportStore extends ProjectStore {
-  loadBinding(root: string): Promise<RemoteBinding | null>;
-}
-
-export async function importPaper(target: RemoteTarget, root: string, api: PeerpediaApi, store: ImportStore,
+export async function importPaper(target: RemoteTarget, root: string, api: PeerpediaApi, store: ProjectStore,
   current: () => boolean = (): boolean => true, onCommit?: () => void): Promise<ProjectSnapshot> {
   const live = (): void => { if (!current()) throw new Error("已取消导入。"); };
   live();
@@ -47,10 +43,5 @@ export async function importPaper(target: RemoteTarget, root: string, api: Peerp
     workingBase:working,lastSubmitted:null,activePr:null,checkedAt:new Date().toISOString()};
   live();
   onCommit?.();
-  const project = await store.create(root,changes,binding);
-  const saved = await store.loadBinding(root);
-  if (saved?.origin !== binding.origin || saved.workingBase.hash !== working.hash || saved.acceptedBase.hash !== accepted.hash) {
-    throw new Error("无法确认导入绑定，请打开论文面板核对。");
-  }
-  return project;
+  return store.create(root,changes,binding);
 }

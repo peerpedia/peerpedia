@@ -135,13 +135,29 @@ export async function prepareImport(tree: AnchoredFiles, root: string, binding: 
   await publish(tree,dir,pending,JSON.stringify({previous:null,binding:decodeBinding(binding),importRevision:revision}));
 }
 
-export async function finishImport(tree: AnchoredFiles, root: string, revision: string): Promise<void> {
+interface PendingImport {
+  binding: RemoteBinding;
+  revision: string;
+  digest: string;
+}
+
+export async function readPendingImport(tree: AnchoredFiles, root: string): Promise<PendingImport> {
   const dir = join(root,state);
+  if (await tree.source(join(dir,first))) throw new Error("论文已有正式绑定，请重新打开面板核对。");
   const staged = await tree.source(join(dir,pending));
   if (!staged) throw new Error("找不到待完成的导入绑定。");
   const record = object(JSON.parse(staged.text));
   const binding = decodeBinding(record.binding);
-  if (record.previous !== null || checksum(record.importRevision) !== revision || importedRevision(binding.workingBase) !== revision) throw new Error("导入文件已更改，请核对恢复记录。");
+  const revision = checksum(record.importRevision);
+  if (record.previous !== null || importedRevision(binding.workingBase) !== revision) throw new Error("待恢复的导入记录与工作快照不符。");
+  return {binding,revision,digest:staged.digest};
+}
+
+export async function finishImport(tree: AnchoredFiles, root: string, revision: string, binding: RemoteBinding): Promise<void> {
+  const intent = await readPendingImport(tree,root);
+  if (intent.revision !== revision || !isDeepStrictEqual(intent.binding,binding)) throw new Error("导入文件或绑定已更改，请核对恢复记录。");
+  const dir = join(root,state);
   tree.rename(join(dir,pending),join(dir,first),"publish");
   await tree.sync(dir);
+  if ((await tree.source(join(dir,first)))?.digest !== intent.digest) throw new Error("无法确认导入绑定，请打开论文面板核对。");
 }

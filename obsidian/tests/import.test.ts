@@ -1,11 +1,12 @@
 import { createHash } from "node:crypto";
-import { mkdtemp, readFile, readdir, rm, writeFile, mkdir } from "node:fs/promises";
+import { mkdtemp, readFile, readdir, rm, writeFile, mkdir, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Vault } from "obsidian";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { VaultProjectStore } from "../src/host/vault-store";
 import { AnchoredFiles } from "../src/project/anchored-files";
+import type { ProjectStore } from "../src/project/store";
 import { PeerpediaApi } from "../src/remote/api";
 import { checkProject, checkRemote } from "../src/remote/controller";
 import { importPaper } from "../src/remote/import";
@@ -41,7 +42,9 @@ beforeEach(async (): Promise<void> => {
 afterEach(async (): Promise<void> => { vi.restoreAllMocks(); await rm(vault,{recursive:true,force:true}); });
 
 test("version-qualified import keeps the exact historical source and records the verified current paper separately", async (): Promise<void> => {
-  await importPaper(target,"historical",api(),store);
+  const projectStore: ProjectStore = {create:store.create.bind(store),apply:store.apply.bind(store),
+    read:store.read.bind(store),watch:store.watch.bind(store)};
+  await importPaper(target,"historical",api(),projectStore);
   expect(await readFile(join(vault,"historical/paper.md"),"utf8")).toBe(old.markdown);
   expect(await store.loadBinding("historical")).toMatchObject({origin,paperId:paper,
     workingBase:{hash:old.hash},acceptedBase:{hash:current.hash},activePr:null,lastSubmitted:null});
@@ -135,4 +138,56 @@ test("a missing bound proposal or a mismatched site leaves the project's binding
   const lastCall = calls.length;
   await expect(checkRemote({...withPr,origin:"https://another.invalid"},api())).rejects.toThrow(/站点/);
   expect(calls).toHaveLength(lastCall);
+});
+
+test("a crash immediately after durable import intent resumes offline without a manifest or source journal", async (): Promise<void> => {
+  const sync = AnchoredFiles.prototype.sync;
+  const fault = vi.spyOn(AnchoredFiles.prototype,"sync").mockImplementation(async function(this:AnchoredFiles,path:string):Promise<void> {
+    await sync.call(this,path);
+    if (path === "early/.peerpedia-obsidian" && this.list(path).includes("import-pending.json")) throw new Error("intent durable");
+  });
+  await expect(importPaper(target,"early",api(),store)).rejects.toThrow();
+  expect(await readdir(join(vault,"early"))).toEqual([".peerpedia-obsidian"]);
+  expect(await readdir(join(vault,"early/.peerpedia-obsidian"))).toEqual(["import-pending.json"]);
+  fault.mockRestore();
+  const reopened = new VaultProjectStore(vault,{} as Pick<Vault,"on"|"offref">);
+  await reopened.recoverImport("early");
+  expect(await readFile(join(vault,"early/paper.md"),"utf8")).toBe(old.markdown);
+  expect(await reopened.loadBinding("early")).toMatchObject({workingBase:{hash:old.hash},acceptedBase:{hash:current.hash}});
+  expect(calls).toHaveLength(2);
+});
+
+test("partial chapter recovery checks every present member and native draft before restoring only missing files", async (): Promise<void> => {
+  const rename = AnchoredFiles.prototype.rename;
+  const fault = vi.spyOn(AnchoredFiles.prototype,"rename").mockImplementation(function(this:AnchoredFiles,from:string,to:string,op:"publish"|"swap"):void {
+    if (to === "partial-chapters/chapters/results.md") throw new Error("interrupted second chapter");
+    rename.call(this,from,to,op);
+  });
+  const root = "partial-chapters";
+  await expect(importPaper({kind:"paper",identifier:paper},root,api(),store)).rejects.toThrow();
+  fault.mockRestore();
+  const chapter = join(vault,root,"chapters/intro.md"), missing = join(vault,root,"chapters/results.md");
+  const inode = (await stat(chapter)).ino;
+  const exact = current.chapters[0].markdown;
+  expect(await readFile(chapter,"utf8")).toBe(exact);
+  let drafts: readonly string[] = [];
+  const reopened = new VaultProjectStore(vault,{} as Pick<Vault,"on"|"offref">,{
+    buffers:(path: string): readonly string[] => path === root + "/chapters/intro.md" ? drafts : [],
+  });
+  await writeFile(chapter,"external version");
+  await expect(reopened.recoverImport(root)).rejects.toThrow(/已更改/);
+  expect(await readFile(chapter,"utf8")).toBe("external version");
+  await expect(stat(missing)).rejects.toMatchObject({code:"ENOENT"});
+  await writeFile(chapter,exact);
+  drafts = ["unsaved native work"];
+  await expect(reopened.recoverImport(root)).rejects.toThrow(/编辑器/);
+  await expect(stat(missing)).rejects.toMatchObject({code:"ENOENT"});
+  expect(await reopened.loadBinding(root)).toBeNull();
+  drafts = [];
+  await reopened.recoverImport(root);
+  expect((await stat(chapter)).ino).toBe(inode);
+  expect(await readFile(missing,"utf8")).toBe(current.chapters[1].markdown);
+  expect(await readFile(join(vault,root,"references.yaml"),"utf8")).toBe(current.bibliography);
+  expect(await reopened.loadBinding(root)).toMatchObject({workingBase:{hash:current.hash}});
+  expect(calls).toHaveLength(1);
 });
