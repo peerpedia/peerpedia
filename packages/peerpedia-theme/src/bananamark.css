@@ -40,6 +40,9 @@
 .peerpedia-article .bm-bibliography {
   font-size: 0.95em;
 }
+.peerpedia-article .bm-bibliography p {
+  margin-bottom: var(--pp-bibliography-paragraph-gap, 1em);
+}
 .peerpedia-article .bm-heading-link {
   color: inherit;
   opacity: 0.35;

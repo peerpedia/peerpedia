@@ -38,8 +38,9 @@ changes article links and theorem accents. Sites that share the palette in
 their own interface can load `@peerpedia/theme/tokens.css` and apply
 `.peerpedia-theme-tokens` to the desired region. The Peerpedia website opts in
 to those tokens and maps its existing variables to them. It also sets
-`--pp-bm-surface`, `--pp-bm-target-border`, and `--pp-code-block-padding` on
-preview and writing guide examples to preserve their existing appearance.
+`--pp-bm-surface`, `--pp-bm-target-border`, `--pp-code-block-padding`, and
+`--pp-bibliography-paragraph-gap` on preview and writing guide examples to
+preserve their existing appearance.
 
 ## Fonts and licenses
 

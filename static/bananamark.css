@@ -1,8 +1,9 @@
-/* Preview and help samples use the site's lighter code-block treatment. */
+/* Preview and help use a lighter code-block treatment and compact bibliography. */
 .site .peerpedia-article {
   --pp-bm-surface: var(--pp-ground);
   --pp-bm-target-border: var(--pp-control-border);
   --pp-code-block-padding: .75em 1em;
+  --pp-bibliography-paragraph-gap: 0;
 }
 
 /* These website disclosures previously picked up BananaMark's unscoped rules. */
