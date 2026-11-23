@@ -1,3 +1,4 @@
+import { join } from "node:path";
 import type { Text } from "@codemirror/state";
 import { EditorView, type ViewUpdate } from "@codemirror/view";
 import { editorInfoField, FileSystemAdapter, MarkdownView, Notice, Plugin, type Editor, type MarkdownFileInfo, type TAbstractFile, type WorkspaceLeaf } from "obsidian";
@@ -18,6 +19,12 @@ import { findTarget } from "./language/targets";
 import { resolveScope } from "./project/scope";
 import type { RecoveryNotice } from "./project/recovery";
 import { CONFIG_PATH } from "./project/store";
+
+import { storedIdentity } from "./remote/account";
+import { DeviceCredentials } from "./remote/credentials";
+import { NodeTransport } from "./remote/transport";
+import type { AccountIdentity } from "./remote/types";
+import { ConnectionModal } from "./ui/connection-modal";
 
 export interface WritingScope {
   folders: Readonly<Record<string, boolean>>;
@@ -42,7 +49,7 @@ export default class PeerpediaPlugin extends Plugin {
   override async onload(): Promise<void> {
     const adapter = this.app.vault.adapter;
     if (!(adapter instanceof FileSystemAdapter)) return;
-    const settings: { writingScope?: Partial<WritingScope> } | null = await this.loadData();
+    const settings: { writingScope?: Partial<WritingScope>; connection?: unknown } | null = await this.loadData();
     this.writingScope = {
       folders: scopeRules(settings?.writingScope?.folders),
       files: scopeRules(settings?.writingScope?.files),
@@ -88,6 +95,11 @@ export default class PeerpediaPlugin extends Plugin {
       return leaf.view;
     };
     const dir = this.manifest.dir ?? this.app.vault.configDir + "/plugins/" + this.manifest.id;
+    const connection = new ConnectionModal(this.app, storedIdentity(settings?.connection), new NodeTransport(),
+      new DeviceCredentials(join(adapter.getBasePath(), dir, "native/keychain")),
+      (identity: AccountIdentity | null): Promise<void> => this.updateConnection(identity));
+    this.addCommand({ id: "connect-account", name: "连接或断开 Peerpedia 账号", callback: (): void => connection.open() });
+    this.register((): void => connection.close());
     this.registerView(PREVIEW_VIEW, (leaf: WorkspaceLeaf): PreviewView => new PreviewView(leaf, store, dir));
     this.addCommand({ id: "preview-paper", name: "打开论文预览", editorCallback: async (_editor: Editor, info: MarkdownView | MarkdownFileInfo): Promise<void> => {
       if (!(info instanceof MarkdownView)) return;
@@ -265,11 +277,23 @@ export default class PeerpediaPlugin extends Plugin {
     scope = {folders: scopeRules(scope.folders), files: scopeRules(scope.files)};
     this.writingScope = scope;
     this.refreshWritingScope();
-    // Serialize rename bursts and setting edits. Other plugin settings survive each save.
+    return this.mutateSettings((settings: Record<string,unknown>): void => { settings.writingScope = scope; })
+      .then(async (): Promise<void> => { await this.scopeMoves?.refresh(); });
+  }
+
+  updateConnection(identity: AccountIdentity | null): Promise<void> {
+    return this.mutateSettings((settings: Record<string,unknown>): void => {
+      if (identity) settings.connection = {origin:identity.origin, username:identity.username};
+      else delete settings.connection;
+    });
+  }
+
+  private mutateSettings(change: (settings: Record<string,unknown>) => void): Promise<void> {
     const pending = this.settingsWrite.catch((): void => {}).then(async (): Promise<void> => {
       const existing: Record<string, unknown> | null = await this.loadData();
-      await this.saveData({ ...existing, writingScope: scope });
-      await this.scopeMoves?.refresh();
+      const settings = { ...existing };
+      change(settings);
+      await this.saveData(settings);
     });
     this.settingsWrite = pending;
     return pending;

@@ -71,6 +71,10 @@ export async function packagePlugin(outputDirectory: string): Promise<void> {
     staging = await mkdtemp(join(parent, ".peerpedia-package-"));
     const plugin = join(staging, "peerpedia");
     await mkdir(plugin);
+    const native = join(plugin, "native");
+    await mkdir(native);
+    await run("xcrun", ["swiftc", "-O", "-target", "arm64-apple-macosx11.0",
+      join(project, "native/keychain.swift"), "-o", join(native, "keychain")]);
     const inputs = join(staging, "build-inputs.json");
     await run("npm", ["run", "build", "--", join(plugin, "main.js"), inputs], { cwd: project });
     await run("npm", ["run", "package:renderer", "--", join(plugin, "renderer")], { cwd: project });

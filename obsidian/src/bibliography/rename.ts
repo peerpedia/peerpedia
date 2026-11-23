@@ -1,3 +1,4 @@
+import type { Diagnostic } from "../language/diagnostics";
 import { inlineReferences, isValidLabel, scanBibliography, scanChapter, type LabelTarget, type Range, type Reference } from "../language/index";
 import { projectMembers } from "../project/members";
 import type { FileChange } from "../project/store";
@@ -53,7 +54,9 @@ function scanChapters(project: ProjectSnapshot): { labels: LabelTarget[]; chapte
     const file = project.files.find((item: SourceFile): boolean => item.path === path);
     if (!file) throw new Error(`找不到正文原文件「${path}」。`);
     const scanned = scanChapter(file.text, path);
-    if (scanned.diagnostics.length) throw new Error(`「${path}」包含无法读取的内嵌书目，请先修正。`);
+    if (scanned.diagnostics.some((issue: Diagnostic): boolean => issue.code === "bibliography-yaml")) {
+      throw new Error(`「${path}」包含无法读取的内嵌书目，请先修正。`);
+    }
     labels.push(...scanned.labels);
     chapters.push({ file, references: scanned.references, bibliographies: scanned.bibliographies });
   }

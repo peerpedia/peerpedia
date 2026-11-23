@@ -142,6 +142,13 @@ def offline(page: Page, context: BrowserContext, runtime: Path) -> list[str]:
         const child = require('node:child_process');
         const spawn = child.spawn;
         window.packageRendererStarts = 0;
+        window.pluginNodeRequests = 0;
+        for (const protocol of ['node:http', 'node:https']) {
+            require(protocol).request = /** @param {...unknown} _args @returns {never} */ (..._args) => {
+                ++window.pluginNodeRequests;
+                throw new Error('Unexpected Node network request in offline journey');
+            };
+        }
         child.spawn = /** @param {string} file @param {string[]} args
           * @param {object} options @returns {import('node:child_process').ChildProcess} */ (file, args, options) => {
             if (file !== node) return spawn(file, args, options);
@@ -195,6 +202,13 @@ def verify(page: Page, context: BrowserContext, vault: Path, package: Path, evid
     assert json.loads((installed / "data.json").read_text()) == {
         "writingScope": {"folders": {PROJECT: True}, "files": {proof: False}},
     }
+    assert page.evaluate("app.commands.executeCommandById('peerpedia:connect-account')")
+    modal = next(window.locator(".modal").filter(has_text="连接 Peerpedia 账号") for window in context.pages
+                 if window.locator(".modal").filter(has_text="连接 Peerpedia 账号").count())
+    assert modal.locator('input[type="url"]').input_value() == "https://peerpedia.dev"
+    modal.locator('input[type="password"]').fill("synthetic-never-submitted")
+    modal.locator(".modal-header-button").click()
+    modal.wait_for(state="hidden")
     open_source(page, intro)
     page.evaluate("void (window.initialEditor = sourceLeaf.view.editor.cm)")
     assert page.evaluate("app.commands.executeCommandById('peerpedia:preview-paper')")
@@ -280,6 +294,9 @@ def verify(page: Page, context: BrowserContext, vault: Path, package: Path, evid
     assert renderer_processes(runtime) and paused not in renderer_processes(runtime)
     print("PASS controlled diagram stall timed out after 40 seconds, retained preview and restarted the renderer", flush=True)
 
+    assert page.evaluate("window.pluginNodeRequests") == 0
+    assert "synthetic-never-submitted" not in (installed / "data.json").read_text()
+    print("PASS no Node HTTP(S) requests on enable, account dialog open/cancel, source editing or preview", flush=True)
     page.evaluate("app.plugins.disablePluginAndSave('peerpedia')")
     preview.wait_for(state="detached")
     assert not page.evaluate("app.commands.commands['peerpedia:preview-paper']")

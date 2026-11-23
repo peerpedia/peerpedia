@@ -155,7 +155,7 @@ export function scanBibliography(source: string, path: string, start: number = 0
   const doc = parseDocument(source, { uniqueKeys: false });
   const labels: LabelTarget[] = [];
   const diagnostics = doc.errors.map((error: { pos: [number, number]; message: string }): Diagnostic => ({
-    path, from: start + error.pos[0], to: start + error.pos[1], message: error.message.split("\n")[0],
+    code: "bibliography-yaml", path, from: start + error.pos[0], to: start + error.pos[1], message: error.message.split("\n")[0],
   }));
   if (!isMap(doc.contents)) return { labels, diagnostics };
 
@@ -262,7 +262,7 @@ export function scanChapter(source: string, path: string): {
   if (source.includes("![")) tree.iterate({
     enter(node: SyntaxNodeRef): void {
       const range = publicationImage(source, node);
-      if (range) diagnostics.push({path, ...range, message: "论文不支持图片，请使用 TikZ 图形。"});
+      if (range) diagnostics.push({code: "publication-compatibility", path, ...range, message: "论文不支持图片，请使用 TikZ 图形。"});
     },
   });
   tree.iterate({
@@ -273,7 +273,7 @@ export function scanChapter(source: string, path: string): {
       if (name === "PlainBracket" && source.startsWith("[[", from)) {
         const wiki = /\[\[[^\[\]\r\n]+\]\]/y;
         wiki.lastIndex = from;
-        if (wiki.test(source)) diagnostics.push({path, from, to: wiki.lastIndex, message: "论文会按普通文字显示此 Obsidian 链接。"});
+        if (wiki.test(source)) diagnostics.push({code: "publication-compatibility", path, from, to: wiki.lastIndex, message: "论文会按普通文字显示此 Obsidian 链接。"});
       }
       if (name === "Escape" && source.startsWith("\\{@", from)) {
         const literal = readReference(source, from + 1, { ignoreEscape: true });

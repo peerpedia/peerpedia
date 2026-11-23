@@ -49,10 +49,11 @@
 
 ## Task R1：手动网络边界与 Mac 凭据存储
 
-**Files:** 创建 `remote/{types.ts,transport.ts,credentials.ts}`、`native/keychain.swift`、`ui/connection-modal.ts`、`tests/{transport.test.ts,credentials.test.ts,network-boundary.test.ts}`；扩展打包脚本包含本地 Keychain 辅助程序。
+**Files:** 创建 `remote/{types.ts,transport.ts,credentials.ts,account.ts}`、`native/keychain.swift`、`ui/connection-modal.ts`、`tests/{transport.test.ts,credentials.test.ts,network-boundary.test.ts}`；扩展打包脚本包含本地 Keychain 辅助程序。`account.ts` 负责账号响应校验与明确连接动作，供 R2 的 `/me/` 读取复用。
 
 **Interfaces:** 实现上文 Transport/CredentialStore；`connectAccount(origin:string,token:string,transport:Transport,credentials:CredentialStore):Promise<AccountInfo>`，仅连接按钮调用。Keychain 辅助程序通过 stdin 读取操作、origin、用户名与 token，使用 Security.framework 的通用密码条目；输出专用结果，不输出调试日志。
 
+- [ ] 前置修复本地总复核遗留的诊断分类回归：将无法解析的内嵌书目与非阻塞的发布兼容性提示明确区分。通过 `validateNewCitationKey`、`previewCitationRename`、`citationImpact` 验证含 wiki 链接或图片的章节仍可管理有效书目，提示仍可见、无关原文保留；真正损坏的内嵌 YAML 继续阻止不可靠的引用重构。此项先修复并验证，再实现本任务的网络入口。
 - [ ] 写失败断言：300 系列响应不跟随；任何目标 origin 变化不带凭据；30 秒超时与超过 12 MiB 响应拒绝；令牌不出现在进程参数、vault 内容或日志。模拟 onload、打开论文、编辑和预览时 `expect(transport.request).not.toHaveBeenCalled()`。
 - [ ] 运行 `npm --prefix obsidian test -- tests/transport.test.ts tests/credentials.test.ts tests/network-boundary.test.ts` 确认失败。实现 Node HTTPS 请求（不使用自动跟随重定向的封装），精确 origin 校验和结构化错误；HTTP 仅允许显式本地测试目标。
 - [ ] 实现 Keychain 辅助程序并为当前 Mac 架构打包，令牌通过 stdin 传递，辅助程序与渲染器职责分离。通过临时测试条目验证读写删除；没有安全凭据能力时允许本次会话内存使用，明确显示未保存，不回退到 vault 明文文件。

@@ -4,6 +4,7 @@ import { checkDocument, problemRange } from "bananamark-codemirror";
 import { dialect, isValidLabel, type LabelTarget, type Range, type Reference } from "./index";
 
 export interface Diagnostic extends Range {
+  code?: "bibliography-yaml" | "publication-compatibility";
   path: string;
   message: string;
 }

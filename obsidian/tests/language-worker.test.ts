@@ -88,3 +88,33 @@ test("disposal rejects an in-flight request rather than leaving it pending", asy
   worker.dispose();
   await expect(result).rejects.toThrow("worker is closed");
 });
+
+test.each(["[[My note]]", "![image](figure.png)"])("bibliography commands preserve %s and its publication diagnostic", async (markup: string): Promise<void> => {
+  const path = "chapters/z-intro.md";
+  const source = "See @example and " + markup + ".\n";
+  const project = editFixture(projectFixture(), path, source);
+  const worker = new LanguageWorker(bundled, nodeThread);
+  try {
+    expect((await worker.run("analyze", project)).analysis.diagnostics).toContainEqual(
+      expect.objectContaining({path, from: source.indexOf(markup), message: expect.stringMatching(/图片|Obsidian/) }));
+    await expect(worker.run("validateCitationKey", {project, key: "fresh"})).resolves.toBeUndefined();
+    expect(await worker.run("citationImpact", {project, key: "example"})).toContainEqual(
+      expect.objectContaining({path, key: "example", line: 1}));
+    expect((await worker.run("citationRename", {project, from: "example", to: "fresh"})).changes).toContainEqual(
+      expect.objectContaining({path, afterText: source.replace("@example", "@fresh")}));
+  } finally {
+    worker.dispose();
+  }
+});
+
+test("unreadable inline YAML blocks all three bibliography commands", async (): Promise<void> => {
+  const project = editFixture(projectFixture(), "chapters/z-intro.md", "~~~bibliography\nentry: [broken\n~~~\n");
+  const worker = new LanguageWorker(bundled, nodeThread);
+  try {
+    await expect(worker.run("validateCitationKey", {project, key: "fresh"})).rejects.toThrow(/内嵌书目/);
+    await expect(worker.run("citationImpact", {project, key: "example"})).rejects.toThrow(/内嵌书目/);
+    await expect(worker.run("citationRename", {project, from: "example", to: "fresh"})).rejects.toThrow(/内嵌书目/);
+  } finally {
+    worker.dispose();
+  }
+});

@@ -63,7 +63,7 @@ test.skipIf(!appleSilicon)("relocates a verified package and renders original an
     node: "v22.22.3",
   });
   for (const name of [
-    "manifest.json", "main.js", "styles.css", "LICENSE", "INSTALLATION.md", "licenses/bananamark-codemirror/LICENSE",
+    "manifest.json", "main.js", "native/keychain", "styles.css", "LICENSE", "INSTALLATION.md", "licenses/bananamark-codemirror/LICENSE",
     "renderer/bin/node", "renderer/NODE-LICENSE.txt", "renderer/renderer.mjs", "renderer/theme/assets.json",
     "renderer/theme/licenses/katex-OFL-1.1.txt", "renderer/theme/tikz/LICENCE",
   ]) {
@@ -77,6 +77,7 @@ test.skipIf(!appleSilicon)("relocates a verified package and renders original an
   expect((await stat(plugin)).mode & 0o777).toBe(0o755);
   const node = join(plugin, "renderer/bin/node");
   await access(node, constants.X_OK);
+  await access(join(plugin, "native/keychain"), constants.X_OK);
   const checkout = JSON.stringify(resolve(project, ".."));
   const projectRoot = JSON.stringify(await realpath(plugin));
   const policy = `(version 1)(allow default)(deny network*)(deny file-read* (subpath ${checkout}))
