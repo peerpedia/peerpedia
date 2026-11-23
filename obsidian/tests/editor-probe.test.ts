@@ -19,3 +19,12 @@ test("ignores inline text and unrelated directives", (): void => {
   expect(probeCompletions("text :::th", 10, false)).toEqual([]);
   expect(probeCompletions(":::there", 8, false)).toEqual([]);
 });
+
+test("does not suggest a directive inside its existing name", (): void => {
+  expect(probeCompletions(":::theorem", 5, false)).toEqual([]);
+  expect(probeCompletions(":::th-other", 5, false)).toEqual([]);
+});
+
+test("suggests theorem before whitespace after a directive prefix", (): void => {
+  expect(probeCompletions(":::th Title", 5, false)).toContain("theorem");
+});

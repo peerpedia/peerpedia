@@ -9,6 +9,10 @@ export function probeCompletions(
     return [];
   }
 
+  if (/[\w-]/.test(source.charAt(offset))) {
+    return [];
+  }
+
   const lineStart = source.lastIndexOf("\n", offset - 1) + 1;
   const prefix = /^[ \t]*:::([a-z]+)$/.exec(source.slice(lineStart, offset))?.[1];
   return prefix && THEOREM.startsWith(prefix) && prefix !== THEOREM ? [THEOREM] : [];
