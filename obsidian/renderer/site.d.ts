@@ -38,6 +38,13 @@ declare module "*/site/dialect.js" {
 declare module "bananamark" {
   export type SyntaxNodeRef = import("@lezer/common").SyntaxNodeRef;
 
+  export class BananamarkError extends Error {}
+
+  export function transformFragment(
+    source: string,
+    options: { dialect: ReturnType<typeof defineDialect> },
+  ): { nodes: readonly { type: string; tex?: string }[] };
+
   export function defineDialect(options: object): {
     language: { language: { parser: { parse(source: string): {
       iterate(options: { enter: (node: SyntaxNodeRef) => void }): void;

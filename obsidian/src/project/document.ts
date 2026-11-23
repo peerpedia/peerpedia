@@ -1,4 +1,4 @@
-import { defineDialect, type SyntaxNodeRef } from "bananamark";
+import { BananamarkError, defineDialect, transformFragment, type SyntaxNodeRef } from "bananamark";
 
 import { inspectChapter } from "../../../editor/chapter-title.js";
 import { dialectOptions } from "../../../editor/dialect.js";
@@ -18,7 +18,9 @@ const MAX_CHAPTERS = 64;
 const MAX_TEXT_BYTES = 1024 * 1024;
 const MAX_DIAGRAMS = 32;
 const MAX_DIAGRAM_BYTES = 32 * 1024;
-const parser = defineDialect(dialectOptions).language.language.parser;
+const TIKZ_ENVIRONMENT = /\\begin\s*\{\s*(?:tikzcd|tikzpicture)\s*\}/;
+const dialect = defineDialect(dialectOptions);
+const parser = dialect.language.language.parser;
 
 function sourceText(files: ReadonlyMap<string, string>, path: string): string {
   const text = files.get(path);
@@ -50,13 +52,30 @@ export function toPublicationDocument(snapshot: ProjectSnapshot): PublicationDoc
   };
 }
 
+function collectCaptionDiagrams(opening: string, sizes: number[]): void {
+  if (!opening.includes("caption=")) return;
+  try {
+    // BananaMark's fragment transform runs the website's caption extraction
+    // on the opening fence and protects literal examples in its inline code.
+    const { nodes } = transformFragment(opening, { dialect });
+    if (!nodes.some((node: { type: string }): boolean => node.type === "caption")) return;
+    for (const node of nodes) {
+      if (node.type === "math" && node.tex !== undefined && TIKZ_ENVIRONMENT.test(node.tex)) {
+        sizes.push(Buffer.byteLength(node.tex));
+      }
+    }
+  } catch (error: unknown) {
+    // An invalid caption can still be edited, and the rest of the draft remains checkable.
+    if (!(error instanceof BananamarkError)) throw error;
+  }
+}
+
 function diagramSizes(source: string): readonly number[] {
   if (!source.includes("tikz")) return [];
   const diagrams: number[] = [];
   // The website normalizes CRLF during rendering. Parse the same text here, and
   // leave the original string in the snapshot and publication document.
   const normalized = source.replace(/\r\n?/g, "\n");
-  const tikzEnvironment = /\\begin\s*\{\s*(?:tikzcd|tikzpicture)\s*\}/;
   const read = (node: SyntaxNodeRef["node"]): string => normalized.slice(node.from, node.to);
   parser.parse(normalized).iterate({
     enter(ref: SyntaxNodeRef): false | void {
@@ -65,15 +84,18 @@ function diagramSizes(source: string): readonly number[] {
       if (ref.name === "FencedCode") {
         const language = info && read(info).trim().split(/[ \t{]/, 1)[0];
         const code = node.getChildren("CodeText").map(read).join("");
-        if (language === "tikz" || (language === "math" && tikzEnvironment.test(code))) {
+        if (language === "tikz" || (language === "math" && TIKZ_ENVIRONMENT.test(code))) {
           diagrams.push(Buffer.byteLength(code));
+        }
+        if (language === "tikz" && info) {
+          collectCaptionDiagrams(normalized.slice(node.from, info.to), diagrams);
         }
         // A source example may have a complete nested grammar of its own.
         return false;
       }
       if ((ref.name === "DisplayMath" || ref.name === "InlineMath") && info) {
         const tex = read(info);
-        if (tikzEnvironment.test(tex)) diagrams.push(Buffer.byteLength(tex.trim()));
+        if (TIKZ_ENVIRONMENT.test(tex)) diagrams.push(Buffer.byteLength(tex.trim()));
         return false;
       }
     },

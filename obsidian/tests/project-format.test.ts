@@ -158,6 +158,46 @@ test("validation reports total and individual diagram limits outside ordinary co
   expect(issues).toContainEqual(expect.objectContaining({ path: "paper.md", message: expect.stringMatching(/32 KiB/) }));
 });
 
+const tikzFence = "~~~tikz\n\\begin{tikzpicture}\\end{tikzpicture}\n~~~\n";
+
+function withDiagramCaption(caption: string): string {
+  return tikzFence.replace("~~~tikz", (): string => `~~~tikz {caption="${caption}"}`);
+}
+
+test("validation counts the formula rendered within a TikZ caption", (): void => {
+  const project = projectFixture();
+  const draft = configure(project, { ...project.config, chapters: [], bibliography: undefined });
+  const diagram = "$\\begin{tikzcd} A \\end{tikzcd}$";
+  const captioned = withDiagramCaption(`D ${diagram} and \`${diagram}\``);
+  expect(validateProject(editFixture(draft, "paper.md", tikzFence.repeat(30) + captioned))).toEqual([]);
+  expect(validateProject(editFixture(draft, "paper.md", tikzFence.repeat(31) + captioned)))
+    .toContainEqual(expect.objectContaining({ path: "paper.md", message: expect.stringMatching(/32 diagrams/) }));
+});
+
+test("validation measures TikZ formulas in captions in UTF-8 bytes", (): void => {
+  const project = projectFixture();
+  const draft = configure(project, { ...project.config, chapters: [], bibliography: undefined });
+  const open = "\\begin{tikzcd}";
+  const close = "\\end{tikzcd}";
+  const padding = "é".repeat((32768 - Buffer.byteLength(open + close)) / 2);
+  const boundary = open + padding + close;
+  expect(Buffer.byteLength(boundary)).toBe(32768);
+  expect(validateProject(editFixture(draft, "paper.md", withDiagramCaption(`$${boundary}$`)))).toEqual([]);
+  const above = editFixture(draft, "paper.md", withDiagramCaption(`$${open}${padding}é${close}$`));
+  expect(validateProject(above))
+    .toContainEqual(expect.objectContaining({ path: "paper.md", message: expect.stringMatching(/32 KiB/) }));
+});
+
+test("an unfinished caption does not suppress diagram diagnostics elsewhere in the draft", (): void => {
+  const project = projectFixture();
+  const draft = configure(project, { ...project.config, chapters: [], bibliography: undefined });
+  const unfinished = withDiagramCaption("<unsupported> $\\begin{tikzcd} A") + tikzFence.repeat(32);
+  const snapshot = editFixture(draft, "paper.md", unfinished);
+  expect(validateProject(snapshot))
+    .toContainEqual(expect.objectContaining({ path: "paper.md", message: expect.stringMatching(/32 diagrams/) }));
+  expect(toPublicationDocument(snapshot).markdown).toBe(unfinished);
+});
+
 test("missing members stay in the manifest and are distinct from empty drafts", async (): Promise<void> => {
   const { root, store } = await vaultFixture();
   await rm(join(root, "chapters/z-intro.md"));
