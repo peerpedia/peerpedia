@@ -167,7 +167,7 @@ def verify(page: Page, context: BrowserContext, vault: Path, package: Path, evid
     page.set_default_timeout(8000)
     page.bring_to_front()
     print("TEST WINDOW", page.title(), page.url, flush=True)
-    page.wait_for_function("typeof app !== 'undefined' && app.workspace.layoutReady", polling=100)
+    page.wait_for_function("window.app?.workspace?.layoutReady", polling=100)
     assert Path(page.evaluate("app.vault.adapter.getBasePath()")).resolve() == vault.resolve()
     assert page.evaluate("!app.plugins.getPlugin('peerpedia')")
     installed = vault / PLUGIN
