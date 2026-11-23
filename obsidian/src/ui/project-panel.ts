@@ -12,6 +12,13 @@ import { CONFIG_PATH, type FileChange, type ProjectEvent } from "../project/stor
 import type { ChapterSpec, ProjectSnapshot, SourceFile } from "../project/types";
 import { ConflictModal, errorMessage, openLocalFile } from "./conflict-modal";
 
+import type { BindingVersion } from "../remote/binding";
+import { checkProject } from "../remote/controller";
+import { importedRevision } from "../remote/import";
+import { PeerpediaApi } from "../remote/api";
+import type { RemoteCheck, Transport } from "../remote/types";
+import { ImportModal } from "./import-modal";
+
 export const PROJECT_PANEL = "peerpedia-project";
 
 export class ProjectPanel extends ItemView {
@@ -24,8 +31,15 @@ export class ProjectPanel extends ItemView {
   private readonly titles = new Map<string, {digest: string; title: Promise<string>}>();
   private records: readonly RecoveryNotice[] = [];
 
+  private binding?: BindingVersion;
+  private bindingError?: string;
+  private observation?: RemoteCheck;
+  private checking = false;
+  private checkError?: string;
+
   constructor(leaf: WorkspaceLeaf, readonly store: VaultProjectStore,
-    private readonly enableFolder: (root: string) => Promise<void>) { super(leaf); }
+    private readonly enableFolder: (root: string) => Promise<void>, private readonly origin: () => string,
+    private readonly transport: Transport) { super(leaf); }
 
   override getViewType(): string { return PROJECT_PANEL; }
   override getDisplayText(): string { return "论文管理"; }
@@ -47,7 +61,19 @@ export class ProjectPanel extends ItemView {
     this.root = root;
     this.snapshot = null;
     this.records = [];
+    this.binding = this.observation = this.bindingError = undefined;
+    this.checking = false;
+    this.checkError = undefined;
+    this.render();
     try {
+      try {
+        const binding = await this.store.readBindingVersion(root);
+        if (selection !== this.selection) return;
+        this.binding = binding;
+      } catch (error: unknown) {
+        if (selection !== this.selection) return;
+        this.bindingError = errorMessage(error);
+      }
       const records = await this.store.recovery(root);
       if (selection !== this.selection) return;
       this.records = records;
@@ -127,6 +153,7 @@ export class ProjectPanel extends ItemView {
       form.open();
     });
     button(actions, "新建论文", (): void => this.createForm());
+    button(actions, "从站点导入", (): void => this.importForm());
     if (this.root !== null) this.contentEl.createEl("p", { text: this.root || "库根目录", cls: "setting-item-description" });
     if (error && this.root !== null) {
       const root = this.root;
@@ -145,8 +172,18 @@ export class ProjectPanel extends ItemView {
         void this.revealRecovery(root, record).catch((err: unknown): void => { new Notice(errorMessage(err)); });
       });
     }
+    if (this.bindingError) this.contentEl.createEl("p",{text:this.bindingError,attr:{role:"alert"}});
+    if (this.binding?.pendingImport && this.root !== null) {
+      const root = this.root;
+      button(this.contentEl,"完成导入绑定", (): void => {
+        void this.store.recoverImport(root).then(async (): Promise<void> => {
+          if (this.root === root) await this.selectRoot(root);
+        }).catch((err: unknown): void => { new Notice(errorMessage(err)); });
+      });
+    }
     const project = this.snapshot;
     if (!project) return;
+    this.renderRemote(project);
     this.contentEl.createEl("h3", { text: project.config.title || "未命名论文" });
     button(this.contentEl, "编辑论文信息", (): void => this.metadataForm(project));
     this.contentEl.createEl("h4", { text: "正文" });
@@ -195,6 +232,42 @@ export class ProjectPanel extends ItemView {
       app: this.app, store: this.store, worker: this.languageWorker, project,
       save: (snapshot: ProjectSnapshot, changes: readonly FileChange[]): Promise<void> => this.save(snapshot, changes),
     });
+  }
+
+  importForm(): void {
+    new ImportModal(this.app,this.origin(),this.transport,this.store,async (project: ProjectSnapshot): Promise<void> => {
+      await this.selectRoot(project.root);
+      await this.enableFolder(project.root).catch((): void => { new Notice("请在设置中启用写作辅助。"); });
+    }).open();
+  }
+
+  private renderRemote(project: ProjectSnapshot): void {
+    const binding = this.binding?.binding, digest = this.binding?.digest;
+    if (!binding || !digest) return;
+    const box = this.contentEl.createDiv();
+    box.createEl("p",{text:"绑定站点：" + binding.origin});
+    box.createEl("p",{text:"本地文件：" + (project.revision === importedRevision(binding.workingBase) ? "与工作基准一致" : "有更改")});
+    box.createEl("p",{text:"上次主动检查：" + new Date(binding.checkedAt).toLocaleString()});
+    if (this.observation) {
+      box.createEl("p",{text:"已检查的当前版本：" + (this.observation.current.publicId ?? this.observation.current.hash)});
+      box.createEl("p",{text:this.observation.activePr ? "关联提案：" + this.observation.activePr.status : "此次检查未找到关联提案。"});
+    } else box.createEl("p",{text:"关联提案状态：本次打开后尚未检查"});
+    if (this.checkError) box.createEl("p",{text:this.checkError,attr:{role:"alert"}});
+    const selection = this.selection;
+    button(box,"检查远程版本", (): void => {
+      if (this.checking) return;
+      this.checking = true;
+      this.checkError = undefined;
+      this.render();
+      void checkProject(project.root,new PeerpediaApi(binding.origin,this.transport),this.store,digest)
+        .then(async (result: RemoteCheck): Promise<void> => {
+          const version = await this.store.readBindingVersion(project.root);
+          if (selection !== this.selection) return;
+          this.binding = version;
+          this.observation = result;
+        }).catch((err: unknown): void => { if (selection === this.selection) this.checkError = errorMessage(err); })
+        .finally((): void => { if (selection === this.selection) { this.checking = false; this.render(); } });
+    }).disabled = this.checking;
   }
 
   private move(project: ProjectSnapshot, id: string, position: number): void {

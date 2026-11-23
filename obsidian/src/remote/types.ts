@@ -63,3 +63,20 @@ export interface LicenseOption {
   label: string;
   url: string;
 }
+
+export interface RemoteBinding {
+  schemaVersion: 1;
+  origin: string;
+  paperId: string;
+  acceptedBase: VerifiedSnapshot;
+  workingBase: VerifiedSnapshot;
+  lastSubmitted: VerifiedSnapshot | null;
+  activePr: PrHead | null;
+  checkedAt: string;
+}
+
+export interface RemoteCheck {
+  current: VerifiedSnapshot;
+  activePr: PrHead | null;
+  checkedAt: string;
+}

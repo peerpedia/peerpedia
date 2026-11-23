@@ -20,7 +20,7 @@ import { resolveScope } from "./project/scope";
 import type { RecoveryNotice } from "./project/recovery";
 import { CONFIG_PATH } from "./project/store";
 
-import { storedIdentity } from "./remote/account";
+import { DEFAULT_ORIGIN, storedIdentity } from "./remote/account";
 import { DeviceCredentials } from "./remote/credentials";
 import { NodeTransport } from "./remote/transport";
 import type { AccountIdentity } from "./remote/types";
@@ -43,6 +43,7 @@ export default class PeerpediaPlugin extends Plugin {
   private scopeMoves?: ExternalScopeMoves;
   private settingsWrite: Promise<void> = Promise.resolve();
   projectStore?: VaultProjectStore;
+  private importOrigin = DEFAULT_ORIGIN;
   private writingEditors: WritingEditors | undefined;
   private writingProjects: WritingProjects | undefined;
 
@@ -71,11 +72,13 @@ export default class PeerpediaPlugin extends Plugin {
     this.registerEvent(this.app.vault.on("modify", (file: TAbstractFile): void => {
       void moves.changed(file.path, false).catch((error: unknown): void => { new Notice(errorMessage(error)); });
     }));
+    const transport = new NodeTransport();
+    this.importOrigin = storedIdentity(settings?.connection)?.origin ?? DEFAULT_ORIGIN;
     this.addSettingTab(new ScopeSettings(this.app, this));
     this.registerView(PROJECT_PANEL, (leaf: WorkspaceLeaf): ProjectPanel => new ProjectPanel(leaf, store,
       (root: string): Promise<void> => this.updateWritingScope({
         ...this.writingScope, folders: { ...this.writingScope.folders, [root]: true },
-      })));
+      }), (): string => this.importOrigin, transport));
     const paperRoot = async (file: TAbstractFile | null): Promise<string | undefined> => {
       for (let parent = file?.parent; parent; parent = parent.parent) {
         const folder = parent.isRoot() ? "" : parent.path;
@@ -97,7 +100,7 @@ export default class PeerpediaPlugin extends Plugin {
     const dir = this.manifest.dir ?? this.app.vault.configDir + "/plugins/" + this.manifest.id;
     const cleanup = Array.isArray(settings?.connectionCleanup) ? settings.connectionCleanup.map(storedIdentity)
       .filter((item: AccountIdentity | null): item is AccountIdentity => item !== null) : [];
-    const connection = new ConnectionModal(this.app, storedIdentity(settings?.connection), new NodeTransport(),
+    const connection = new ConnectionModal(this.app, storedIdentity(settings?.connection), transport,
       new DeviceCredentials(join(adapter.getBasePath(), dir, "native/keychain")),
       (identity: AccountIdentity | null, pending: readonly AccountIdentity[]): Promise<void> => this.updateConnection(identity, pending), cleanup);
     this.addCommand({ id: "connect-account", name: "连接或断开 Peerpedia 账号", callback: (): void => connection.open() });
@@ -151,6 +154,10 @@ export default class PeerpediaPlugin extends Plugin {
     };
     this.addCommand({ id: "manage-paper", name: "管理论文", callback: (): void => showPanel(false) });
     this.addCommand({ id: "create-paper", name: "新建论文", callback: (): void => showPanel(true) });
+    this.addCommand({ id:"import-paper", name:"从 Peerpedia 导入论文", callback:(): void => {
+      void openPanel().then((panel: ProjectPanel): void => panel.importForm())
+        .catch((error: unknown): void => { new Notice(errorMessage(error)); });
+    } });
     this.addRibbonIcon("book-open", "管理论文", (): void => showPanel(false));
     this.registerEvent(this.app.vault.on("rename", (file: TAbstractFile, from: string): void => {
       if (isStagedMove(file.path)) return;
@@ -290,7 +297,7 @@ export default class PeerpediaPlugin extends Plugin {
       if (cleanup.length) {
         settings.connectionCleanup = cleanup.map((item: AccountIdentity): AccountIdentity => ({origin:item.origin, username:item.username}));
       } else delete settings.connectionCleanup;
-    });
+    }).then((): void => { this.importOrigin = identity?.origin ?? DEFAULT_ORIGIN; });
   }
 
   private mutateSettings(change: (settings: Record<string,unknown>) => void): Promise<void> {

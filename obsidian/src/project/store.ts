@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 
+import type { RemoteBinding } from "../remote/types";
 import { CONFIG_PATH } from "./members";
 import { ProjectReadError, type ChapterSpec, type PaperConfig, type ProjectSnapshot, type SourceFile } from "./types";
 
@@ -23,7 +24,7 @@ export interface ProjectEvent {
 
 export interface ProjectStore {
   read(root: string): Promise<ProjectSnapshot>;
-  create(root: string, changes: readonly FileChange[]): Promise<ProjectSnapshot>;
+  create(root: string, changes: readonly FileChange[], initialBinding?: RemoteBinding): Promise<ProjectSnapshot>;
   apply(root: string, expectedRevision: string, changes: readonly FileChange[]): Promise<ProjectSnapshot>;
   /** Report the initial disk state and subsequent changes with project-relative paths. */
   watch(root: string, listener: (event: ProjectEvent) => void): () => void;

@@ -16,6 +16,9 @@ import { readSource } from "../project/source-file";
 import { keepConflict, newJournal, PreconditionConflict, safePath, writeTransaction, type WriteHost } from "../project/transaction";
 import { recoverIn, inspectRecovery, type RecoveryFile, type RecoveryNotice } from "../project/recovery";
 
+import { finishImport, prepareImport, readVersion, writeVersion, type BindingVersion } from "../remote/binding";
+import type { RemoteBinding } from "../remote/types";
+
 const WATCH_SETTLE_MS = 30;
 // CLI fetches and plugin recovery records can contain complete copies of a project.
 const PROJECT_STATE_FOLDERS = new Set([".peerpedia", ".peerpedia-obsidian", ".obsidian", ".git"]);
@@ -226,7 +229,27 @@ export class VaultProjectStore implements ProjectStore {
     try { return await pending; } finally { writes.delete(key); }
   }
 
-  create(root: string, changes: readonly FileChange[]): Promise<ProjectSnapshot> {
+  async readBindingVersion(root: string): Promise<BindingVersion> {
+    return this.anchored(root, (tree: AnchoredFiles): Promise<BindingVersion> => readVersion(tree,root));
+  }
+
+  async loadBinding(root: string): Promise<RemoteBinding | null> {
+    return (await this.readBindingVersion(root)).binding;
+  }
+
+  async saveBinding(root: string, binding: RemoteBinding, expectedDigest: string | null): Promise<void> {
+    return this.anchored(root, (tree: AnchoredFiles): Promise<void> => writeVersion(tree,root,binding,expectedDigest));
+  }
+
+  async recoverImport(root: string): Promise<void> {
+    await this.exclusive(root, (): Promise<ProjectSnapshot> => this.anchored(root, async (tree: AnchoredFiles): Promise<ProjectSnapshot> => {
+      const project = await this.pinnedSnapshot(tree,root);
+      await finishImport(tree,root,project.revision);
+      return project;
+    }));
+  }
+
+  create(root: string, changes: readonly FileChange[], initialBinding?: RemoteBinding): Promise<ProjectSnapshot> {
     return this.exclusive(root, async (): Promise<ProjectSnapshot> => {
       safePath(root);
       if (changes.some((change: FileChange): boolean => change.beforeDigest !== null || change.afterText === null)) {
@@ -254,7 +277,18 @@ export class VaultProjectStore implements ProjectStore {
           if (ancestor === ".") break;
         }
         await tree.mkdir(root);
-        return writeTransaction(tree, root, null, changes, this.host, (): Promise<ProjectSnapshot> => this.pinnedSnapshot(tree,root));
+        if (initialBinding) {
+          const files = changes.map((change: FileChange): SourceFile => ({
+            path:change.path, text:change.afterText!, digest:sourceDigest(Buffer.from(change.afterText!)),
+          }));
+          await prepareImport(tree,root,initialBinding,projectRevision(files));
+        }
+        const project = await writeTransaction(tree, root, null, changes, this.host, (): Promise<ProjectSnapshot> => this.pinnedSnapshot(tree,root));
+        if (initialBinding) {
+          try { await finishImport(tree,root,project.revision); }
+          catch (error: unknown) { throw new Error("导入绑定未完成，请从论文管理面板打开此文件夹并完成绑定。", {cause:error}); }
+        }
+        return project;
       });
     });
   }

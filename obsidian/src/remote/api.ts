@@ -42,7 +42,7 @@ function decodeJson(body: Uint8Array): unknown {
 }
 
 export class PeerpediaApi {
-  constructor(private readonly origin: string, private readonly transport: Transport) { exactOrigin(origin); }
+  constructor(readonly origin: string, private readonly transport: Transport) { exactOrigin(origin); }
 
   private async get(route: string, token?: string): Promise<unknown> {
     const headers: Record<string, string> = {Accept: "application/json"};
