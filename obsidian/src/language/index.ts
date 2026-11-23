@@ -8,7 +8,7 @@ import { withSyntax } from "bananamark/internal/switches.mjs";
 import { parseLists } from "bananamark/internal/lists.mjs";
 import { validReferenceName } from "bananamark/internal/scan.mjs";
 import { declaredLabels } from "bananamark-codemirror";
-import { isMap, isScalar, isSeq, parseDocument, type Scalar, type YAMLMap } from "yaml";
+import { isMap, isNode, isScalar, isSeq, parseDocument, type Node, type YAMLMap } from "yaml";
 
 import { dialectOptions } from "../../../editor/dialect.js";
 import type { Diagnostic } from "./diagnostics";
@@ -135,15 +135,15 @@ function attrsFrom(source: string, node: SyntaxNode, path: string): LabelTarget[
   return [];
 }
 
-function yamlKey(source: string, path: string, scalar: Scalar<unknown>, start: number): LabelTarget | null {
-  if (typeof scalar.value !== "string" || !scalar.range) return null;
-  let [from, to] = scalar.range;
+function yamlKey(source: string, path: string, node: Node, start: number, label: unknown): LabelTarget | null {
+  if (typeof label !== "string" || !node.range) return null;
+  let [from, to] = node.range;
   const text = source.slice(from, to);
-  if ((text[0] === "'" || text[0] === '"') && text.slice(1, -1) === scalar.value) {
+  if ((text[0] === "'" || text[0] === '"') && text.slice(1, -1) === label) {
     from++;
     to--;
   }
-  return defineLabel(path, "bibliography", scalar.value, from + start, to + start);
+  return defineLabel(path, "bibliography", label, from + start, to + start);
 }
 
 function field(map: YAMLMap<unknown, unknown>, key: string): unknown {
@@ -157,18 +157,31 @@ export function scanBibliography(source: string, path: string, start: number = 0
     path, from: start + error.pos[0], to: start + error.pos[1], message: error.message.split("\n")[0],
   }));
   if (!isMap(doc.contents)) return { labels, diagnostics };
+
+  // BananaMark uses the resolved values, including aliases, to register
+  // version keys. Keep navigating to the key's own source occurrence.
+  let resolved: Record<string, { versions?: unknown }> | undefined;
+  try {
+    doc.options.logLevel = "silent";
+    resolved = doc.toJS({ maxAliasCount: 50 });
+  } catch {
+    // Retain directly authored definitions in an incomplete YAML draft.
+  }
   for (const pair of doc.contents.items) {
     if (!isScalar(pair.key)) continue;
-    const entry = yamlKey(source, path, pair.key, start);
-    if (entry) labels.push(entry);
-    if (!isMap(pair.value)) continue;
-    const versions = field(pair.value, "versions");
-    if (!isSeq(versions)) continue;
-    for (const version of versions.items) {
-      if (!isMap(version)) continue;
-      const key = field(version, "key");
-      if (!isScalar(key)) continue;
-      const target = yamlKey(source, path, key, start);
+    const entry = yamlKey(source, path, pair.key, start, pair.key.value);
+    if (!entry) continue;
+    labels.push(entry);
+    const versions = isMap(pair.value) ? field(pair.value, "versions") : undefined;
+    const resolvedVersions = resolved?.[entry.label]?.versions;
+    const count = Array.isArray(resolvedVersions) ? resolvedVersions.length : isSeq(versions) ? versions.items.length : 0;
+    for (let index = 0; index < count; index++) {
+      const item = isSeq(versions) ? versions.items[index] : versions ?? pair.value;
+      const node = isMap(item) ? field(item, "key") : item;
+      const value: unknown = Array.isArray(resolvedVersions) ? resolvedVersions[index]?.key : isScalar(node) ? node.value : undefined;
+      if (typeof value !== "string" && typeof value !== "number") continue;
+      const label = String(value).trim().replace(/\s+/gu, " ");
+      const target = yamlKey(source, path, isNode(node) ? node : pair.key, start, label);
       if (target) labels.push(target);
     }
   }

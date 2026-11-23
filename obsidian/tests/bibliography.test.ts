@@ -23,6 +23,17 @@ test("editing a scalar keeps comments, unknown fields, formatting, BOM, and CRLF
   ]);
 });
 
+const aliasedVersion = "example:\n  type: book\n  title: &shared other\n  shorttitle: *shared\n"
+  + "  versions: [{relation: edition, key: *shared}]\n";
+
+test("editing a shared anchor refuses a change to another field or a cited version key", (): void => {
+  expect((): string => patchEntry(aliasedVersion, "example", { title: "A new title" })).toThrow(/title.*原文件/);
+  expect(readEntries(aliasedVersion)[0].fields).toMatchObject({
+    title: "other", shorttitle: "other", versions: [{ key: "other" }],
+  });
+  expect(patchEntry(aliasedVersion, "example", { title: "other" })).toBe(aliasedVersion);
+});
+
 test("editing a block scalar preserves its header comment and neighboring bytes", (): void => {
   const updated = patchEntry("work:\r\n  title: |- # 标题\r\n    old\r\n  year: 2026\r\n", "work", {title: "更新\n标题"});
   expect(updated).toBe("work:\r\n  title: |- # 标题\r\n    更新\r\n    标题\r\n  year: 2026\r\n");
@@ -70,6 +81,22 @@ test("adding and deleting entries retains adjacent YAML and its comments", (): v
   expect(readEntries(removeEntry(keep, "a"))).toEqual([]);
   expect(removeEntry(keep, "a")).toContain("# 书目说明");
   expect((): string => addEntry(source, "a", {title: "覆盖"})).toThrow();
+});
+
+test("deleting a block entry preserves the outdented comment before the next entry", (): void => {
+  const kept = "# Source for B\nb: {type: book, title: B}\n";
+  expect(removeEntry("a:\n  type: book\n  title: A\n  # Note on the title\n" + kept, "a")).toBe(kept);
+});
+
+test("deleting an indented entry preserves the next entry's root indentation", (): void => {
+  const kept = "  b: {type: book, title: B}\n  c: {type: book, title: C}\n";
+  expect(removeEntry("  a:\n    title: A\n    # Owned comment\n" + kept, "a")).toBe(kept);
+});
+
+test("deleting a nested block entry preserves a document footer and its CRLF", (): void => {
+  const source = "a:\r\n  title: A\r\n  versions:\r\n    - relation: edition\r\n"
+    + "      title: Edition\r\n    # Edition note\r\n# Bibliography footer\r\n";
+  expect(removeEntry(source, "a")).toBe("# Bibliography footer\r\n");
 });
 
 test("malformed YAML and invalid root or entry structures cannot be patched", (): void => {
@@ -163,6 +190,17 @@ test("rename rejects collisions with shared entries, version keys, and chapter d
   expect((): readonly FileChange[] => planCitationRename(withInline, "example", "inline")).toThrow();
   const ambiguous = editFixture(withInline, "chapters/z-intro.md", "# Duplicate {@example}\n");
   expect((): readonly FileChange[] => planCitationRename(ambiguous, "example", "free")).toThrow();
+});
+
+test("rename rejects a key defined by an alias in a shared bibliography version", (): void => {
+  const project = editFixture(projectFixture(), "references.yaml", aliasedVersion);
+  expect((): readonly FileChange[] => planCitationRename(project, "example", "other")).toThrow(/引用键「other」已存在/);
+});
+
+test("a key defined by an aliased inline bibliography version cannot be added", (): void => {
+  const inline = "~~~bibliography\n" + aliasedVersion.replace("example:", "inline-entry:") + "~~~\n";
+  const project = editFixture(projectFixture(), "chapters/z-intro.md", inline);
+  expect((): void => validateNewCitationKey(project, "other")).toThrow(/引用键「other」已存在/);
 });
 
 test("adding a citation key checks inline and shared definitions before saving", (): void => {

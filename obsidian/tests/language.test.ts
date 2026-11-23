@@ -116,3 +116,15 @@ test("completes a reference to a list item defined in another chapter", async ()
     expect.objectContaining({ label: "item:one", insertText: "item:one" }),
   ]);
 });
+
+test("finds the cited version definition at the alias occurrence, not at its title anchor", (): void => {
+  const yaml = "example:\n  type: book\n  title: &shared other\n  versions: [{relation: edition, key: *shared}]\n";
+  const file = "references.yaml";
+  const project = editFixture(editFixture(projectFixture(), file, yaml), intro, "See @other.\n");
+  const analysis = analyzeProject(project);
+  const start = yaml.indexOf("*shared");
+  expect(analysis.labels).toContainEqual({
+    path: file, key: "other", label: "other", kind: "bibliography", from: start, to: start + "*shared".length,
+  });
+  expect(analysis.diagnostics).toEqual([]);
+});

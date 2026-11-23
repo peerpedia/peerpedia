@@ -1,4 +1,4 @@
-import { CST, isMap, isScalar, isSeq, parseDocument, stringify, type Document, type Pair, type ParsedNode, type Scalar, type YAMLMap } from "yaml";
+import { CST, isMap, isScalar, isSeq, parseDocument, stringify, visit, type Document, type Pair, type ParsedNode, type Scalar, type YAMLMap } from "yaml";
 
 export interface BibliographyEntry {
   key: string;
@@ -106,6 +106,14 @@ function renderValue(doc: Document.Parsed, value: unknown, previous?: ParsedNode
   }).trimEnd();
 }
 
+function assertIndependentValue(node: ParsedNode | null | undefined, field: string): asserts node is ParsedNode {
+  const error = (): Error => new Error(`${field}使用共享 YAML 数据，请在 YAML 原文件中核对并调整。`);
+  if (!node) throw error();
+  visit(node, (_key: unknown, child: unknown): void => {
+    if ((isScalar(child) || isMap(child) || isSeq(child)) && child.anchor) throw error();
+  });
+}
+
 function replaceValue(source: string, doc: Document.Parsed, node: ParsedNode, value: unknown): string {
   const [from, to] = node.range;
   if (from === to) {
@@ -163,6 +171,7 @@ export function patchEntry(source: string, key: string, patch: Fields): string {
       updated = appendPairs(updated, parsed, pair.value!, { [name]: value });
     } else if (field.value) {
       if (isScalar(field.value) && Object.is(field.value.value, value)) continue;
+      assertIndependentValue(field.value, `字段「${name}」`);
       updated = replaceValue(updated, parsed.doc, field.value, value);
     } else {
       throw new Error(`无法用表单修改字段「${name}」。请编辑 YAML 原文件。`);
@@ -183,13 +192,30 @@ export function addEntry(source: string, key: string, fields: Fields): string {
   return updated;
 }
 
+function trailingDocumentComment(token: CST.Token | undefined, indent: number): CST.SourceToken | undefined {
+  if (token?.type !== "block-map" && token?.type !== "block-seq") return undefined;
+  let comment: CST.SourceToken | undefined;
+  // YAML may attach outdented trivia to the final nested block. Only walk
+  // the trailing items, where no field of the removed entry follows it.
+  for (let index = token.items.length - 1; index >= 0; index--) {
+    const item = token.items[index];
+    if (item.key || item.value || item.sep ||
+        item.start.some((part: CST.SourceToken): boolean => part.type === "seq-item-ind")) {
+      return trailingDocumentComment(item.value, indent) ?? comment;
+    }
+    const outside = item.start.find((part: CST.SourceToken): boolean => part.type === "comment" && part.indent <= indent);
+    comment = outside ?? comment;
+  }
+  return comment;
+}
+
 export function removeEntry(source: string, key: string): string {
   const parsed = parse(source);
   const pair = entryPair(parsed.pairs, key);
   const start = pair.srcToken?.start.find((token: CST.SourceToken): boolean =>
     token.type === "explicit-key-ind" || token.type === "anchor" || token.type === "tag");
   let from = start?.offset ?? pair.key.range[0];
-  const to = pair.value!.range[2];
+  let to = pair.value!.range[2];
   let updated: string;
   if (parsed.mapping?.srcToken?.type === "flow-collection") {
     const items = parsed.mapping.srcToken.items;
@@ -206,6 +232,11 @@ export function removeEntry(source: string, key: string): string {
     const lineStart = source.lastIndexOf("\n", from - 1) + 1;
     // A document marker or BOM can be on the same line as the key.
     if (/^[ \t]*$/.test(source.slice(lineStart, from))) from = lineStart;
+    const root = parsed.mapping?.srcToken;
+    const comment = root?.type === "block-map" ? trailingDocumentComment(pair.value!.srcToken, root.indent) : undefined;
+    if (comment) to = comment.offset;
+    const followingLine = source.lastIndexOf("\n", to - 1) + 1;
+    if (/^[ \t]*$/.test(source.slice(followingLine, to))) to = followingLine;
     updated = replace(source, from, to, "");
   }
   parse(updated);
@@ -247,9 +278,7 @@ export function rewriteBibliographyProse(source: string, update: (field: Bibliog
       const [from, to] = node?.range ?? key.range;
       const after = update({ entry: key.value, version, field, value, from, to });
       if (after === value) continue;
-      if (!node || (isScalar(node) && node.anchor)) {
-        throw new Error(`条目「${key.value}」的 ${field} 使用共享 YAML 数据，请在原文件中核对并调整。`);
-      }
+      assertIndependentValue(node, `条目「${key.value}」的 ${field} `);
       edits.push({ node, value: after });
     }
   };
