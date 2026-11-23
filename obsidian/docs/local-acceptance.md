@@ -2,6 +2,14 @@
 
 2026 年 11 月 24 日，在 **macOS 15.6.1、Apple Silicon（arm64）** 上验收 Peerpedia **0.1.0**。宿主为 **Obsidian Desktop 1.15.1**，使用 Electron **43.8.9** 和 Node.js **24.22.1**。安装包的独立渲染器使用官方签名的 **Node.js 22.22.3 darwin-arm64**，携带网站渲染器、TikZ 和 TeX 资源、共享正文主题及本地字体。平台范围和安装步骤见[安装说明](installation.md)。
 
+## 本地修订包
+
+本次验收的压缩包位于 `obsidian/dist/local-authoring-final/peerpedia-0.1.0-darwin-arm64.zip`，SHA-256 为 `3a77a26c9bd55cb9638c36f9bbf2f40b1bd2608d4d1f49dc9249d3b83b07993a`。旧包与修订包的版本号均为 0.1.0，可按此摘要确认所用文件。
+
+在修订包的独立临时库，用原生编辑器分别修改空章节和已有正文的章节。在自动保存前从另一个进程改写同一文件，两章都出现了「核对版本」通知。已有正文的一章关闭了写作辅助。退出并重新启动 Obsidian 后，两章的原文、编辑器草稿和外部修改仍可分别读取。普通自动保存、CRLF 正文和项目面板确认修改章名均未新增冲突记录。未列入清单的同目录笔记也未生成记录。
+
+通过面板将带有标签、样式和无编号标记的二级标题改名后，原标签仍可从第二章通过预览链接打开。公式方框和数组竖线都显示实线，数组保留负边距，带编号的 TikZ 图为编号留出一列。项目面板分别显示未知字段名及嵌套项目清单的路径，两个出错目录内的文件内容与打开前一致。
+
 ## 搬移后的安装包实测
 
 将发布用 ZIP 解压到含中文和空格的「解包 验收」目录，再整体复制到临时「独立 验收库」。对照包内清单核验文件摘要，并确认 Node.js 可执行。在未登录的独立 Obsidian 配置中首次启用，打开「双章 论文」样本。全程只使用合成稿件和临时测试库。
@@ -49,6 +57,14 @@ PEERPEDIA_PLUGIN_PACKAGE="/解包 验收/peerpedia" \
 PEERPEDIA_ACCEPTANCE_PYTHON="/测试目录/python" \
 PEERPEDIA_ACCEPTANCE_EVIDENCE="/测试目录/验收记录" \
 npm --prefix obsidian test -- tests/offline-journey.test.ts
+```
+
+复测原生编辑冲突和重启恢复时，可对同一个已解压的包运行以下命令。脚本同时验证两章正式排版、章名确认和项目错误说明。
+
+```sh
+/测试目录/python obsidian/scripts/validate-native-conflicts.py \
+  "/测试目录/Obsidian.app" "/解包 验收/peerpedia" \
+  obsidian/tests/fixtures/render-paper.json "/测试目录/验收记录"
 ```
 
 本次实测输出包括 `task-8-host-journey.log`、`task-8-obsidian.log` 和 `task-8-relocated-preview.png`。本次交付覆盖本地写作及离线预览，远程导入、合并和发布由后续计划验收。
