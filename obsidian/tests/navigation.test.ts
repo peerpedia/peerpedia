@@ -92,3 +92,37 @@ test("a bibliography duplicate and a chapter label never resolve to an arbitrary
     expect.objectContaining({ path: proof, message: expect.stringContaining("有多个定义") }),
   ]));
 });
+
+test("only a heading's terminal attribute group declares its label", (): void => {
+  const source = [
+    "# Heading {.chapter} {@sec:class-first}",
+    "",
+    "See @sec:class-first.",
+    "",
+    "## Heading {@sec:class-second} {.chapter}",
+    "",
+    "See @sec:class-second.",
+  ].join("\n");
+  const analysis = analyzeProject(editFixture(projectFixture(), intro, source));
+  const valid = findTarget("sec:class-first", analysis);
+  expect(valid).toMatchObject({ path: intro, kind: "heading" });
+  expect(source.slice(valid!.from, valid!.to)).toBe("sec:class-first");
+  expect(referenceAt(source, source.indexOf("sec:class-first"))).toBeNull();
+  expect(findTarget("sec:class-second", analysis)).toBeNull();
+  expect(referenceAt(source, source.indexOf("sec:class-second"))?.key).toBe("sec:class-second");
+  expect(analysis.diagnostics.some((issue: { message: string }): boolean => issue.message.includes("class-first"))).toBe(false);
+  expect(analysis.diagnostics).toContainEqual(expect.objectContaining({ message: expect.stringContaining("class-second") }));
+});
+
+test("indexes ordered and alphabetic list labels with their own precise ranges", (): void => {
+  const source = "# 😀 List\n\n1. {@item:one} A labelled item.\n\n(a) {@item:two} A labelled item.\n\nSee @item:one and @item:two.";
+  const analysis = analyzeProject(editFixture(projectFixture(), intro, source));
+  for (const key of ["item:one", "item:two"]) {
+    const target = findTarget(key, analysis);
+    expect(target).toMatchObject({ path: intro, kind: "item" });
+    expect(source.slice(target!.from, target!.to)).toBe(key);
+    expect(referenceAt(source, source.indexOf(key))).toBeNull();
+    expect(referenceAt(source, source.lastIndexOf(key))?.key).toBe(key);
+  }
+  expect(analysis.diagnostics.filter((issue: { path: string }): boolean => issue.path === intro)).toEqual([]);
+});

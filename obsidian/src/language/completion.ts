@@ -2,12 +2,13 @@ import { syntaxTree } from "@codemirror/language";
 import type { EditorState } from "@codemirror/state";
 import type { SyntaxNode } from "@lezer/common";
 import { referenceStop } from "bananamark/internal/scan.mjs";
-import { escaped } from "bananamark/scan";
-import { fencesBalance, inFormula, matchingEnd } from "bananamark-codemirror";
+import { closesFence, escaped, fenceMarker } from "bananamark/scan";
+import { inFormula, matchingEnd } from "bananamark-codemirror";
 import katexCommands from "bananamark-codemirror/katex-commands.json";
 
 import type { ProjectAnalysis } from "./analysis";
 import { completionState, dialect, fenceLanguage, isValidLabel, literalAt, type LabelTarget } from "./index";
+import { blockPrefix, completionTrigger, environmentPrefix, referencePrefix, texPrefix } from "./triggers";
 
 export interface CompletionContext {
   path: string;
@@ -25,19 +26,33 @@ export interface Suggestion {
   cursorOffset: number;
 }
 
-const environmentPrefix = /^([ \t]*(?:>[ \t]*)*)(:{3,})([ \t]*)([\w-]*)(?:[ \t]+(.*))?$/;
-const blockPrefix = /^([ \t]*(?:>[ \t]*)*)(`{3,}|~{3,})([\w-]*)$/;
-const texPrefix = /(?:\\begin\{[a-zA-Z*]*|\\[a-zA-Z]+)$/;
-const referencePrefix = /(?:\{@|(?<![\p{L}\p{N}_@./%+\\])@)[^\s#@{}<>[\]|\\`()，。．；：！？、‘’“”（）［］｛｝【】「」『』]*$/u;
 
-type Trigger = "environment" | "block" | "formula" | "reference";
-
-export function completionTrigger(before: string, explicit: boolean): Trigger | null {
-  if (blockPrefix.test(before)) return "block";
-  if (texPrefix.test(before)) return "formula";
-  const environment = environmentPrefix.exec(before);
-  if (environment && !environment[5]?.includes("[") && (environment[4] || explicit)) return "environment";
-  return referencePrefix.test(before) ? "reference" : null;
+function hasEnvironmentCloser(source: string, lineEnd: number, opener: string): boolean {
+  const stack = [opener];
+  let code: string | undefined;
+  for (let start = lineEnd + 1; start < source.length;) {
+    const next = source.indexOf("\n", start);
+    const end = next === -1 ? source.length : next;
+    const line = source.slice(start, end);
+    start = end + 1;
+    const marker = fenceMarker(line);
+    if (code) {
+      if (closesFence(marker, code)) code = undefined;
+      continue;
+    }
+    if (marker) {
+      code = marker;
+      continue;
+    }
+    const fence = /^[ \t]*(?:>[ \t]*)*(:{3,})(.*)$/.exec(line);
+    if (!fence) continue;
+    if (fence[2].trim()) stack.push(fence[1]);
+    else {
+      if (stack.pop() !== fence[1]) return false;
+      if (stack.length === 0) return true;
+    }
+  }
+  return false;
 }
 
 function environments(before: string, after: string, context: CompletionContext): Suggestion[] {
@@ -52,7 +67,7 @@ function environments(before: string, after: string, context: CompletionContext)
   const names = Object.keys(dialect.environments).filter((name: string): boolean =>
     name.startsWith(prefix) && (name !== prefix || Boolean(shorthand) || context.explicit));
   const from = context.offset - before.length + indent.length;
-  const hasClosing = fencesBalance(context.source);
+  const hasClosing = hasEnvironmentCloser(context.source, context.offset + after.length, fence);
   return names.map((name: string): Suggestion => {
     const label = `::: ${name}`;
     if (after.trim()) {

@@ -10,7 +10,6 @@ declare module "bananamark-codemirror" {
   }
 
   export function declaredLabels(source: string, options?: { bibliography?: boolean }): { name: string; text: string }[];
-  export function fencesBalance(source: string): boolean;
   export function inFormula(state: EditorState, pos: number): boolean;
   export function matchingEnd(state: EditorState, from: number, to: number): { from: number; to: number } | null;
   export function checkDocument(source: string, options: {
@@ -30,6 +29,8 @@ declare module "bananamark-codemirror/katex-commands.json" {
 }
 
 declare module "bananamark/scan" {
+  export function fenceMarker(line: string): string | undefined;
+  export function closesFence(marker: string | undefined, open: string): boolean;
   export function escaped(source: string, offset: number): boolean;
 }
 

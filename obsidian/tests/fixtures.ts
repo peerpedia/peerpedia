@@ -29,7 +29,7 @@ export function projectFixture(): ProjectSnapshot {
     fixtureSource("paper.json", JSON.stringify(config, null, 2) + "\r\n"),
     fixtureSource("chapters/z-intro.md", "# **Introduction** {@sec:intro}\r\n\r\n正文 😀\r\n"),
     fixtureSource("chapters/a-proof.md", "Proof\n=====\n\n::: theorem {@thm:main}\nA statement [@example].\n:::\n"),
-    fixtureSource("references.yaml", "example:\r\n  title: An example\r\n  author: Ada Example\r\n  year: 2026\r\n"),
+    fixtureSource("references.yaml", "example:\r\n  type: book\r\n  title: An example\r\n  author: Ada Example\r\n  year: 2026\r\n"),
   ]);
 }
 

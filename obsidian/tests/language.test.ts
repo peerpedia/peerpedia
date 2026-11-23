@@ -69,11 +69,7 @@ test("finds unknown references even after a recoverable editing error", (): void
   expect(analysis.diagnostics).toEqual(expect.arrayContaining([
     expect.objectContaining({ path: intro, from: 7, to: 15, message: expect.stringContaining("unknown") }),
   ]));
-  const valid = editFixture(projectFixture(), "references.yaml", "example:\n  type: book\n  title: Example\n");
-  expect(analyzeProject(valid).diagnostics).toEqual([]);
-  expect(analyzeProject(projectFixture()).diagnostics).toContainEqual(expect.objectContaining({
-    path: "references.yaml", message: expect.stringContaining("type"),
-  }));
+  expect(analyzeProject(projectFixture()).diagnostics).toEqual([]);
 });
 
 test("completes cross-chapter references in environment titles and skips escapes", async (): Promise<void> => {
@@ -87,4 +83,36 @@ test("closes a nested directive using its actual fence length", async (): Promis
   expect(await completions("::::the▮\n\n::: lemma\nText.\n:::")).toContainEqual({
     label: "::: theorem", from: 0, to: 7, insertText: ":::: theorem\n\n::::", cursorOffset: 13,
   });
+});
+
+test("manual completion opens a bare fence and reuses a closer belonging to that fence", async (): Promise<void> => {
+  const noClose = await completions(":::▮", true);
+  expect(noClose).toContainEqual({
+    label: "::: theorem", from: 0, to: 3, insertText: "::: theorem\n\n:::", cursorOffset: 12,
+  });
+  const closed = await completions(":::▮\nBody text.\n:::\n\n:::: lemma\nUnclosed.", true);
+  expect(closed).toContainEqual({
+    label: "::: theorem", from: 0, to: 3, insertText: "::: theorem", cursorOffset: 11,
+  });
+  const otherWidth = await completions("::::▮\nBody text.\n:::", true);
+  expect(otherWidth).toContainEqual({
+    label: "::: theorem", from: 0, to: 4, insertText: ":::: theorem\n\n::::", cursorOffset: 13,
+  });
+});
+
+test("an independently malformed bibliography retains a strict syntax diagnostic", (): void => {
+  const malformed = editFixture(projectFixture(), "references.yaml", "example:\n  title: An example\n");
+  expect(analyzeProject(malformed).diagnostics).toContainEqual(expect.objectContaining({
+    path: "references.yaml", message: expect.stringContaining("type"),
+  }));
+});
+
+test("completes a reference to a list item defined in another chapter", async (): Promise<void> => {
+  const source = "See @item:";
+  const project = editFixture(projectFixture(), proof, "# List Items\n\n1. {@item:one} First\n");
+  expect(await complete({
+    path: intro, source, offset: source.length, explicit: false, composing: false,
+  }, analyzeProject(project))).toEqual([
+    expect.objectContaining({ label: "item:one", insertText: "item:one" }),
+  ]);
 });

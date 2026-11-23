@@ -34,9 +34,9 @@ export class WritingEditors {
     const scope = new Compartment();
     const inactive: Extension = [];
     const active: Extension = [
-      sourceDecorations((view: EditorView, source: string): ReturnType<WritingProjects["current"]> => {
+      sourceDecorations((view: EditorView): { path: string; context: ReturnType<WritingProjects["current"]> } | null => {
         const path = editors.scopedFile(view)?.path;
-        return path === undefined ? null : projects.current(path, source);
+        return path === undefined ? null : { path, context: projects.current(path, view.state.doc) };
       }),
       keymap.of([{
         key: "Ctrl-Space",

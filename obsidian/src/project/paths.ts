@@ -4,14 +4,9 @@ import { join } from "node:path";
 
 import { ProjectReadError } from "./types";
 
-export function isRelativePath(path: string): boolean {
-  return path !== "" && !/^[A-Za-z]:|[\\\u0000-\u001f]/.test(path)
-    && path.split("/").every((part: string): boolean => part !== "" && part !== "." && part !== "..");
-}
+import { isRelativePath, pathKey } from "./path-identity";
 
-export function pathKey(path: string): string {
-  return path.normalize("NFD").toLowerCase();
-}
+export { isRelativePath, pathKey } from "./path-identity";
 
 export function isMissing(error: unknown): boolean {
   return (error as NodeJS.ErrnoException)?.code === "ENOENT";

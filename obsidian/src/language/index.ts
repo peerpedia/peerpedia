@@ -17,7 +17,7 @@ export interface Range {
 export interface LabelTarget extends Range {
   key: string;
   label: string;
-  kind: "heading" | "theorem" | "equation" | "bibliography";
+  kind: "heading" | "theorem" | "equation" | "bibliography" | "item";
   path: string;
 }
 
@@ -34,7 +34,7 @@ const parser = dialect.language.language.parser;
 const literals = new Set(["InlineCode", "FencedCode", "CodeBlock", "Comment", "FrontMatter", "HTMLComment"]);
 const math = new Set(["InlineMath", "DisplayMath"]);
 const heading = /^(?:ATX|Setext)Heading[1-6]$/;
-const labelAttribute = /\{([^{}\n]*)\}(?=[ \t]*(?:\{[^{}\n]*\}[ \t]*)?\*?[ \t]*(?:#+[ \t]*)?\r?$)/;
+const labelAttribute = /\{([^{}\n]*)\}(?=[ \t]*\*?[ \t]*(?:#+[ \t]*)?\r?$)/;
 
 export function parseSource(source: string): Tree {
   return parser.parse(source);
@@ -103,6 +103,15 @@ function attrsFrom(source: string, node: SyntaxNode, path: string): LabelTarget[
     const end = node.name.startsWith("Setext") ? node.lastChild?.from ?? node.to : node.to;
     const text = source.slice(node.from, end).trimEnd();
     return attributeLabels(source, node.from, node.from + text.length, path, "heading");
+  }
+  if (node.name === "ListItem" || node.name === "LabelledItem") {
+    const paragraph = node.getChild("Paragraph");
+    const ref = paragraph?.firstChild;
+    if (ref?.name === "Reference" && ref.from === paragraph?.from && source.startsWith("{@", ref.from)) {
+      const from = ref.from + 2;
+      const to = ref.to - 1;
+      return [defineLabel(path, "item", source.slice(from, to), from, to)];
+    }
   }
   if (node.name === "EnvironmentFence" && node.getChild("EnvironmentName")) {
     return attributeLabels(source, node.from, node.to, path, "theorem");

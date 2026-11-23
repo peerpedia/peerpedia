@@ -1,21 +1,26 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 
+import type { Text } from "@codemirror/state";
 import type { EditorView } from "@codemirror/view";
 import { MarkdownView, type App, type Editor } from "obsidian";
 
-import { analyzeProject, type ProjectAnalysis } from "../language/analysis";
-import { scanBibliography, scanChapter, type LabelTarget } from "../language/index";
+import type { ChapterLanguage, ProjectAnalysis, WritingAnalysis } from "../language/analysis";
 import { isRelativePath, pathKey } from "../project/paths";
 import { CONFIG_PATH, projectMembers, projectRevision, sourceDigest, type ProjectEvent } from "../project/store";
 import type { PaperConfig, ProjectSnapshot, SourceFile } from "../project/types";
+import { LanguageWorker } from "./language-worker";
 import { VaultProjectStore } from "./vault-store";
 
 export interface WritingContext {
   project: ProjectSnapshot;
   analysis: ProjectAnalysis;
-  path: string;
-  source: string;
+  chapter: ChapterLanguage;
+}
+
+interface ReadyContext {
+  doc: Text;
+  context: WritingContext;
 }
 
 interface ProjectEntry {
@@ -23,8 +28,23 @@ interface ProjectEntry {
   stop: () => void;
   read: Promise<ProjectSnapshot | null> | null;
   disk: ProjectSnapshot | null;
-  analysis: ProjectAnalysis | null;
-  labels: Map<string, { digest: string; targets: readonly LabelTarget[] }>;
+}
+
+interface PendingEditor {
+  view: EditorView;
+  doc: Text;
+  path: string;
+  generation: number;
+}
+
+interface AnalysisBatch {
+  project: ProjectSnapshot;
+  editors: PendingEditor[];
+}
+
+export interface CompletionSnapshot {
+  project: ProjectSnapshot;
+  path: string;
 }
 
 const CHECK_DELAY_MS = 170;
@@ -46,11 +66,17 @@ function editedSource(path: string, text: string): SourceFile {
 
 export class WritingProjects {
   private readonly store: VaultProjectStore;
+  private readonly worker = new LanguageWorker();
   private readonly roots = new Map<string, ProjectEntry>();
   private readonly editors = new Map<EditorView, string>();
   private readonly knownRoots = new Map<string, string | null>();
-  private readonly contexts = new Map<string, WritingContext>();
+  private readonly contexts = new Map<string, ReadyContext>();
+  private readonly generations = new Map<string, number>();
+  private readonly previous = new Map<string, WritingAnalysis>();
+  private generation = 0;
   private timer: ReturnType<typeof setTimeout> | undefined;
+  private running = false;
+  private queued = false;
   private disposed = false;
 
   constructor(
@@ -71,6 +97,8 @@ export class WritingProjects {
   refreshRoots(): void {
     if (this.disposed) return;
     this.knownRoots.clear();
+    this.previous.clear();
+    this.generations.clear();
     const activeRoots = new Set<string>();
     for (const path of this.editors.values()) {
       const root = this.rootFor(path);
@@ -88,68 +116,63 @@ export class WritingProjects {
 
   invalidate(path?: string): void {
     if (this.disposed) return;
-    if (path !== undefined) {
-      let related = false;
-      for (const editorPath of this.editors.values()) {
-        const root = this.rootFor(editorPath);
-        if (path === editorPath || (root !== null && this.rootFor(path) === root)) {
-          this.contexts.delete(editorPath);
-          related = true;
-        }
+    const root = path === undefined ? null : this.rootFor(path);
+    let related = false;
+    for (const editorPath of this.editors.values()) {
+      if (path === undefined || path === editorPath || (root !== null && this.rootFor(editorPath) === root)) {
+        this.contexts.delete(editorPath);
+        this.generations.set(editorPath, ++this.generation);
+        related = true;
       }
-      if (!related) return;
-    } else this.contexts.clear();
+    }
+    if (path === undefined) this.contexts.clear();
+    if (!related) return;
     this.changed();
     clearTimeout(this.timer);
-    this.timer = setTimeout((): void => this.rebuild(), CHECK_DELAY_MS);
+    this.timer = setTimeout((): void => { void this.rebuild(); }, CHECK_DELAY_MS);
   }
 
-  current(path: string, source: string): WritingContext | null {
-    const context = this.contexts.get(path);
-    return context && editorText(context.source) === source ? context : null;
+  current(path: string, doc: Text): WritingContext | null {
+    const ready = this.contexts.get(path);
+    return ready?.doc === doc ? ready.context : null;
   }
 
-  completionIndex(path: string, source: string): ProjectAnalysis & { path: string } {
-    const context = this.current(path, source);
-    if (context) return { ...context.analysis, path: context.path };
+  async completionSnapshot(path: string, source: string): Promise<CompletionSnapshot | null> {
     const entry = this.entryFor(path);
-    const editorSources = this.editorSources();
-    const project = this.projectFor(path, source, entry?.disk ?? null, editorSources);
-    const labels: LabelTarget[] = [];
-    for (const file of project.files) {
-      if (file.path === CONFIG_PATH) continue;
-      const cached = entry?.labels.get(file.path);
-      if (cached?.digest === file.digest) {
-        labels.push(...cached.targets);
-        continue;
-      }
-      const scan = file.path === project.config.bibliography ? scanBibliography : scanChapter;
-      const targets = scan(file.text, file.path).labels;
-      if (project.root === entry?.root) entry.labels.set(file.path, { digest: file.digest, targets });
-      labels.push(...targets);
-    }
-    const member = project.files.find((file: SourceFile): boolean =>
-      pathKey(vaultPath(project.root, file.path)) === pathKey(path));
-    return { revision: project.revision, labels, diagnostics: [], path: member?.path ?? path };
+    while (entry?.read && this.entryFor(path) === entry) await entry.read;
+    if (this.disposed || this.entryFor(path) !== entry) return null;
+    return this.snapshotFor(path, source, entry?.disk ?? null, this.editorSources());
+  }
+
+  isCompletionCurrent(path: string, source: string, revision: string): boolean {
+    const entry = this.entryFor(path);
+    if (this.disposed || entry?.read) return false;
+    return this.snapshotFor(path, source, entry?.disk ?? null, this.editorSources()).project.revision === revision;
   }
 
   async readCurrent(path: string, editor: Editor): Promise<WritingContext | null> {
     const entry = this.entryFor(path);
     const disk = entry ? await this.store.read(entry.root).catch((): null => null) : null;
-    if (this.disposed || (entry && this.entryFor(path) !== entry)) return null;
+    if (this.disposed || this.entryFor(path) !== entry) return null;
+    const generation = this.generations.get(path);
     const source = editor.getValue();
-    const project = this.projectFor(path, source, disk, this.editorSources());
-    return this.context(project, path, entry);
+    const snapshot = this.snapshotFor(path, source, disk, this.editorSources());
+    const result = this.cached(snapshot) ?? await this.worker.run("analyze", snapshot.project);
+    if (this.disposed || this.generations.get(path) !== generation || editor.getValue() !== source) return null;
+    return this.context(snapshot, result);
   }
 
   dispose(): void {
     this.disposed = true;
     clearTimeout(this.timer);
+    this.worker.dispose();
     for (const entry of this.roots.values()) entry.stop();
     this.roots.clear();
     this.editors.clear();
     this.contexts.clear();
     this.knownRoots.clear();
+    this.generations.clear();
+    this.previous.clear();
   }
 
   private rootFor(path: string): string | null {
@@ -173,11 +196,9 @@ export class WritingProjects {
   }
 
   private watch(root: string): void {
-    const entry: ProjectEntry = { root, stop: (): void => {}, disk: null, read: null, analysis: null, labels: new Map() };
+    const entry: ProjectEntry = { root, stop: (): void => {}, disk: null, read: null };
     this.roots.set(root, entry);
-    entry.stop = this.store.watch(root, (_event: ProjectEvent): void => {
-      this.load(entry);
-    });
+    entry.stop = this.store.watch(root, (_event: ProjectEvent): void => this.load(entry));
     this.load(entry);
   }
 
@@ -190,67 +211,123 @@ export class WritingProjects {
       if (this.roots.get(entry.root) !== entry || entry.read !== pending) return;
       entry.read = null;
       entry.disk = disk;
-      const members = new Set(disk ? projectMembers(disk.config) : []);
-      for (const path of entry.labels.keys()) if (!members.has(path)) entry.labels.delete(path);
       this.invalidate(vaultPath(entry.root, CONFIG_PATH));
     });
   }
 
-  private editorSources(): ReadonlyMap<string, string> {
-    const buffers = new Map<string, string>();
+  private editorSources(): ReadonlyMap<string, Editor> {
+    const buffers = new Map<string, Editor>();
     for (const leaf of this.app.workspace.getLeavesOfType("markdown")) {
       if (leaf.view instanceof MarkdownView && leaf.view.file && leaf.view.editor) {
-        buffers.set(pathKey(leaf.view.file.path), leaf.view.editor.getValue());
+        buffers.set(pathKey(leaf.view.file.path), leaf.view.editor);
       }
     }
     return buffers;
   }
 
-  private projectFor(
-    path: string, source: string, disk: ProjectSnapshot | null, buffers: ReadonlyMap<string, string>,
-  ): ProjectSnapshot {
-    if (disk && projectMembers(disk.config).slice(1).some((member: string): boolean =>
-      pathKey(vaultPath(disk.root, member)) === pathKey(path))) {
-      const current = pathKey(path);
+  private snapshotFor(
+    path: string, source: string, disk: ProjectSnapshot | null, buffers: ReadonlyMap<string, Editor>,
+  ): CompletionSnapshot {
+    const current = pathKey(path);
+    const member = disk && projectMembers(disk.config).slice(1).find((item: string): boolean =>
+      pathKey(vaultPath(disk.root, item)) === current);
+    if (disk && member) {
       const files = disk.files.map((file: SourceFile): SourceFile => {
         if (file.path === CONFIG_PATH || file.path === disk.config.bibliography) return file;
         const key = pathKey(vaultPath(disk.root, file.path));
-        const open = key === current ? source : buffers.get(key);
+        const open = key === current ? source : buffers.get(key)?.getValue();
         return open !== undefined && open !== editorText(file.text) ? editedSource(file.path, open) : file;
       });
-      return { ...disk, files, revision: projectRevision(files) };
+      return { path: member, project: { ...disk, files, revision: projectRevision(files) } };
     }
-    // Scope and membership are independent: an enabled note can use BananaMark
-    // locally without picking up the labels of a paper it does not belong to.
+    // Scope and membership are independent. An enabled note has its own
+    // index unless it is a declared member of the paper.
     const file = editedSource(path, source);
     return {
-      root: "", config: { ...scratchConfig, chapters: [{ id: "note", title: "", file: path }] },
-      files: [file], revision: projectRevision([file]),
+      path,
+      project: {
+        root: "", config: { ...scratchConfig, chapters: [{ id: "note", title: "", file: path }] },
+        files: [file], revision: projectRevision([file]),
+      },
     };
   }
 
-  private context(project: ProjectSnapshot, path: string, entry: ProjectEntry | undefined): WritingContext | null {
-    const file = project.files.find((item: SourceFile): boolean =>
-      pathKey(vaultPath(project.root, item.path)) === pathKey(path));
-    if (!file) return null;
-    const cached = entry?.analysis;
-    const analysis = cached?.revision === project.revision ? cached : analyzeProject(project);
-    if (entry && project.root === entry.root) entry.analysis = analysis;
-    return { project, analysis, path: file.path, source: file.text };
+  private context(snapshot: CompletionSnapshot, result: WritingAnalysis): WritingContext | null {
+    const chapter = result.chapters.get(snapshot.path);
+    return chapter ? { project: snapshot.project, analysis: result.analysis, chapter } : null;
   }
 
-  private rebuild(): void {
-    this.timer = undefined;
+  private cacheKey(project: ProjectSnapshot): string {
+    return project.files.some((file: SourceFile): boolean => file.path === CONFIG_PATH)
+      ? `project:${project.root}` : `note:${project.files[0]?.path}`;
+  }
+
+  private cached({ project }: CompletionSnapshot): WritingAnalysis | undefined {
+    const result = this.previous.get(this.cacheKey(project));
+    return result?.analysis.revision === project.revision ? result : undefined;
+  }
+
+  private isLatest(editor: PendingEditor): boolean {
+    return !this.disposed && this.editors.get(editor.view) === editor.path && editor.view.state.doc === editor.doc
+      && this.generations.get(editor.path) === editor.generation && !editor.view.compositionStarted;
+  }
+
+  private batches(): AnalysisBatch[] {
+    const batches = new Map<string, AnalysisBatch>();
     const buffers = this.editorSources();
     for (const [view, path] of this.editors) {
-      if (view.compositionStarted) continue;
+      const doc = view.state.doc;
+      const generation = this.generations.get(path);
+      if (generation === undefined || view.compositionStarted || this.current(path, doc)) continue;
       const entry = this.entryFor(path);
       if (entry?.read) continue;
-      const source = view.state.doc.toString();
-      const project = this.projectFor(path, source, entry?.disk ?? null, buffers);
-      const context = this.context(project, path, entry);
-      if (context) this.contexts.set(path, context);
+      const { project } = this.snapshotFor(path, doc.toString(), entry?.disk ?? null, buffers);
+      const key = `${this.cacheKey(project)}:${project.revision}`;
+      let batch = batches.get(key);
+      if (!batch) {
+        batch = { project, editors: [] };
+        batches.set(key, batch);
+      }
+      batch.editors.push({ view, doc, path, generation });
     }
-    this.changed();
+    return [...batches.values()];
+  }
+
+  private async rebuild(): Promise<void> {
+    this.timer = undefined;
+    if (this.running) {
+      this.queued = true;
+      return;
+    }
+    this.running = true;
+    try {
+      for (const { project, editors } of this.batches()) {
+        if (!editors.some((editor: PendingEditor): boolean => this.isLatest(editor))) continue;
+        const key = this.cacheKey(project);
+        const cached = this.previous.get(key);
+        const result = cached?.analysis.revision === project.revision ? cached
+          : await this.worker.run("analyze", project);
+        if (result.analysis.revision !== project.revision) continue;
+        for (const editor of editors) {
+          if (!this.isLatest(editor)) continue;
+          const path = project.files.find((file: SourceFile): boolean =>
+            pathKey(vaultPath(project.root, file.path)) === pathKey(editor.path))?.path;
+          const context = path ? this.context({ project, path }, result) : null;
+          if (context) {
+            this.previous.set(key, result);
+            this.contexts.set(editor.path, { doc: editor.doc, context });
+            this.changed();
+          }
+        }
+      }
+    } catch {
+      // The next edit or disk change starts a fresh worker after a crash.
+    } finally {
+      this.running = false;
+      if (this.queued && !this.disposed && this.timer === undefined) {
+        this.queued = false;
+        void this.rebuild();
+      } else this.queued = false;
+    }
   }
 }

@@ -4,7 +4,8 @@ import { WritingEditors } from "./host/editor-extension";
 import { BIBLIOGRAPHY_SOURCE_VIEW, BibliographySourceView, openSourceTarget, warnNavigationFailure } from "./host/source-navigation";
 import { BananaMarkSuggest } from "./host/suggest";
 import { WritingProjects } from "./host/writing-projects";
-import { findTarget, referenceAt } from "./language/navigation";
+import type { Reference } from "./language/index";
+import { findTarget } from "./language/targets";
 import { resolveScope } from "./project/scope";
 import { CONFIG_PATH } from "./project/store";
 
@@ -39,12 +40,12 @@ export default class PeerpediaPlugin extends Plugin {
     const suggest = new BananaMarkSuggest(
       this.app,
       (editor: Editor, path: string): ReturnType<WritingEditors["viewFor"]> => editors.viewFor(editor, path),
-      (path: string, source: string): ReturnType<WritingProjects["completionIndex"]> => projects.completionIndex(path, source),
+      projects,
     );
     this.writingEditors = editors;
     this.writingProjects = projects;
     this.register((): void => {
-      suggest.close();
+      suggest.dispose();
       projects.dispose();
       this.app.workspace.detachLeavesOfType(BIBLIOGRAPHY_SOURCE_VIEW);
     });
@@ -72,18 +73,26 @@ export default class PeerpediaPlugin extends Plugin {
         const file = view.file;
         const cm = file ? editors.viewFor(editor, file.path) : undefined;
         if (!file || !cm || cm.compositionStarted || cm.state.selection.ranges.length !== 1) return false;
-        const source = editor.getValue();
+        const doc = cm.state.doc;
         const offset = editor.posToOffset(editor.getCursor());
-        const reference = referenceAt(source, offset);
-        if (!reference) return false;
+        const current = projects.current(file.path, doc);
+        if (current) {
+          if (!current.chapter.references.some((item: Reference): boolean => item.from <= offset && offset <= item.to)) return false;
+        } else if (!editor.getLine(editor.getCursor().line).includes("@")) return false;
         if (!checking) {
           void (async (): Promise<void> => {
             const context = await projects.readCurrent(file.path, editor);
             if (view.file !== file || this.app.workspace.activeEditor?.editor !== editor
-              || editor.getValue() !== source || editor.posToOffset(editor.getCursor()) !== offset
+              || cm.state.doc !== doc || editor.posToOffset(editor.getCursor()) !== offset
               || !editors.viewFor(editor, file.path)) return;
-            const target = context && findTarget(reference.key, context.analysis);
-            if (!target || !context) {
+            if (!context) {
+              warnNavigationFailure();
+              return;
+            }
+            const reference = context.chapter.references.find((item: Reference): boolean => item.from <= offset && offset <= item.to);
+            if (!reference) return;
+            const target = findTarget(reference.key, context.analysis);
+            if (!target) {
               new Notice(`找不到「${reference.key}」的唯一定义。`);
               return;
             }

@@ -2,7 +2,7 @@
 
 2026 年 11 月 24 日在 macOS 15.6.1（Apple Silicon）验证 Obsidian Desktop 1.15.1，宿主使用 Electron 43.8.9。插件声明 `isDesktopOnly: true` 和 `minAppVersion: 1.15.1`。兼容范围以这次实测的桌面版本为基线。
 
-插件以 Obsidian 的建议窗口提供自动补全，通过官方 CodeMirror 扩展添加 BananaMark 高亮和诊断。文件和文件夹规则默认关闭，启用后仅在源码模式生效。补全、诊断和引用跳转使用单独的 BananaMark 语法上下文，Markdown 编辑器继续使用 Obsidian 的语法树。构建使用宿主提供的 Obsidian、Electron、CodeMirror 和 Lezer 模块。[Obsidian 编辑器扩展指南](https://docs.obsidian.md/Plugins/Editor/Editor%20extensions) · [官方示例插件的构建配置](https://github.com/obsidianmd/obsidian-sample-plugin/blob/master/esbuild.config.mjs)
+插件以 Obsidian 的建议窗口提供自动补全，通过官方 CodeMirror 扩展添加 BananaMark 高亮和诊断。文件和文件夹规则默认关闭，启用后仅在源码模式生效。补全、诊断和引用跳转使用单独的 BananaMark 语法上下文，Markdown 编辑器继续使用 Obsidian 的语法树。源码分析、诊断和候选计算在插件内嵌的浏览器工作线程中进行。主窗口继续使用宿主的 Obsidian、Electron、CodeMirror 和 Lezer 模块。[Obsidian 编辑器扩展指南](https://docs.obsidian.md/Plugins/Editor/Editor%20extensions) · [官方示例插件的构建配置](https://github.com/obsidianmd/obsidian-sample-plugin/blob/master/esbuild.config.mjs)
 
 源码模式下可用 Ctrl+Space 手动唤出建议。Obsidian 1.15.1 的自动建议有公开接口，手动触发使用该版本的宿主入口。该入口不可用时会提示，自动建议仍可使用。将光标移到引用上，从命令面板运行「跳转到 BananaMark 引用的定义」，可以打开对应章节并选中标签，也可以选中只读书目源码中的条目键。
 
@@ -24,7 +24,7 @@
 
 ```sh
 npm --prefix obsidian ci
-npm --prefix obsidian test -- tests/language.test.ts tests/navigation.test.ts
+npm --prefix obsidian test -- tests/language.test.ts tests/navigation.test.ts tests/language-worker.test.ts
 npm --prefix obsidian run typecheck
 npm --prefix obsidian run check:types
 npm --prefix obsidian run build

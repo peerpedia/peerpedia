@@ -3,7 +3,7 @@ import {
 } from "obsidian";
 
 import type { LabelTarget, Range } from "../language/index";
-import { editorOffset } from "../language/navigation";
+import { editorOffset } from "../language/coordinates";
 import type { ProjectSnapshot, SourceFile } from "../project/types";
 import { editorText, vaultPath } from "./writing-projects";
 
