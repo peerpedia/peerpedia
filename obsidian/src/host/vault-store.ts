@@ -1,17 +1,20 @@
-import { constants, watch as watchFiles, type Dirent, type FSWatcher } from "node:fs";
-import { open, readdir, realpath } from "node:fs/promises";
+import { watch as watchFiles, type Dirent, type FSWatcher } from "node:fs";
+import { mkdir, readdir, realpath } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 
 import type { TAbstractFile, Vault } from "obsidian";
 
 import { isMissing, isRelativePath, locatePath, pathKey } from "../project/paths";
 import {
-  CONFIG_PATH, parsePaperConfig, projectMembers, projectRevision, sourceDigest,
+  CONFIG_PATH, parsePaperConfig, projectMembers, projectRevision, type FileChange,
   type ProjectEvent, type ProjectStore,
 } from "../project/store";
-import { ProjectReadError, type ProjectSnapshot, type SourceFile } from "../project/types";
+import { ProjectReadError, type ChapterSpec, type ProjectSnapshot, type SourceFile } from "../project/types";
 
-const decoder = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true });
+import { readSource } from "../project/source-file";
+import { keepConflict, PreconditionConflict, safePath, syncDirectory, writeTransaction, type WriteHost } from "../project/transaction";
+import { recoverProject, recoveryFiles, type RecoveryFile, type RecoveryNotice } from "../project/recovery";
+
 const WATCH_SETTLE_MS = 30;
 // CLI fetches and plugin recovery records can contain complete copies of a project.
 const PROJECT_STATE_FOLDERS = new Set([".peerpedia", ".peerpedia-obsidian", ".obsidian", ".git"]);
@@ -53,48 +56,6 @@ async function rejectNestedProject(base: string, root: string, absolute: string)
   }
 }
 
-async function readSource(
-  root: string,
-  path: string,
-  identities: Map<string, string>,
-): Promise<SourceFile | undefined> {
-  try {
-    const disk = await locatePath(root, path, path);
-    if (!disk) return undefined;
-    if (!disk.stat.isFile()) throw new ProjectReadError(path, `Project path "${path}" must name a regular file.`);
-    if (await realpath(disk.absolute) !== disk.absolute) {
-      throw new ProjectReadError(path, `Do not use a symlink in project path "${path}".`);
-    }
-    const flags = constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK;
-    const handle = await open(disk.absolute, flags);
-    try {
-      const stat = await handle.stat({ bigint: true });
-      if (!stat.isFile() || stat.dev !== disk.stat.dev || stat.ino !== disk.stat.ino) {
-        throw new ProjectReadError(path, `Project file "${path}" changed while opening it. Reload the project.`);
-      }
-      const key = `${stat.dev}:${stat.ino}`;
-      const alias = identities.get(key);
-      if (alias !== undefined) {
-        throw new ProjectReadError(path, `Paths "${alias}" and "${path}" refer to the same file.`);
-      }
-      const bytes = await handle.readFile();
-      let text: string;
-      try {
-        text = decoder.decode(bytes);
-      } catch {
-        throw new ProjectReadError(path, `Project file "${path}" is not valid UTF-8.`);
-      }
-      identities.set(key, path);
-      return { path, text, digest: sourceDigest(bytes) };
-    } finally {
-      await handle.close();
-    }
-  } catch (error: unknown) {
-    if (isMissing(error)) return undefined;
-    throw error;
-  }
-}
-
 function isWithin(path: string, root: string): boolean {
   return root === "" || path === root || path.startsWith(root + "/");
 }
@@ -128,10 +89,15 @@ function changedPaths(previous: ProjectSnapshot, current: ProjectSnapshot): Proj
   return events;
 }
 
-export class VaultProjectStore implements Pick<ProjectStore, "read" | "watch"> {
+// Shared with the independent language-service store so its watcher never publishes
+// intermediate states from a multi-file write by this plugin instance.
+const writes = new Map<string, Promise<unknown>>();
+
+export class VaultProjectStore implements ProjectStore {
   private readonly basePath: string;
 
-  constructor(basePath: string, private readonly vault: Pick<Vault, "on" | "offref">) {
+  constructor(basePath: string, private readonly vault: Pick<Vault, "on" | "offref">,
+    private readonly host: WriteHost = {}) {
     this.basePath = resolve(basePath);
   }
 
@@ -157,6 +123,106 @@ export class VaultProjectStore implements Pick<ProjectStore, "read" | "watch"> {
     return { root, config, files, revision: projectRevision(files) };
   }
 
+  private async directory(root: string): Promise<string> {
+    checkRoot(root);
+    if (root) safePath(root);
+    const base = await realpath(this.basePath);
+    if (!root) return base;
+    const dir = await locatePath(base, root, CONFIG_PATH);
+    if (!dir?.stat.isDirectory()) throw new Error("论文文件夹不存在。");
+    return dir.absolute;
+  }
+
+  async localPath(root: string, path: string): Promise<string> {
+    const found = await locatePath(await this.directory(root), path, path);
+    if (!found) throw new Error("找不到原文件。");
+    return found.absolute;
+  }
+
+  async recoveryFiles(root: string, id: string): Promise<readonly RecoveryFile[]> {
+    return recoveryFiles(await this.directory(root), id);
+  }
+
+  async recovery(root: string): Promise<readonly RecoveryNotice[]> {
+    return recoverProject(await this.directory(root));
+  }
+
+  async member(root: string, path: string): Promise<SourceFile | undefined> {
+    safePath(path);
+    return readSource(await this.directory(root), path, new Map());
+  }
+
+  private async exclusive(root: string, operation: () => Promise<ProjectSnapshot>): Promise<ProjectSnapshot> {
+    const key = pathKey(join(this.basePath, root));
+    if (writes.has(key)) throw new Error("论文正在保存，请稍后再试。");
+    const pending = operation();
+    writes.set(key, pending);
+    try { return await pending; } finally { writes.delete(key); }
+  }
+
+  create(root: string, changes: readonly FileChange[]): Promise<ProjectSnapshot> {
+    return this.exclusive(root, async (): Promise<ProjectSnapshot> => {
+      safePath(root);
+      if (changes.some((change: FileChange): boolean => change.beforeDigest !== null || change.afterText === null)) {
+        throw new Error("新论文只能创建新文件。");
+      }
+      const config = parsePaperConfig(changes.find((change: FileChange): boolean => change.path === CONFIG_PATH)?.afterText ?? "");
+      const members = projectMembers(config);
+      const keys = new Set<string>();
+      for (const member of members) safePath(member);
+      for (const change of changes) {
+        safePath(change.path);
+        const key = pathKey(change.path);
+        if (!members.includes(change.path) || keys.has(key)) throw new Error("发现重复路径或不属于论文的文件。");
+        keys.add(key);
+      }
+      const base = await realpath(this.basePath);
+      const parent = dirname(root);
+      if (parent !== ".") await this.directory(parent);
+      if (await locatePath(base, root, CONFIG_PATH)) throw new Error("目标文件夹已存在，请选择新名称。");
+      const directory = join(base, root);
+      await rejectNestedProject(base, root, directory);
+      await mkdir(directory); // exclusive even if another process creates it after our check
+      await syncDirectory(dirname(directory));
+      return writeTransaction(directory, root, null, changes, this.host, (): Promise<ProjectSnapshot> => this.read(root));
+    });
+  }
+
+  apply(root: string, expectedRevision: string, changes: readonly FileChange[]): Promise<ProjectSnapshot> {
+    return this.save(root, expectedRevision, changes);
+  }
+
+  renameChapter(project: ProjectSnapshot, id: string, to: string): Promise<ProjectSnapshot> {
+    const chapters = project.config.chapters ?? [];
+    const chapter = chapters.find((item: ChapterSpec): boolean => item.id === id);
+    const source = project.files.find((file: SourceFile): boolean => file.path === chapter?.file);
+    if (!chapter || !source) return Promise.reject(new Error("找不到章节原文件。"));
+    if (chapter.file === to) return this.apply(project.root, project.revision, []);
+    const config = { ...project.config, chapters: chapters.map((item: ChapterSpec): ChapterSpec =>
+      item.id === id ? { ...item, file: to } : item) };
+    return this.save(project.root, project.revision, [
+      { path: chapter.file, beforeDigest: source.digest, afterText: null },
+      { path: to, beforeDigest: null, afterText: source.text },
+      { path: CONFIG_PATH, beforeDigest: project.files.find((f: SourceFile): boolean => f.path === CONFIG_PATH)!.digest,
+        afterText: JSON.stringify(config, null, 2) + "\n" },
+    ], { from: chapter.file, to });
+  }
+
+  private save(root: string, expectedRevision: string, changes: readonly FileChange[],
+    move?: { from: string; to: string }): Promise<ProjectSnapshot> {
+    return this.exclusive(root, async (): Promise<ProjectSnapshot> => {
+      const directory = await this.directory(root);
+      const project = await this.read(root);
+      try {
+        if (project.revision !== expectedRevision) throw new PreconditionConflict("论文已在其他地方更改，请重新载入后核对。");
+        return await writeTransaction(directory, root, project, changes, this.host, (): Promise<ProjectSnapshot> => this.read(root), move);
+      } catch (error: unknown) {
+        if (error instanceof PreconditionConflict) await keepConflict(directory, project, expectedRevision, changes, this.host);
+        throw error;
+      }
+    });
+  }
+
   watch(root: string, listener: (event: ProjectEvent) => void): () => void {
     checkRoot(root);
     const key = pathKey(root);
@@ -171,7 +237,10 @@ export class VaultProjectStore implements Pick<ProjectStore, "read" | "watch"> {
       queued = false;
       working = true;
       try {
+        const writing = writes.get(pathKey(join(this.basePath, root)));
+        if (writing) await writing.catch((): void => {});
         const current = await this.read(root);
+        if (writes.has(pathKey(join(this.basePath, root)))) { queued = true; return; }
         if (stopped) return;
         if (previous) {
           const events = changedPaths(previous, current);

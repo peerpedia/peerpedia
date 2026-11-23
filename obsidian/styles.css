@@ -43,3 +43,36 @@
   white-space: pre;
   tab-size: 2;
 }
+
+.peerpedia-project-panel,
+.peerpedia-paper-form {
+  padding: var(--size-4-3);
+}
+
+.peerpedia-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--size-4-1);
+  margin-block: var(--size-4-2);
+}
+
+.peerpedia-project-panel li {
+  padding-block: var(--size-4-2);
+}
+
+.peerpedia-paper-form label {
+  display: grid;
+  gap: var(--size-4-1);
+  margin-block-end: var(--size-4-3);
+}
+
+.peerpedia-paper-form textarea {
+  min-height: 5em;
+}
+
+.peerpedia-paper-form pre {
+  max-height: 12em;
+  overflow: auto;
+  white-space: pre-wrap;
+}

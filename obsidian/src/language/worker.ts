@@ -1,3 +1,4 @@
+import { inspectChapter } from "../../../editor/chapter-title.js";
 import { analyzeWriting, projectLabels, type SourceAnalysisCache } from "./analysis";
 import { suggestionsFor } from "./completion";
 import type { LanguageRequest, LanguageResponse } from "./worker-protocol";
@@ -14,6 +15,9 @@ port.addEventListener("message", ({ data: request }: MessageEvent<LanguageReques
   let response: LanguageResponse;
   try {
     switch (request.kind) {
+      case "title":
+        response = { id: request.id, kind: "title", value: inspectChapter(request.value).title };
+        break;
       case "analyze":
         response = { id: request.id, kind: "analyze", value: analyzeWriting(request.value, cache) };
         break;

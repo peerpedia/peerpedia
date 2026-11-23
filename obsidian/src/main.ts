@@ -1,5 +1,10 @@
 import { FileSystemAdapter, MarkdownView, Notice, Plugin, type Editor, type MarkdownFileInfo, type TAbstractFile, type WorkspaceLeaf } from "obsidian";
 
+import { ExternalScopeMoves, isStagedMove, moveScope, openBuffers, stageChapter } from "./host/file-events";
+import { VaultProjectStore } from "./host/vault-store";
+import { PROJECT_PANEL, ProjectPanel } from "./ui/project-panel";
+import { ScopeSettings } from "./ui/scope-settings";
+import { errorMessage } from "./ui/conflict-modal";
 import { WritingEditors } from "./host/editor-extension";
 import { BIBLIOGRAPHY_SOURCE_VIEW, BibliographySourceView, openSourceTarget, warnNavigationFailure } from "./host/source-navigation";
 import { BananaMarkSuggest } from "./host/suggest";
@@ -23,6 +28,9 @@ function scopeRules(value: unknown): Record<string, boolean> {
 
 export default class PeerpediaPlugin extends Plugin {
   writingScope: WritingScope = { folders: {}, files: {} };
+  private scopeMoves?: ExternalScopeMoves;
+  private settingsWrite: Promise<void> = Promise.resolve();
+  projectStore?: VaultProjectStore;
   private writingEditors: WritingEditors | undefined;
   private writingProjects: WritingProjects | undefined;
 
@@ -34,6 +42,58 @@ export default class PeerpediaPlugin extends Plugin {
       folders: scopeRules(settings?.writingScope?.folders),
       files: scopeRules(settings?.writingScope?.files),
     };
+    const store = new VaultProjectStore(adapter.getBasePath(), this.app.vault, {
+      buffers: (path: string): readonly string[] => openBuffers(this.app, path),
+      rename: (from: string, staged: string): Promise<(path: string) => Promise<void>> =>
+        stageChapter(this.app, from, staged, (oldPath: string, path: string): Promise<void> => this.moveRules(oldPath, path)),
+    });
+    this.projectStore = store;
+    const moves = new ExternalScopeMoves(adapter.getBasePath(), (): WritingScope => this.writingScope,
+      (from: string, to: string): Promise<void> => this.moveRules(from, to));
+    this.scopeMoves = moves;
+    await moves.refresh();
+    this.registerEvent(this.app.vault.on("create", (file: TAbstractFile): void => {
+      void moves.changed(file.path, true).catch((error: unknown): void => { new Notice(errorMessage(error)); });
+    }));
+    this.registerEvent(this.app.vault.on("modify", (file: TAbstractFile): void => {
+      void moves.changed(file.path, false).catch((error: unknown): void => { new Notice(errorMessage(error)); });
+    }));
+    this.addSettingTab(new ScopeSettings(this.app, this));
+    this.registerView(PROJECT_PANEL, (leaf: WorkspaceLeaf): ProjectPanel => new ProjectPanel(leaf, store,
+      (root: string): Promise<void> => this.updateWritingScope({
+        ...this.writingScope, folders: { ...this.writingScope.folders, [root]: true },
+      })));
+    const openPanel = async (): Promise<ProjectPanel> => {
+      let leaf = this.app.workspace.getLeavesOfType(PROJECT_PANEL)[0];
+      let root: string | undefined;
+      const file = this.app.workspace.getActiveFile();
+      if (file) {
+        let parent = file.parent;
+        while (parent) {
+          const folder = parent.isRoot() ? "" : parent.path;
+          if (await adapter.exists(folder ? folder + "/" + CONFIG_PATH : CONFIG_PATH)) { root = folder; break; }
+          parent = parent.parent;
+        }
+      }
+      if (!leaf) {
+        leaf = this.app.workspace.getRightLeaf(false) ?? this.app.workspace.getLeaf("tab");
+        await leaf.setViewState({ type: PROJECT_PANEL, active: true, state: { root } });
+      } else if (root !== undefined && leaf.view instanceof ProjectPanel) await leaf.view.selectRoot(root);
+      await this.app.workspace.revealLeaf(leaf);
+      if (!(leaf.view instanceof ProjectPanel)) throw new Error("无法打开论文管理面板。");
+      return leaf.view;
+    };
+    const showPanel = (create: boolean): void => {
+      void openPanel().then((panel: ProjectPanel): void => { if (create) panel.createForm(); })
+        .catch((error: unknown): void => { new Notice(errorMessage(error)); });
+    };
+    this.addCommand({ id: "manage-paper", name: "管理论文", callback: (): void => showPanel(false) });
+    this.addCommand({ id: "create-paper", name: "新建论文", callback: (): void => showPanel(true) });
+    this.addRibbonIcon("book-open", "管理论文", (): void => showPanel(false));
+    this.registerEvent(this.app.vault.on("rename", (file: TAbstractFile, from: string): void => {
+      if (isStagedMove(file.path)) return;
+      void this.moveRules(from, file.path).catch((error: unknown): void => { new Notice(errorMessage(error)); });
+    }));
     const editors = new WritingEditors((path: string): boolean =>
       resolveScope(path, this.writingScope.folders, this.writingScope.files));
     const projects = new WritingProjects(this.app, adapter.getBasePath(), (): void => editors.invalidate());
@@ -47,6 +107,7 @@ export default class PeerpediaPlugin extends Plugin {
     this.register((): void => {
       suggest.dispose();
       projects.dispose();
+      this.app.workspace.detachLeavesOfType(PROJECT_PANEL);
       this.app.workspace.detachLeavesOfType(BIBLIOGRAPHY_SOURCE_VIEW);
     });
     this.registerEditorSuggest(suggest);
@@ -102,6 +163,27 @@ export default class PeerpediaPlugin extends Plugin {
         return true;
       },
     });
+  }
+
+  private async moveRules(from: string, to: string): Promise<void> {
+    for (const leaf of this.app.workspace.getLeavesOfType(PROJECT_PANEL)) {
+      if (leaf.view instanceof ProjectPanel) leaf.view.moved(from, to);
+    }
+    const scope = moveScope(this.writingScope, from, to);
+    if (JSON.stringify(scope) !== JSON.stringify(this.writingScope)) await this.updateWritingScope(scope);
+  }
+
+  updateWritingScope(scope: WritingScope): Promise<void> {
+    this.writingScope = scope;
+    this.refreshWritingScope();
+    // Serialize rename bursts and setting edits. Other plugin settings survive each save.
+    const pending = this.settingsWrite.catch((): void => {}).then(async (): Promise<void> => {
+      const existing: Record<string, unknown> | null = await this.loadData();
+      await this.saveData({ ...existing, writingScope: scope });
+      await this.scopeMoves?.refresh();
+    });
+    this.settingsWrite = pending;
+    return pending;
   }
 
   refreshWritingScope(): void {
