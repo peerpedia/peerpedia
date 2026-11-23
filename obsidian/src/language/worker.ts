@@ -1,3 +1,4 @@
+import { previewTitle } from "./title-preview";
 import { inspectChapter } from "../../../editor/chapter-title.js";
 import { analyzeWriting, projectLabels, type SourceAnalysisCache } from "./analysis";
 import { suggestionsFor } from "./completion";
@@ -15,6 +16,9 @@ port.addEventListener("message", ({ data: request }: MessageEvent<LanguageReques
   let response: LanguageResponse;
   try {
     switch (request.kind) {
+      case "previewTitle":
+        response = {id: request.id, kind: "previewTitle", value: previewTitle(request.value.source, request.value.title)};
+        break;
       case "title":
         response = { id: request.id, kind: "title", value: inspectChapter(request.value).title };
         break;

@@ -5,7 +5,8 @@ import type { EventRef, Vault } from "obsidian";
 import { afterEach, expect, test, vi } from "vitest";
 
 import { VaultProjectStore } from "../src/host/vault-store";
-import { atomicFiles } from "../src/project/transaction";
+import type { AnchoredFiles } from "../src/project/anchored-files";
+import { atomicFiles, type OpenChapterMove } from "../src/project/transaction";
 import { recoverProject } from "../src/project/recovery";
 import type { FileChange, ProjectEvent } from "../src/project/store";
 import type { SourceFile } from "../src/project/types";
@@ -52,9 +53,9 @@ test("second replacement fails after durable images; reopen exposes all versions
   const root = join(base, "paper");
   const store = new VaultProjectStore(base, events);
   const original = atomicFiles.replace.bind(atomicFiles);
-  vi.spyOn(atomicFiles, "replace").mockImplementation(async (from: string, to: string): Promise<void> => {
-    if (to === join(root, second.path)) throw new Error("second replacement fault");
-    await original(from, to);
+  vi.spyOn(atomicFiles, "replace").mockImplementation(async (from: string, to: string, tree: AnchoredFiles): Promise<void> => {
+    if (join(tree.base,to) === join(root, second.path)) throw new Error("second replacement fault");
+    await original(from, to, tree);
   });
   await expect(store.apply("paper", fixture.revision, [change(first, "第一份新稿"), change(second, "第二份新稿")])).rejects.toThrow();
   expect(await fs.readFile(join(root, first.path), "utf8")).toBe("第一份新稿");
@@ -77,9 +78,9 @@ test("external edit arriving after first write survives remaining transaction", 
   const root = join(base, "paper");
   const store = new VaultProjectStore(base, events);
   const original = atomicFiles.replace.bind(atomicFiles);
-  vi.spyOn(atomicFiles, "replace").mockImplementation(async (from: string, to: string): Promise<void> => {
-    await original(from, to);
-    if (to === join(root, first.path)) await fs.writeFile(join(root, second.path), "external");
+  vi.spyOn(atomicFiles, "replace").mockImplementation(async (from: string, to: string, tree: AnchoredFiles): Promise<void> => {
+    await original(from, to, tree);
+    if (join(tree.base,to) === join(root, first.path)) await fs.writeFile(join(root, second.path), "external");
   });
   await expect(store.apply("paper", fixture.revision, [change(first, "one"), change(second, "two")])).rejects.toThrow();
   expect(await fs.readFile(join(root, second.path), "utf8")).toBe("external");
@@ -138,12 +139,15 @@ test("native staging plus exclusive destination preserves an external creation a
   const base = await setup();
   const reopened: string[] = [];
   const dest = join(base, "paper/new.md");
+  const stage = atomicFiles.stage.bind(atomicFiles);
+  vi.spyOn(atomicFiles, "stage").mockImplementation(async (from: string, to: string, tree: AnchoredFiles): Promise<void> => {
+    await stage(from,to,tree);
+    await fs.writeFile(dest, "第三方新建", {flag:"wx"});
+  });
   const store = new VaultProjectStore(base, events, {
-    rename: async (from: string, stage: string): Promise<(path: string) => Promise<void>> => {
-      await fs.rename(join(base, from), join(base, stage));
-      await fs.writeFile(dest, "第三方新建", { flag: "wx" });
-      return async (path: string): Promise<void> => { reopened.push(path); };
-    },
+    prepareRename: async (_from: string): Promise<OpenChapterMove> => ({
+      reconnect: async (path: string): Promise<void> => { reopened.push(path); },
+    }),
   });
   await expect(store.renameChapter(fixture, "intro", "new.md")).rejects.toThrow();
   expect(await fs.readFile(dest, "utf8")).toBe("第三方新建");
@@ -159,11 +163,13 @@ test("native staging plus exclusive destination preserves an external creation a
 
 test("restart after a host interruption between moving into the journal and publishing the final path", async (): Promise<void> => {
   const base = await setup();
+  const stage = atomicFiles.stage.bind(atomicFiles);
+  vi.spyOn(atomicFiles, "stage").mockImplementation(async (from: string, to: string, tree: AnchoredFiles): Promise<void> => {
+    await stage(from,to,tree);
+    throw new Error("simulated interruption");
+  });
   const store = new VaultProjectStore(base, events, {
-    rename: async (from: string, stage: string): Promise<never> => {
-      await fs.rename(join(base, from), join(base, stage));
-      throw new Error("simulated host interruption");
-    },
+    prepareRename: async (_from: string): Promise<OpenChapterMove> => ({reconnect: async (_path: string): Promise<void> => {}}),
   });
   await expect(store.renameChapter(fixture, "intro", "new.md")).rejects.toThrow();
   const [notice] = await new VaultProjectStore(base, events).recovery("paper");
@@ -175,16 +181,24 @@ test("restart after a host interruption between moving into the journal and publ
 test("case-only native rename keeps the chapter ID and handles the old spelling on a case-insensitive volume", async (): Promise<void> => {
   const base = await setup();
   const store = new VaultProjectStore(base, events, {
-    rename: async (from: string, stage: string): Promise<(path: string) => Promise<void>> => {
-      await fs.rename(join(base, from), join(base, stage));
-      return async (_path: string): Promise<void> => {};
-    },
+    prepareRename: async (_from: string): Promise<OpenChapterMove> => ({reconnect: async (_path: string): Promise<void> => {}}),
   });
   const target = "chapters/Z-Intro.md";
+  const late = await fs.open(join(base,"paper",first.path),"a");
+  try {
   const project = await store.renameChapter(fixture, "intro", target);
   expect(project.config.chapters![0]).toMatchObject({ id: "intro", file: target });
   expect(await fs.readFile(join(base, "paper", target), "utf8")).toBe(first.text);
   expect(await store.recovery("paper")).toEqual([]);
+  await late.writeFile("延迟写入");
+  await late.sync();
+  const [record] = await store.recovery("paper");
+  const versions = await store.recoveryFiles("paper",record.transactionId);
+  expect(versions.find((item: {path:string}): boolean => item.path === first.path)?.versions)
+    .toContainEqual({label:"保留的外部文件",text:first.text+"延迟写入"});
+  expect(versions.find((item: {path:string}): boolean => item.path === target)?.versions)
+    .toContainEqual({label:"当前磁盘内容",text:first.text});
+  } finally { await late.close(); }
 });
 
 test("record stale disk, editor and proposed versions before a host autosave can replace the external text", async (): Promise<void> => {
@@ -229,11 +243,11 @@ test("a replacement arriving inside the check-to-swap window survives as a reada
   const base = await setup();
   const store = new VaultProjectStore(base, events);
   const swap = atomicFiles.replace.bind(atomicFiles);
-  vi.spyOn(atomicFiles, "replace").mockImplementation(async (stage: string, target: string): Promise<void> => {
+  vi.spyOn(atomicFiles, "replace").mockImplementation(async (stage: string, target: string, tree: AnchoredFiles): Promise<void> => {
     const external = join(base, "external-replacement");
     await fs.writeFile(external, "最后一刻保存的版本");
-    await fs.rename(external, target);
-    await swap(stage, target);
+    await fs.rename(external, join(tree.base,target));
+    await swap(stage, target, tree);
   });
   await expect(store.apply("paper", fixture.revision, [change(first, "面板版本")])).rejects.toThrow(/外部更改/);
   const [record] = await store.recovery("paper");
@@ -242,4 +256,61 @@ test("a replacement arriving inside the check-to-swap window survives as a reada
     { label: "修改前", text: first.text }, { label: "保留的外部文件", text: "最后一刻保存的版本" },
     { label: "当前磁盘内容", text: "面板版本" },
   ]));
+});
+
+test("recovery includes conflicting disk and editor versions of a dependency outside the planned writes", async (): Promise<void> => {
+  const base = await setup();
+  const root = join(base, "paper");
+  let editing = false;
+  const store = new VaultProjectStore(base, events, { buffers: (path: string): readonly string[] =>
+    editing && path === "paper/" + second.path ? ["编辑器中的另一稿"] : [] });
+  const swap = atomicFiles.replace.bind(atomicFiles);
+  vi.spyOn(atomicFiles, "replace").mockImplementation(async (stage: string, target: string, tree: AnchoredFiles): Promise<void> => {
+    await swap(stage, target, tree);
+    editing = true;
+    await fs.writeFile(join(root, second.path), "外部磁盘稿");
+  });
+  await expect(store.apply("paper", fixture.revision, [change(first, "计划修改")])).rejects.toThrow();
+  const [notice] = await store.recovery("paper");
+  expect(notice.paths).toContain(second.path);
+  const saved = (await store.recoveryFiles("paper", notice.transactionId)).find((f: {path: string}): boolean => f.path === second.path);
+  expect(saved?.versions).toEqual(expect.arrayContaining([
+    { label: "中断时的磁盘内容", text: "外部磁盘稿" }, { label: "中断时的编辑器内容", text: "编辑器中的另一稿" },
+  ]));
+});
+
+test("an unsupported exclusive-rename volume leaves original source and manifest where they were", async (): Promise<void> => {
+  const base = await setup();
+  const stage = vi.spyOn(atomicFiles,"stage");
+  vi.spyOn(atomicFiles,"publish").mockRejectedValue(new Error("unsupported exclusive rename"));
+  const store = new VaultProjectStore(base,events,{
+    prepareRename: async (_from: string): Promise<OpenChapterMove> => ({reconnect: async (_path: string): Promise<void> => {}}),
+  });
+  await expect(store.renameChapter(fixture,"intro","new.md")).rejects.toThrow();
+  expect(stage).not.toHaveBeenCalled();
+  expect(await fs.readFile(join(base,"paper",first.path),"utf8")).toBe(first.text);
+  expect(await fs.readFile(join(base,"paper","paper.json"),"utf8")).toBe(manifest.text);
+});
+
+test("project apply keeps its validated chapter-directory pin through the final replace step", async (): Promise<void> => {
+  const base = await setup();
+  const store = new VaultProjectStore(base, events);
+  const root = join(base, "paper");
+  const old = join(root, "chapters");
+  const saved = join(root, "saved-chapters");
+  const alternate = join(base, "alternate");
+  await fs.mkdir(alternate);
+  const name = first.path.split("/").at(-1)!;
+  await fs.writeFile(join(alternate, name), "其他文件夹中的原件");
+  const swap = atomicFiles.replace.bind(atomicFiles);
+  vi.spyOn(atomicFiles, "replace").mockImplementation(async (from: string, to: string, tree: AnchoredFiles): Promise<void> => {
+    await fs.rename(old, saved);
+    await fs.symlink(alternate, old);
+    await swap(from, to, tree);
+  });
+  await expect(store.apply("paper", fixture.revision, [change(first, "拟修改")])).rejects.toThrow();
+  expect(await fs.readFile(join(alternate, name), "utf8")).toBe("其他文件夹中的原件");
+  expect(await fs.readFile(join(saved, name), "utf8")).toBe(first.text);
+  expect(await fs.readFile(join(root, "paper.json"), "utf8")).toBe(manifest.text);
+  expect(await store.recovery("paper")).toHaveLength(1);
 });

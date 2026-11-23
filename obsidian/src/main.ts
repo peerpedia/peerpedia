@@ -1,6 +1,7 @@
 import { FileSystemAdapter, MarkdownView, Notice, Plugin, type Editor, type MarkdownFileInfo, type TAbstractFile, type WorkspaceLeaf } from "obsidian";
 
-import { ExternalScopeMoves, isStagedMove, moveScope, openBuffers, stageChapter } from "./host/file-events";
+import { ensurePublishedFile, ExternalScopeMoves, isStagedMove, moveScope, openBuffers, stageChapter } from "./host/file-events";
+import type { OpenChapterMove } from "./project/transaction";
 import { VaultProjectStore } from "./host/vault-store";
 import { PROJECT_PANEL, ProjectPanel } from "./ui/project-panel";
 import { ScopeSettings } from "./ui/scope-settings";
@@ -44,8 +45,9 @@ export default class PeerpediaPlugin extends Plugin {
     };
     const store = new VaultProjectStore(adapter.getBasePath(), this.app.vault, {
       buffers: (path: string): readonly string[] => openBuffers(this.app, path),
-      rename: (from: string, staged: string): Promise<(path: string) => Promise<void>> =>
-        stageChapter(this.app, from, staged, (oldPath: string, path: string): Promise<void> => this.moveRules(oldPath, path)),
+      ensureIndexed: (path: string, signal: () => void): Promise<void> => ensurePublishedFile(this.app,path,signal),
+      prepareRename: (from: string): Promise<OpenChapterMove> =>
+        stageChapter(this.app, from, (oldPath: string, path: string): Promise<void> => this.moveRules(oldPath, path)),
     });
     this.projectStore = store;
     const moves = new ExternalScopeMoves(adapter.getBasePath(), (): WritingScope => this.writingScope,

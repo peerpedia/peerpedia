@@ -1,14 +1,17 @@
+import type { TitlePreview } from "./title-preview";
 import type { ProjectSnapshot } from "../project/types";
 import type { WritingAnalysis } from "./analysis";
 import type { CompletionContext, Suggestion } from "./completion";
 
 export interface LanguageInputs {
+  previewTitle: {source: string; title: string};
   title: string;
   analyze: ProjectSnapshot;
   complete: { context: CompletionContext; project?: ProjectSnapshot };
 }
 
 export interface LanguageOutputs {
+  previewTitle: TitlePreview;
   title: string;
   analyze: WritingAnalysis;
   complete: readonly Suggestion[];

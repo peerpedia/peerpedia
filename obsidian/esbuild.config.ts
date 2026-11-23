@@ -1,3 +1,4 @@
+import { nativeFiles } from "./scripts/native-files";
 import { builtinModules, createRequire } from "node:module";
 import process from "node:process";
 
@@ -35,7 +36,7 @@ await build({
   sourcemap: production ? false : "inline",
   minify: production,
   plugins: [bananaMark],
-  define: { __PEERPEDIA_LANGUAGE_WORKER__: JSON.stringify(worker.outputFiles[0].text) },
+  define: { __PEERPEDIA_ANCHORED__: JSON.stringify(nativeFiles()), __PEERPEDIA_LANGUAGE_WORKER__: JSON.stringify(worker.outputFiles[0].text) },
   external: [
     "obsidian", "electron", ...builtinModules,
     "@codemirror/autocomplete", "@codemirror/collab", "@codemirror/commands", "@codemirror/language",

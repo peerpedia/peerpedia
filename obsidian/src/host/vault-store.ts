@@ -1,6 +1,6 @@
-import { watch as watchFiles, type Dirent, type FSWatcher } from "node:fs";
-import { mkdir, readdir, realpath } from "node:fs/promises";
-import { dirname, join, resolve } from "node:path";
+import { realpathSync, statSync, type BigIntStats, watch as watchFiles, type Dirent, type FSWatcher } from "node:fs";
+import { readdir, realpath } from "node:fs/promises";
+import { basename, dirname, join, resolve } from "node:path";
 
 import type { TAbstractFile, Vault } from "obsidian";
 
@@ -11,9 +11,10 @@ import {
 } from "../project/store";
 import { ProjectReadError, type ChapterSpec, type ProjectSnapshot, type SourceFile } from "../project/types";
 
+import { AnchoredFiles, withAnchors } from "../project/anchored-files";
 import { readSource } from "../project/source-file";
-import { keepConflict, PreconditionConflict, safePath, syncDirectory, writeTransaction, type WriteHost } from "../project/transaction";
-import { recoverProject, recoveryFiles, type RecoveryFile, type RecoveryNotice } from "../project/recovery";
+import { keepConflict, PreconditionConflict, safePath, writeTransaction, type WriteHost } from "../project/transaction";
+import { recoverIn, inspectRecovery, type RecoveryFile, type RecoveryNotice } from "../project/recovery";
 
 const WATCH_SETTLE_MS = 30;
 // CLI fetches and plugin recovery records can contain complete copies of a project.
@@ -95,10 +96,15 @@ const writes = new Map<string, Promise<unknown>>();
 
 export class VaultProjectStore implements ProjectStore {
   private readonly basePath: string;
+  private vaultIdentity?: BigIntStats;
 
   constructor(basePath: string, private readonly vault: Pick<Vault, "on" | "offref">,
     private readonly host: WriteHost = {}) {
     this.basePath = resolve(basePath);
+    try {
+      this.basePath = realpathSync(basePath);
+      this.vaultIdentity = statSync(this.basePath, {bigint:true});
+    } catch (error: unknown) { if (!isMissing(error)) throw error; }
   }
 
   async read(root: string): Promise<ProjectSnapshot> {
@@ -140,16 +146,42 @@ export class VaultProjectStore implements ProjectStore {
   }
 
   async recoveryFiles(root: string, id: string): Promise<readonly RecoveryFile[]> {
-    return recoveryFiles(await this.directory(root), id);
+    return this.anchored(root,(tree: AnchoredFiles): Promise<readonly RecoveryFile[]> => inspectRecovery(tree,root,id));
   }
 
   async recovery(root: string): Promise<readonly RecoveryNotice[]> {
-    return recoverProject(await this.directory(root));
+    return this.anchored(root,(tree: AnchoredFiles): Promise<readonly RecoveryNotice[]> => recoverIn(tree,root));
   }
 
   async member(root: string, path: string): Promise<SourceFile | undefined> {
     safePath(path);
-    return readSource(await this.directory(root), path, new Map());
+    return this.anchored(root, async (tree: AnchoredFiles): Promise<SourceFile | undefined> => {
+      const file = await tree.source(join(root,path));
+      return file ? {...file,path} : undefined;
+    });
+  }
+
+  private anchored<T>(root: string, action: (tree: AnchoredFiles) => Promise<T>): Promise<T> {
+    if (root) safePath(root);
+    return withAnchors(this.basePath, async (tree: AnchoredFiles): Promise<T> => {
+      this.vaultIdentity ??= statSync(this.basePath, {bigint:true});
+      tree.checkRoot(this.vaultIdentity);
+      return action(tree);
+    });
+  }
+
+  private async pinnedSnapshot(tree: AnchoredFiles, root: string): Promise<ProjectSnapshot> {
+    const identities = new Map<string,string>();
+    const manifest = await tree.source(join(root,CONFIG_PATH),identities);
+    if (!manifest) throw new Error("论文缺少 paper.json。");
+    const config = parsePaperConfig(manifest.text);
+    const files = [{...manifest, path:CONFIG_PATH}];
+    for (const path of projectMembers(config).slice(1)) {
+      safePath(path);
+      const file = await tree.source(join(root,path),identities);
+      if (file) files.push({...file,path});
+    }
+    return {root,config,files,revision:projectRevision(files)};
   }
 
   private async exclusive(root: string, operation: () => Promise<ProjectSnapshot>): Promise<ProjectSnapshot> {
@@ -176,15 +208,20 @@ export class VaultProjectStore implements ProjectStore {
         if (!members.includes(change.path) || keys.has(key)) throw new Error("发现重复路径或不属于论文的文件。");
         keys.add(key);
       }
-      const base = await realpath(this.basePath);
-      const parent = dirname(root);
-      if (parent !== ".") await this.directory(parent);
-      if (await locatePath(base, root, CONFIG_PATH)) throw new Error("目标文件夹已存在，请选择新名称。");
-      const directory = join(base, root);
-      await rejectNestedProject(base, root, directory);
-      await mkdir(directory); // exclusive even if another process creates it after our check
-      await syncDirectory(dirname(directory));
-      return writeTransaction(directory, root, null, changes, this.host, (): Promise<ProjectSnapshot> => this.read(root));
+      return this.anchored(root,async (tree: AnchoredFiles): Promise<ProjectSnapshot> => {
+        const parent = dirname(root);
+        if (tree.list(parent).some((name: string): boolean => pathKey(name) === pathKey(basename(root)))) {
+          throw new Error("目标文件夹已存在，请选择新名称。");
+        }
+        for (let ancestor = parent;; ancestor = dirname(ancestor)) {
+          if (tree.list(ancestor).some((name: string): boolean => pathKey(name) === CONFIG_PATH)) {
+            throw new Error("不能在另一篇论文中创建新论文。");
+          }
+          if (ancestor === ".") break;
+        }
+        await tree.mkdir(root);
+        return writeTransaction(tree, root, null, changes, this.host, (): Promise<ProjectSnapshot> => this.pinnedSnapshot(tree,root));
+      });
     });
   }
 
@@ -211,15 +248,18 @@ export class VaultProjectStore implements ProjectStore {
   private save(root: string, expectedRevision: string, changes: readonly FileChange[],
     move?: { from: string; to: string }): Promise<ProjectSnapshot> {
     return this.exclusive(root, async (): Promise<ProjectSnapshot> => {
-      const directory = await this.directory(root);
-      const project = await this.read(root);
-      try {
-        if (project.revision !== expectedRevision) throw new PreconditionConflict("论文已在其他地方更改，请重新载入后核对。");
-        return await writeTransaction(directory, root, project, changes, this.host, (): Promise<ProjectSnapshot> => this.read(root), move);
-      } catch (error: unknown) {
-        if (error instanceof PreconditionConflict) await keepConflict(directory, project, expectedRevision, changes, this.host);
-        throw error;
-      }
+      return this.anchored(root,async (tree: AnchoredFiles): Promise<ProjectSnapshot> => {
+        tree.directory(root);
+        await rejectNestedProject(this.basePath, root, join(this.basePath,root));
+        const project = await this.pinnedSnapshot(tree,root);
+        try {
+          if (project.revision !== expectedRevision) throw new PreconditionConflict("论文已在其他地方更改，请重新载入后核对。");
+          return await writeTransaction(tree, root, project, changes, this.host, (): Promise<ProjectSnapshot> => this.pinnedSnapshot(tree,root), move);
+        } catch (error: unknown) {
+          if (error instanceof PreconditionConflict) await keepConflict(tree, project, expectedRevision, changes, this.host, error.observed);
+          throw error;
+        }
+      });
     });
   }
 

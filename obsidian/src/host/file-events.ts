@@ -1,4 +1,5 @@
-import type { App, EditorSelection, MarkdownView, TFile, ViewState, WorkspaceLeaf } from "obsidian";
+import type { App, Editor, EditorSelection, MarkdownView, TFile, ViewState, WorkspaceLeaf } from "obsidian";
+import type { OpenChapterMove } from "../project/transaction";
 import type { WritingScope } from "../main";
 import { locatePath, pathKey } from "../project/paths";
 
@@ -53,8 +54,20 @@ async function indexedFile(app: App, path: string): Promise<TFile> {
   });
 }
 
-export async function stageChapter(app: App, from: string, staged: string,
-  moved: (from: string, to: string) => Promise<void>): Promise<(path: string) => Promise<void>> {
+export async function ensurePublishedFile(app: App, path: string, signal: () => void): Promise<void> {
+  if (app.vault.getFileByPath(path)) return;
+  // Desktop may install the enclosing folder's watcher after our first publication event.
+  // Reannounce only the still-identical inode without touching the manuscript bytes or mtime.
+  for (let attempt = 0; attempt < 6; ++attempt) {
+    await new Promise<void>((resolve: () => void): void => { setTimeout(resolve, attempt ? 350 : 100); });
+    if (app.vault.getFileByPath(path)) return;
+    signal();
+  }
+  await indexedFile(app,path);
+}
+
+export async function stageChapter(app: App, from: string,
+  moved: (from: string, to: string) => Promise<void>): Promise<OpenChapterMove> {
   const source = app.vault.getFileByPath(from);
   if (!source) throw new Error("Obsidian 尚未找到章节文件，请稍后再试。");
   const panes: { leaf: WorkspaceLeaf; view: MarkdownView; text: string; selections: EditorSelection[];
@@ -65,22 +78,36 @@ export async function stageChapter(app: App, from: string, staged: string,
     panes.push({ leaf, view, text: view.editor.getValue(), selections: view.editor.listSelections(),
       scroll: view.editor.getScrollInfo(), state: leaf.getViewState() });
   }
-  await app.vault.rename(source, staged);
-  return async (path: string): Promise<void> => {
+  const drafts = new Map<Editor,string>();
+  const changes = app.workspace.on("editor-change",(editor: Editor): void => {
+    const pane = panes.find((p: {view: MarkdownView}): boolean => p.view.editor === editor && p.view.file?.path === from);
+    if (!pane) return;
+    const text = editor.getValue();
+    if (text === pane.text) drafts.delete(editor);
+    else drafts.set(editor,text);
+  });
+  const reconnect = async (path: string): Promise<void> => {
+    if (drafts.size) throw new Error("移动期间编辑器收到新内容，已保留恢复记录。");
     if (path !== from) await moved(from, path);
     if (!panes.length) return;
-    await indexedFile(app, path);
+    const target = await indexedFile(app, path);
     for (const pane of panes) {
       const view = pane.leaf.view as MarkdownView;
-      if (view !== pane.view || (view.file && view.file.path !== staged && view.file.path !== from)) continue;
-      if (view.editor.getValue() !== pane.text) throw new Error("移动期间编辑器收到新内容，已保留原窗格和恢复记录。");
-      await pane.leaf.setViewState({ ...pane.state, active: false, state: { ...pane.state.state, file: path } });
-      const current = pane.leaf.view as MarkdownView;
+      if (view !== pane.view && view.getViewType() !== "empty" && view.file?.path !== path) continue;
+      if (view.file && view.file.path !== from && view.file.path !== path) continue;
+      if (view === pane.view && view.file && view.editor.getValue() !== pane.text) throw new Error("移动期间编辑器收到新内容，已保留原窗格和恢复记录。");
+      const leaves = new Set<WorkspaceLeaf>();
+      app.workspace.iterateAllLeaves((leaf: WorkspaceLeaf): void => { leaves.add(leaf); });
+      const destination = leaves.has(pane.leaf) ? pane.leaf : app.workspace.getLeaf("split");
+      await destination.openFile(target, { active: false, state: { ...pane.state.state, file: path } });
+      await destination.loadIfDeferred();
+      const current = destination.view as MarkdownView;
       if (current.file?.path !== path) throw new Error("无法在原窗格打开新路径。");
       current.editor.setSelections(pane.selections);
       current.editor.scrollTo(pane.scroll.left, pane.scroll.top);
     }
   };
+  return {reconnect, drafts: (): readonly string[] => [...drafts.values()], dispose: (): void => app.workspace.offref(changes)};
 }
 
 /** External Finder moves arrive as create/delete pairs. Remember only configured
