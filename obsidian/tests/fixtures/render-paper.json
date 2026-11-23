@@ -1,0 +1,22 @@
+{
+  "title": "An offline paper",
+  "authors": "A. Author",
+  "abstract": "A two-chapter test of local rendering.",
+  "primary_category": "math",
+  "secondary_categories": [],
+  "license": "CC BY 4.0",
+  "markdown": "# Introduction\r\n\r\n😀 Draft. See @thm:second.\r\n\r\n## Overview\r\n\r\n::: theorem {@thm:first}\r\nA formula \\(x^2\\).\r\n:::\r\n\r\n```math {@eq:first}\r\nx=1\r\n```\r\n\r\n```tikz\r\n\\begin{tikzpicture}\r\n\\draw (0,0) circle (1);\r\n\\draw[->] (0,0) -- (1,0) node[midway, above] {$r$};\r\n\\end{tikzpicture}\r\n```\n\n# Proof\n\n::: theorem {@thm:second}\nBy @thm:first and @eq:first, see [@book].\n:::\n\n```math {@eq:second}\nx=2\n```\n\n$$\\begin{tikzcd}\\mathbb{Z}\\arrow[r] & \\mathbb{R}\\end{tikzcd}$$",
+  "chapters": [
+    {
+      "id": "intro",
+      "title": "Introduction",
+      "markdown": "# Introduction\r\n\r\n😀 Draft. See @thm:second.\r\n\r\n## Overview\r\n\r\n::: theorem {@thm:first}\r\nA formula \\(x^2\\).\r\n:::\r\n\r\n```math {@eq:first}\r\nx=1\r\n```\r\n\r\n```tikz\r\n\\begin{tikzpicture}\r\n\\draw (0,0) circle (1);\r\n\\draw[->] (0,0) -- (1,0) node[midway, above] {$r$};\r\n\\end{tikzpicture}\r\n```"
+    },
+    {
+      "id": "proof",
+      "title": "Proof",
+      "markdown": "# Proof\n\n::: theorem {@thm:second}\nBy @thm:first and @eq:first, see [@book].\n:::\n\n```math {@eq:second}\nx=2\n```\n\n$$\\begin{tikzcd}\\mathbb{Z}\\arrow[r] & \\mathbb{R}\\end{tikzcd}$$"
+    }
+  ],
+  "bibliography": "book:\n  type: book\n  title: A Book\n  author: Author, A\n  year: 2020\n"
+}

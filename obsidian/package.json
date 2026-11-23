@@ -10,7 +10,8 @@
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
     "check:types": "eslint .",
-    "build": "tsx esbuild.config.ts production"
+    "build": "tsx esbuild.config.ts production",
+    "package:renderer": "tsx scripts/package-renderer.ts"
   },
   "devDependencies": {
     "@codemirror/autocomplete": "6.20.4",
