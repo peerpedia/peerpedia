@@ -4,13 +4,14 @@
   "private": true,
   "type": "module",
   "engines": {
-    "node": ">=22"
+    "node": "^22.13.0 || >=24"
   },
   "scripts": {
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
     "check:types": "eslint .",
     "build": "tsx esbuild.config.ts production",
+    "package": "tsx scripts/package-plugin.ts",
     "package:renderer": "tsx scripts/package-renderer.ts"
   },
   "devDependencies": {

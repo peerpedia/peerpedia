@@ -3,7 +3,7 @@
   "name": "Peerpedia",
   "version": "0.1.0",
   "minAppVersion": "1.15.1",
-  "description": "Edit Peerpedia paper sources in Obsidian.",
+  "description": "Write and preview Peerpedia papers offline in Obsidian on Apple Silicon Macs.",
   "author": "Peerpedia",
   "authorUrl": "https://github.com/peerpedia/peerpedia",
   "isDesktopOnly": true

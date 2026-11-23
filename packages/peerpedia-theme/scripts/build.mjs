@@ -1,4 +1,5 @@
 import {
+  chmod,
   cp,
   mkdir,
   mkdtemp,
@@ -208,6 +209,7 @@ try {
     );
   }
 
+  await chmod(staging, 0o755);
   const distribution = join(project, "dist");
   await rm(distribution, { recursive: true, force: true });
   await rename(staging, distribution);

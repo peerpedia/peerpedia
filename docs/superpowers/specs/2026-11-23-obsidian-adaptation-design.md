@@ -1,6 +1,6 @@
 # Peerpedia 的 Obsidian 本地写作适配
 
-日期：2026-11-23。状态：用户已于本次对话确认定稿，已完成独立实施可行性审阅；没有开始产品实现。
+日期：2026-11-23。状态：设计已确认。本地写作与离线预览已在 Apple Silicon Mac 上打包验收。远程导入、合并与发布按独立实施计划继续。
 
 ## 目的与产品边界
 
@@ -194,4 +194,4 @@ Obsidian 文件导航 | 原生源码编辑区             | Peerpedia 论文预�
 - [本地写作与离线预览实施计划](../plans/2026-11-23-obsidian-local-authoring.md)
 - [远程导入、合并与发布实施计划](../plans/2026-11-23-obsidian-remote-publishing.md)
 
-定稿表示产品设计已获确认，不表示尚未执行的技术验证已经通过。
+本地验证平台、实测场景和覆盖范围见[本地验收](../../../obsidian/docs/local-acceptance.md)。

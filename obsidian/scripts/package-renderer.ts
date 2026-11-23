@@ -118,7 +118,7 @@ async function installSite(runtime: string): Promise<object> {
   const lock: { packages: Record<string, LockedPackage> } = JSON.parse(await readFile(lockSource, "utf8"));
   await cp(join(editor, "package.json"), join(runtime, "package.json"));
   await cp(lockSource, join(runtime, "package-lock.json"));
-  await run("npm", ["ci", "--omit=dev", "--ignore-scripts", "--no-audit", "--no-fund"], { cwd: runtime });
+  await run("npm", ["ci", "--omit=dev", "--ignore-scripts", "--no-bin-links", "--no-audit", "--no-fund"], { cwd: runtime });
   const dependencies: Record<string, LockedPackage> = {};
   for (const [path, details] of Object.entries(lock.packages)) {
     if (!path.startsWith("node_modules/")) continue;

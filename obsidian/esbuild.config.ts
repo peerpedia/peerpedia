@@ -1,10 +1,12 @@
 import { nativeFiles } from "./scripts/native-files";
+import { writeFile } from "node:fs/promises";
 import { builtinModules, createRequire } from "node:module";
 import process from "node:process";
 
 import { build, type OnResolveResult, type Plugin, type PluginBuild } from "esbuild";
 
-const production = process.argv[2] === "production";
+const [, , mode, outputFile = "dist/main.js", inputInventory] = process.argv;
+const production = mode === "production";
 const require = createRequire(import.meta.url);
 
 const bananaMark: Plugin = {
@@ -24,11 +26,13 @@ const worker = await build({
   minify: production,
   plugins: [bananaMark],
   write: false,
+  metafile: Boolean(inputInventory),
 });
 
-await build({
+const plugin = await build({
   entryPoints: ["src/main.ts"],
-  outfile: "dist/main.js",
+  outfile: outputFile,
+  metafile: Boolean(inputInventory),
   bundle: true,
   format: "cjs",
   platform: "node",
@@ -44,3 +48,7 @@ await build({
     "@lezer/common", "@lezer/highlight", "@lezer/lr",
   ],
 });
+
+if (inputInventory && worker.metafile && plugin.metafile) {
+  await writeFile(inputInventory, JSON.stringify([...Object.keys(worker.metafile.inputs), ...Object.keys(plugin.metafile.inputs)]));
+}

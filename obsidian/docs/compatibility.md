@@ -20,7 +20,7 @@
 
 ## 复测
 
-使用隔离的 Obsidian 用户数据目录和专用 vault。开发检查使用 Node 26.0.0。使用 Node 22 运行标注检查时需要 22.13 或更新的补丁版本。
+使用隔离的 Obsidian 用户数据目录和专用 vault。开发检查使用 Node 26.0.0。项目的构建工具支持 Node 22.13 以上的 22.x，或 Node 24 及以上。
 
 ```sh
 npm --prefix obsidian ci
@@ -30,11 +30,11 @@ npm --prefix obsidian run check:types
 npm --prefix obsidian run build
 ```
 
-将 `obsidian/dist/main.js`、`obsidian/manifest.json` 和 `obsidian/styles.css` 复制到专用 vault 的 `.obsidian/plugins/peerpedia/`。在专用 vault 中启用 Peerpedia，创建 `draft/paper.md` 和同目录的 `draft/paper.json`，在插件配置中启用 `draft` 文件夹并切换至源码模式。验证停用行为时，先让建议窗口保持打开。
+按[安装说明](installation.md)构建并安装完整目录到专用 vault 的 `.obsidian/plugins/peerpedia/`。在专用 vault 中启用 Peerpedia，创建 `draft/paper.md` 和同目录的 `draft/paper.json`，在插件配置中启用 `draft` 文件夹并切换至源码模式。验证停用行为时，先让建议窗口保持打开。
 
 ## 离线预览渲染组件
 
-Apple Silicon 版随包携带 Node.js 22.22.3、网站的 BananaMark 渲染器、TikZ 的 WebAssembly 和 TeX 资产，以及 `@peerpedia/theme` 的样式、KaTeX 和 BaKoMa 字体。开稿和预览使用随包的组件，无需安装 Node.js、Python 或 TeX。预览界面需要在组件上层接入。
+Apple Silicon 版随包携带 Node.js 22.22.3、网站的 BananaMark 渲染器、TikZ 的 WebAssembly 和 TeX 资产，以及 `@peerpedia/theme` 的样式、KaTeX 和 BaKoMa 字体。开稿和预览使用随包的组件，无需安装 Node.js、Python 或 TeX。独立进程为插件内置的论文预览提供排版。
 
 构建阶段从锁文件安装依赖，从 Node.js 官方站点下载运行时并验证固定的 SHA-256。构建产物在 `obsidian/dist/renderer/`。保持该目录结构即可搬移组件。预览界面可从其中的 `theme/style.css` 和 `theme/assets.json` 读取样式及资源清单。返回的 TikZ 字体地址相对于 `theme/`，章节链接保留网站渲染器生成的查询参数与锚点。`provenance.json` 记录源码提交、源文件校验和、运行时校验和以及实际安装的依赖版本。
 
@@ -47,3 +47,5 @@ npm --prefix obsidian test -- tests/renderer-runtime.test.ts
 Obsidian 通过独立进程异步渲染，单次请求从提交起最多等待 40 秒。取消或超时时会停止该请求占用的进程，后续请求启动新进程。TikZ 缓存写入 `~/Library/Caches/Peerpedia/Obsidian/tikz/`。
 
 冷缓存测试将完整组件复制到另一个临时目录，清空 `PATH`，并通过 macOS 策略禁止联网、读取源码工作区和写入组件目录。两章样本的 KaTeX、TikZ、交换图、跨章引用和共享书目均成功渲染。在隔离的 Obsidian 1.15.1 中单独禁止渲染子进程联网，验证了相同样本、两种本地字体实际加载以及渲染进程退出。
+
+完整安装包的搬移与宿主验收见[本地验收](local-acceptance.md)。
