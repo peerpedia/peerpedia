@@ -27,3 +27,19 @@ export interface ProjectSnapshot {
   config: PaperConfig;
   files: readonly SourceFile[];
 }
+
+export interface ProjectIssue {
+  path: string;
+  message: string;
+  severity: "warning" | "error";
+}
+
+export class ProjectReadError extends Error {
+  readonly issue: ProjectIssue;
+
+  constructor(path: string, message: string, readonly kind: "conflict" | "missing" = "conflict") {
+    super(message);
+    this.name = "ProjectReadError";
+    this.issue = { path, message, severity: "error" };
+  }
+}

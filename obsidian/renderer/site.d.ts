@@ -36,11 +36,7 @@ declare module "*/site/dialect.js" {
 }
 
 declare module "bananamark" {
-  export interface SyntaxNodeRef {
-    name: string;
-    from: number;
-    to: number;
-  }
+  export type SyntaxNodeRef = import("@lezer/common").SyntaxNodeRef;
 
   export function defineDialect(options: object): {
     language: { language: { parser: { parse(source: string): {
