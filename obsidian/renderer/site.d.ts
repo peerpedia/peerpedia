@@ -46,8 +46,10 @@ declare module "bananamark" {
   ): { nodes: readonly { type: string; tex?: string }[] };
 
   export function defineDialect(options: object): {
-    language: { language: { parser: { parse(source: string): {
-      iterate(options: { enter: (node: SyntaxNodeRef) => void }): void;
-    } } } };
+    language: import("@codemirror/language").LanguageSupport;
+    environments: Readonly<Record<string, unknown>>;
+    dataBlocks: Readonly<Record<string, unknown>>;
+    bibliography: boolean;
+    tikz: boolean;
   };
 }

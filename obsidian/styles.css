@@ -1,1 +1,45 @@
 /* The compatibility probe uses the host editor's completion styles. */
+
+.peerpedia-source-environment {
+  color: var(--text-accent);
+  font-weight: 600;
+}
+
+.peerpedia-source-formula {
+  color: var(--text-accent);
+}
+
+.peerpedia-source-label {
+  color: var(--text-muted);
+}
+
+.peerpedia-source-reference {
+  text-decoration: underline dotted;
+  text-underline-offset: 0.2em;
+}
+
+.peerpedia-source-error {
+  text-decoration-line: underline;
+  text-decoration-style: wavy;
+  text-decoration-color: var(--text-error);
+}
+
+.peerpedia-source-error-line {
+  box-shadow: inset 2px 0 var(--text-error);
+}
+
+.peerpedia-bibliography-view {
+  display: flex;
+  flex-direction: column;
+}
+
+.peerpedia-bibliography-text {
+  flex: 1;
+  width: 100%;
+  min-height: 10rem;
+  resize: none;
+  font-family: var(--font-monospace);
+  line-height: 1.5;
+  white-space: pre;
+  tab-size: 2;
+}
