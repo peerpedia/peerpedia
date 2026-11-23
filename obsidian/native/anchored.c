@@ -62,6 +62,16 @@ static napi_value make_directory(napi_env env, napi_callback_info info) {
     return result(env, mkdirat(p.fd, p.name, 0700));
 }
 
+// Only used for an unpublished, empty, exclusively named staging directory.
+static napi_value remove_directory(napi_env env, napi_callback_info info) {
+    size_t n = 2;
+    napi_value a[2];
+    entry p;
+    napi_get_cb_info(env, info, &n, a, NULL, NULL);
+    if (n != 2 || component(env, a[0], a[1], &p)) return failure(env, EINVAL);
+    return result(env, unlinkat(p.fd, p.name, AT_REMOVEDIR));
+}
+
 static napi_value rename_entry(napi_env env, napi_callback_info info) {
     size_t n = 5;
     napi_value a[5];
@@ -112,6 +122,7 @@ static napi_value initialize(napi_env env, napi_value exports) {
     const napi_property_descriptor methods[] = {
         {"open", NULL, open_entry, NULL, NULL, NULL, napi_default, NULL},
         {"mkdir", NULL, make_directory, NULL, NULL, NULL, napi_default, NULL},
+        {"rmdir", NULL, remove_directory, NULL, NULL, NULL, napi_default, NULL},
         {"rename", NULL, rename_entry, NULL, NULL, NULL, napi_default, NULL},
         {"announce", NULL, announce_entry, NULL, NULL, NULL, napi_default, NULL},
         {"list", NULL, list_entries, NULL, NULL, NULL, napi_default, NULL},

@@ -1,11 +1,12 @@
 import fs from "node:fs/promises";
+import { mkdirSync, renameSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import type { EventRef, Vault } from "obsidian";
 import { afterEach, expect, test, vi } from "vitest";
 
 import { VaultProjectStore } from "../src/host/vault-store";
-import type { AnchoredFiles } from "../src/project/anchored-files";
+import { AnchoredFiles } from "../src/project/anchored-files";
 import { atomicFiles, type OpenChapterMove } from "../src/project/transaction";
 import { recoverProject } from "../src/project/recovery";
 import type { FileChange, ProjectEvent } from "../src/project/store";
@@ -313,4 +314,93 @@ test("project apply keeps its validated chapter-directory pin through the final 
   expect(await fs.readFile(join(saved, name), "utf8")).toBe(first.text);
   expect(await fs.readFile(join(root, "paper.json"), "utf8")).toBe(manifest.text);
   expect(await store.recovery("paper")).toHaveLength(1);
+});
+
+test.each(["new project", "recursive recovery folder", "journal record"])(
+  "new directory ownership precedes publication of the %s name", async (kind: string): Promise<void> => {
+    const base = await setup();
+    const store = new VaultProjectStore(base, events);
+    const target = kind === "new project" ? "new" : "paper/.peerpedia-obsidian/recovery";
+    const rename = AnchoredFiles.prototype.rename;
+    let competing = "";
+    vi.spyOn(AnchoredFiles.prototype, "rename").mockImplementation(function(this: AnchoredFiles,
+      from: string, to: string, operation: "swap" | "publish"): void {
+      const match = kind === "journal record" ? dirname(to) === target : to === target;
+      if (!match || competing) return rename.call(this, from, to, operation);
+      competing = join(base, to);
+      if (kind === "recursive recovery folder") {
+        // The public name is claimed before our directory can be published.
+        mkdirSync(competing);
+        writeFileSync(join(competing, "guard"), "原有内容", { flag: "wx" });
+        return rename.call(this, from, to, operation);
+      }
+      rename.call(this, from, to, operation);
+      // The public name changes after publication, before the caller can pin by name.
+      renameSync(competing, join(base, "published-original"));
+      mkdirSync(competing);
+      writeFileSync(join(competing, "guard"), "原有内容", { flag: "wx" });
+    });
+    const saving = kind === "new project"
+      ? store.create("new", [{path: "paper.json", beforeDigest: null, afterText: '{"title":"","authors":"","abstract":""}'},
+        {path: "paper.md", beforeDigest: null, afterText: "正文"}])
+      : store.apply("paper", fixture.revision, [change(first, "拟修改")]);
+    await expect(saving).rejects.toThrow();
+    expect(competing).not.toBe("");
+    expect(await fs.readdir(competing)).toEqual(["guard"]);
+    expect((await fs.readdir(dirname(competing))).some((name: string): boolean => name.startsWith(".peerpedia-dir-"))).toBe(false);
+    expect(await fs.readFile(join(competing, "guard"), "utf8")).toBe("原有内容");
+    expect(await fs.readFile(join(base, "paper", first.path), "utf8")).toBe(first.text);
+  });
+
+test("a pane draft captured after reconnection starts is durable before rename completion", async (): Promise<void> => {
+  const base = await setup();
+  let reconnected = false;
+  let lateDraft = false;
+  const store = new VaultProjectStore(base, events, {
+    prepareRename: async (_from: string): Promise<OpenChapterMove> => ({
+      reconnect: async (_path: string): Promise<void> => { reconnected = true; },
+      drafts: (): readonly string[] => lateDraft ? ["窗格重接时的新稿"] : [],
+    }),
+    buffers: (_path: string): readonly string[] => {
+      if (reconnected) lateDraft = true;
+      return [];
+    },
+  });
+  await expect(store.renameChapter(fixture, "intro", "new.md")).rejects.toThrow(/编辑器/);
+  const reopened = new VaultProjectStore(base, events);
+  const [record] = await reopened.recovery("paper");
+  const versions = await reopened.recoveryFiles("paper", record.transactionId);
+  expect(versions.find((f: {path: string}): boolean => f.path === first.path)?.versions)
+    .toContainEqual({label: "中断时的编辑器内容", text: "窗格重接时的新稿"});
+});
+
+test("failure inspection keeps two successive observed disk versions despite a later autosave", async (): Promise<void> => {
+  const base = await setup();
+  const path = join(base, "paper", second.path);
+  let external = false;
+  const store = new VaultProjectStore(base, events, {
+    buffers: (name: string): readonly string[] => {
+      if (external && name === "paper/" + second.path) {
+        external = false;
+        writeFileSync(path, "第二次外部保存");
+      }
+      return [];
+    },
+  });
+  const replace = atomicFiles.replace.bind(atomicFiles);
+  vi.spyOn(atomicFiles, "replace").mockImplementation(async (stage: string, to: string, tree: AnchoredFiles): Promise<void> => {
+    await replace(stage, to, tree);
+    await fs.writeFile(path, "第一次外部保存");
+    external = true;
+  });
+  await expect(store.apply("paper", fixture.revision, [change(first, "拟修改")])).rejects.toThrow();
+  expect(await fs.readFile(path, "utf8")).toBe("第二次外部保存");
+  await fs.writeFile(path, "之后的自动保存");
+  const reopened = new VaultProjectStore(base, events);
+  const [record] = await reopened.recovery("paper");
+  const versions = await reopened.recoveryFiles("paper", record.transactionId);
+  expect(versions.find((f: {path: string}): boolean => f.path === second.path)?.versions).toEqual(expect.arrayContaining([
+    {label: "中断时的磁盘内容", text: "第一次外部保存"}, {label: "中断时的磁盘内容", text: "第二次外部保存"},
+    {label: "当前磁盘内容", text: "之后的自动保存"},
+  ]));
 });

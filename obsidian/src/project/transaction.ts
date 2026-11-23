@@ -254,16 +254,27 @@ export async function writeTransaction(
       }
     }
     for (const path of expected.keys()) await check(path);
+    // Reconnection and the final disk checks can yield to editor-change. Close
+    // the capture window synchronously before the first completion-marker write.
+    if (openMove?.drafts?.().length) throw new Error("移动期间编辑器收到新内容，已保留恢复记录。");
+    openMove?.dispose?.();
+    openMove = undefined;
     await tree.file(join(journal, "complete"), "ok\n");
     await tree.sync(journal);
   } catch (error: unknown) {
-    const observed: {path: string; disk: string | null; editors: readonly string[]}[] = [];
+    const capturedDrafts = [...openMove?.drafts?.() ?? []];
+    openMove?.dispose?.();
+    const observed: ObservedVersion[] = [];
     for (const path of expected.keys()) {
       const current = await tree.source(join(root, path)).catch((): undefined => undefined);
       const saved = conflicts.get(path);
-      const buffers = [...host.buffers?.(vaultPath(path)) ?? [], ...(path === move?.from ? openMove?.drafts?.() ?? [] : [])];
-      if (saved) observed.push({...saved, editors:[...new Set([...saved.editors,...buffers])]});
-      else if (files.some((f: JournalFile): boolean => f.path === path) || current?.digest !== (expected.get(path)?.digest ?? undefined) ||
+      const buffers = [...host.buffers?.(vaultPath(path)) ?? [], ...(path === move?.from ? capturedDrafts : [])];
+      if (saved && saved.disk === (current?.text ?? null)) {
+        observed.push({...saved, editors: [...new Set([...saved.editors, ...buffers])]});
+        continue;
+      }
+      if (saved) observed.push(saved);
+      if (saved || files.some((f: JournalFile): boolean => f.path === path) || current?.digest !== (expected.get(path)?.digest ?? undefined) ||
           buffers.some((text: string): boolean => normalized(text) !== normalized(current?.text ?? null))) {
         observed.push({ path, disk: current?.text ?? null, editors: buffers });
       }
@@ -271,7 +282,7 @@ export async function writeTransaction(
     await tree.file(join(journal, "observed.json"), JSON.stringify(observed, null, 2));
     await tree.sync(journal);
     throw new Error(`${writeFailure(error)}（已保留恢复记录）`, { cause: error });
-  } finally { openMove?.dispose?.(); }
+  }
   // Retention also preserves writes through external old descriptors after completion.
   return result;
 }

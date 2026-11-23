@@ -86,16 +86,26 @@ export async function stageChapter(app: App, from: string,
     if (text === pane.text) drafts.delete(editor);
     else drafts.set(editor,text);
   });
-  const reconnect = async (path: string): Promise<void> => {
+  const checkDrafts = (): void => {
     if (drafts.size) throw new Error("移动期间编辑器收到新内容，已保留恢复记录。");
+  };
+  const reconnect = async (path: string): Promise<void> => {
+    checkDrafts();
     if (path !== from) await moved(from, path);
     if (!panes.length) return;
     const target = await indexedFile(app, path);
     for (const pane of panes) {
+      checkDrafts();
       const view = pane.leaf.view as MarkdownView;
       if (view !== pane.view && view.getViewType() !== "empty" && view.file?.path !== path) continue;
       if (view.file && view.file.path !== from && view.file.path !== path) continue;
-      if (view === pane.view && view.file && view.editor.getValue() !== pane.text) throw new Error("移动期间编辑器收到新内容，已保留原窗格和恢复记录。");
+      if (view === pane.view && view.file) {
+        const currentText = view.editor.getValue();
+        if (currentText !== pane.text) {
+          drafts.set(view.editor, currentText);
+          checkDrafts();
+        }
+      }
       const leaves = new Set<WorkspaceLeaf>();
       app.workspace.iterateAllLeaves((leaf: WorkspaceLeaf): void => { leaves.add(leaf); });
       const destination = leaves.has(pane.leaf) ? pane.leaf : app.workspace.getLeaf("split");
@@ -106,6 +116,7 @@ export async function stageChapter(app: App, from: string,
       current.editor.setSelections(pane.selections);
       current.editor.scrollTo(pane.scroll.left, pane.scroll.top);
     }
+    checkDrafts();
   };
   return {reconnect, drafts: (): readonly string[] => [...drafts.values()], dispose: (): void => app.workspace.offref(changes)};
 }

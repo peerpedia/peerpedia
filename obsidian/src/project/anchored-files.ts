@@ -2,6 +2,7 @@ import {
   closeSync, constants, fstatSync, fsync, mkdtempSync, openSync, readFile, readFileSync,
   rmSync, writeFile, writeFileSync, type BigIntStats,
 } from "node:fs";
+import { randomUUID } from "node:crypto";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
@@ -14,6 +15,7 @@ declare const __PEERPEDIA_ANCHORED__: string;
 interface Native {
   open(dir: number, name: string, flags: number, mode: number): number;
   mkdir(dir: number, name: string): void;
+  rmdir(dir: number, name: string): void;
   rename(from: number, name: string, to: number, target: string, flag: number): void;
   announce(fd: number): void;
   list(dir: number): string[];
@@ -93,13 +95,40 @@ export class AnchoredFiles {
       if (!isMissing(error)) throw error;
       this.missing.add(path);
       if (!make) throw error;
-      native().mkdir(parent.fd, name);
-      fd = native().open(parent.fd, name, directoryFlags, 0);
-      this.missing.delete(path);
+      return this.createDirectory(path, parent, name);
     }
     const result: Pin = { fd, parent, name, identity: fstatSync(fd, { bigint: true }) };
     this.pins.set(path, result);
     return result;
+  }
+
+  private createDirectory(path: string, parent: Pin, name: string): Pin {
+    // The exclusive 0700 staging name belongs to this operation. Only publish the
+    // directory after holding its fd; no public-name lookup is allowed to choose the pin.
+    const temporary = ".peerpedia-dir-" + randomUUID();
+    native().mkdir(parent.fd, temporary);
+    const fd = native().open(parent.fd, temporary, directoryFlags, 0);
+    let published = false;
+    try {
+      const identity = fstatSync(fd, { bigint: true });
+      this.rename(join(dirname(path), temporary), path, "publish");
+      published = true;
+      const pin = { fd, parent, name, identity };
+      this.verify(pin);
+      this.pins.set(path, pin);
+      this.missing.delete(path);
+      return pin;
+    } catch (error: unknown) {
+      this.missing.add(path);
+      if (!published) {
+        try {
+          this.verify({fd, parent, name: temporary, identity: fstatSync(fd, {bigint: true})});
+          native().rmdir(parent.fd, temporary);
+        } catch { /* Leave unknown or nonempty private entries intact. */ }
+      }
+      closeSync(fd);
+      throw error;
+    }
   }
 
   checkRoot(expected: BigIntStats): void {
@@ -114,9 +143,8 @@ export class AnchoredFiles {
     await this.sync(parent);
   }
   async mkdir(path: string): Promise<void> {
-    const dir = this.pin(dirname(path));
-    native().mkdir(dir.fd, this.entry(dir, basename(path)));
-    this.pin(path);
+    const {dir, name} = this.parent(path);
+    this.createDirectory(path, dir, name);
     await this.sync(dirname(path));
   }
   sameVolume(...paths: string[]): void {
