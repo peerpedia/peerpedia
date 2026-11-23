@@ -49,7 +49,7 @@ export default class PeerpediaPlugin extends Plugin {
   override async onload(): Promise<void> {
     const adapter = this.app.vault.adapter;
     if (!(adapter instanceof FileSystemAdapter)) return;
-    const settings: { writingScope?: Partial<WritingScope>; connection?: unknown } | null = await this.loadData();
+    const settings: { writingScope?: Partial<WritingScope>; connection?: unknown; connectionCleanup?: unknown } | null = await this.loadData();
     this.writingScope = {
       folders: scopeRules(settings?.writingScope?.folders),
       files: scopeRules(settings?.writingScope?.files),
@@ -95,9 +95,11 @@ export default class PeerpediaPlugin extends Plugin {
       return leaf.view;
     };
     const dir = this.manifest.dir ?? this.app.vault.configDir + "/plugins/" + this.manifest.id;
+    const cleanup = Array.isArray(settings?.connectionCleanup) ? settings.connectionCleanup.map(storedIdentity)
+      .filter((item: AccountIdentity | null): item is AccountIdentity => item !== null) : [];
     const connection = new ConnectionModal(this.app, storedIdentity(settings?.connection), new NodeTransport(),
       new DeviceCredentials(join(adapter.getBasePath(), dir, "native/keychain")),
-      (identity: AccountIdentity | null): Promise<void> => this.updateConnection(identity));
+      (identity: AccountIdentity | null, pending: readonly AccountIdentity[]): Promise<void> => this.updateConnection(identity, pending), cleanup);
     this.addCommand({ id: "connect-account", name: "连接或断开 Peerpedia 账号", callback: (): void => connection.open() });
     this.register((): void => connection.close());
     this.registerView(PREVIEW_VIEW, (leaf: WorkspaceLeaf): PreviewView => new PreviewView(leaf, store, dir));
@@ -281,10 +283,13 @@ export default class PeerpediaPlugin extends Plugin {
       .then(async (): Promise<void> => { await this.scopeMoves?.refresh(); });
   }
 
-  updateConnection(identity: AccountIdentity | null): Promise<void> {
+  updateConnection(identity: AccountIdentity | null, cleanup: readonly AccountIdentity[] = []): Promise<void> {
     return this.mutateSettings((settings: Record<string,unknown>): void => {
       if (identity) settings.connection = {origin:identity.origin, username:identity.username};
       else delete settings.connection;
+      if (cleanup.length) {
+        settings.connectionCleanup = cleanup.map((item: AccountIdentity): AccountIdentity => ({origin:item.origin, username:item.username}));
+      } else delete settings.connectionCleanup;
     });
   }
 

@@ -157,8 +157,6 @@ export function scanBibliography(source: string, path: string, start: number = 0
   const diagnostics = doc.errors.map((error: { pos: [number, number]; message: string }): Diagnostic => ({
     code: "bibliography-yaml", path, from: start + error.pos[0], to: start + error.pos[1], message: error.message.split("\n")[0],
   }));
-  if (!isMap(doc.contents)) return { labels, diagnostics };
-
   // BananaMark uses the resolved values, including aliases, to register
   // version keys. Keep navigating to the key's own source occurrence.
   let resolved: Record<string, { versions?: unknown }> | undefined;
@@ -166,8 +164,11 @@ export function scanBibliography(source: string, path: string, start: number = 0
     doc.options.logLevel = "silent";
     resolved = doc.toJS({ maxAliasCount: 50 });
   } catch {
-    // Retain directly authored definitions in an incomplete YAML draft.
+    // Keep authored definitions visible in the editor, but block refactoring an incomplete set of keys.
+    diagnostics.push({code:"bibliography-yaml", path, from:start, to:start + source.length,
+      message:"无法解析书目中的 YAML 别名。"});
   }
+  if (!isMap(doc.contents)) return {labels, diagnostics};
   for (const pair of doc.contents.items) {
     if (!isScalar(pair.key)) continue;
     const entry = yamlKey(source, path, pair.key, start, pair.key.value);

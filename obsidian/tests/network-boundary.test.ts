@@ -2,6 +2,9 @@ import { tmpdir } from "node:os";
 import type { App, Command, Editor, MarkdownFileInfo, PluginManifest, WorkspaceLeaf } from "obsidian";
 import { expect, test, vi } from "vitest";
 
+import { DeviceCredentials } from "../src/remote/credentials";
+import { ConnectionModal } from "../src/ui/connection-modal";
+import type { AccountIdentity, HttpResponse, Transport } from "../src/remote/types";
 import { NodeTransport } from "../src/remote/transport";
 import PeerpediaPlugin from "../src/main";
 import { FileSystemAdapter, MarkdownView } from "obsidian";
@@ -43,10 +46,84 @@ test("enabling, opening a chapter, editing and its preview command never request
     const identity = {origin:"https://peerpedia.dev",username:"writer"};
     await Promise.all([plugin.updateConnection(identity),plugin.updateWritingScope({folders:{"":true},files:{}})]);
     expect(saved).toEqual({connection:identity,writingScope:{folders:{"":true},files:{}}});
-    await plugin.updateConnection(null);
+    await plugin.updateConnection(null, [identity]);
+    expect(saved).toEqual({connectionCleanup:[identity],writingScope:{folders:{"":true},files:{}}});
+    await plugin.updateConnection(null, []);
     expect(saved).toEqual({writingScope:{folders:{"":true},files:{}}});
   } finally {
     request.mockRestore();
     vi.unstubAllGlobals();
   }
+});
+
+interface TestElement {
+  tag: string; text?: string; type?: string; value: string; disabled: boolean; onclick?: () => void;
+  createEl: (tag: string, options: {text?:string; type?:string}) => TestElement;
+}
+
+function openModal(identity: AccountIdentity | null, pending: readonly AccountIdentity[], store: DeviceCredentials, transport: Transport,
+  save: (active: AccountIdentity | null, cleanup: readonly AccountIdentity[]) => Promise<void>): (name: string) => TestElement {
+  const elements: TestElement[] = [];
+  const createEl = (tag:string, options:{text?:string;type?:string}):TestElement => {
+    const element = {tag,...options,value:"",disabled:false,createEl};
+    elements.push(element);
+    return element;
+  };
+  const modal = new ConnectionModal({} as App,identity,transport,store,save,pending);
+  Object.assign(modal,{setTitle:vi.fn(),contentEl:{empty:():void => { elements.length = 0; },createEl}});
+  modal.onOpen();
+  return (name:string):TestElement => {
+    const element = elements.find((item:TestElement):boolean => item.type === name || item.text?.includes(name) === true);
+    if (!element) throw new Error("Missing control " + name);
+    return element;
+  };
+}
+
+test("a failed native disconnect frees the modal for a new account and preserves targeted retry across restart", async (): Promise<void> => {
+  const first = {origin:"https://one.invalid",username:"first"};
+  const second = {origin:"https://two.invalid",username:"second"};
+  let state: {active:AccountIdentity|null; cleanup:readonly AccountIdentity[]} = {active:null,cleanup:[]};
+  const save = async (active:AccountIdentity|null,cleanup:readonly AccountIdentity[]):Promise<void> => { state = {active,cleanup}; };
+  const transport: Transport = {request:vi.fn(async (origin:string):Promise<HttpResponse> => ({status:200,headers:{},body:Buffer.from(JSON.stringify({
+    username:origin === first.origin ? first.username : second.username,scopes:["propose"],expires_at:"2030-01-01T00:00:00Z",
+    agreement:{url:"/agreements/",accepted:false,version:"v1"},
+  }))}))};
+  const store = new DeviceCredentials("/nonexistent-peerpedia-helper");
+  const remove = vi.spyOn(store,"remove");
+  let control = openModal(null,[],store,transport,save);
+  control("url").value = first.origin;
+  control("password").value = "temporary-one";
+  control("连接并验证账号").onclick!();
+  await vi.waitFor(():void => { expect(control("令牌仅在本次会话").tag).toBe("p"); });
+  control("断开并移除").onclick!();
+  await vi.waitFor(():void => { expect(state).toEqual({active:null,cleanup:[first]}); });
+  await expect(store.read(first.origin,first.username)).rejects.toThrow();
+  control = openModal(state.active,state.cleanup,store,transport,save);
+  expect(control("url").disabled).toBe(false);
+  expect(control("钥匙串条目待清理").text).toContain(first.username);
+  control("url").value = second.origin;
+  control("password").value = "temporary-two";
+  control("连接并验证账号").onclick!();
+  await vi.waitFor(():void => { expect(control("令牌仅在本次会话").tag).toBe("p"); });
+  expect(state).toEqual({active:second,cleanup:[first]});
+  control("重试移除").onclick!();
+  await vi.waitFor(():void => { expect(remove).toHaveBeenCalledTimes(2); expect(control("重试移除").disabled).toBe(false); });
+  expect(remove).toHaveBeenLastCalledWith(first.origin,first.username);
+  expect(await store.read(second.origin,second.username)).toBe("temporary-two");
+  expect(transport.request).toHaveBeenCalledTimes(2);
+});
+
+test("the modal shows the settings failure without claiming a verified or stored first credential", async ():Promise<void> => {
+  const store = new DeviceCredentials("/nonexistent-peerpedia-helper");
+  const write = vi.spyOn(store,"write");
+  const transport:Transport = {request:vi.fn(async ():Promise<HttpResponse> => ({status:200,headers:{},body:Buffer.from(JSON.stringify({
+    username:"first",scopes:["propose"],expires_at:"2030-01-01T00:00:00Z",agreement:{url:"/a/",accepted:false,version:"1"},
+  }))}))};
+  const control = openModal(null,[],store,transport,async ():Promise<void> => { throw new Error("settings unavailable"); });
+  control("password").value = "temporary-token";
+  control("连接并验证账号").onclick!();
+  await vi.waitFor(():void => { expect(control("settings unavailable").tag).toBe("p"); });
+  expect(write).not.toHaveBeenCalled();
+  expect(control("url").disabled).toBe(false);
+  expect(():TestElement => control("权限：")).toThrow(/Missing control/);
 });

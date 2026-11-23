@@ -11,7 +11,21 @@ export class ConnectionModal extends Modal {
 
   constructor(app: App, private identity: AccountIdentity | null,
     private readonly transport: Transport, private readonly credentials: DeviceCredentials,
-    private readonly save: (identity: AccountIdentity | null) => Promise<void>) { super(app); }
+    private readonly save: (identity: AccountIdentity | null, cleanup: readonly AccountIdentity[]) => Promise<void>,
+    private cleanup: readonly AccountIdentity[] = []) {
+    super(app);
+    if (identity) this.cleanup = this.excluding(identity);
+  }
+
+  private excluding(target: AccountIdentity): AccountIdentity[] {
+    return this.cleanup.filter((item:AccountIdentity):boolean => item.origin !== target.origin || item.username !== target.username);
+  }
+
+  private async remember(active: AccountIdentity | null, cleanup: readonly AccountIdentity[]): Promise<void> {
+    await this.save(active, cleanup);
+    this.identity = active;
+    this.cleanup = cleanup;
+  }
 
   override onOpen(): void { this.render(); }
 
@@ -50,10 +64,8 @@ export class ConnectionModal extends Modal {
       void this.act(async (): Promise<void> => {
         const token = entered || (this.identity && await this.credentials.read(origin, this.identity.username));
         if (!token) throw new Error("请输入访问令牌。");
-        const info = await connectAccount(origin, token, this.transport, this.credentials, this.identity?.username);
-        this.verified = info;
-        this.identity = {origin, username:info.username};
-        await this.save(this.identity);
+        this.verified = await connectAccount(origin, token, this.transport, this.credentials, this.identity?.username,
+          (identity: AccountIdentity): Promise<void> => this.remember(identity, this.excluding(identity)));
       });
     };
     if (this.verified && this.identity) {
@@ -74,10 +86,28 @@ export class ConnectionModal extends Modal {
         void this.act(async (): Promise<void> => {
           if (!this.identity) return;
           this.verified = undefined;
-          await this.credentials.remove(this.identity.origin, this.identity.username);
-          await this.save(null);
-          this.identity = null;
-          this.message = "已断开并移除本机凭据。";
+          const previous = this.identity;
+          const pending = this.excluding(previous);
+          try {
+            await this.credentials.remove(previous.origin, previous.username);
+            this.message = "已断开并移除本机凭据。";
+          } catch {
+            pending.push(previous);
+            this.message = "已清除会话令牌。钥匙串恢复后可重试移除旧凭据。";
+          }
+          await this.remember(null, pending);
+        });
+      };
+    }
+    for (const target of this.cleanup) {
+      el.createEl("p", {text:`钥匙串条目待清理：${target.username}（${target.origin}）。`});
+      const retry = el.createEl("button", {text:"重试移除旧凭据"});
+      retry.disabled = this.busy;
+      retry.onclick = (): void => {
+        void this.act(async (): Promise<void> => {
+          await this.credentials.remove(target.origin, target.username);
+          await this.remember(this.identity, this.excluding(target));
+          this.message = "已移除旧凭据。";
         });
       };
     }

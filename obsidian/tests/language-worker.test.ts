@@ -107,10 +107,17 @@ test.each(["[[My note]]", "![image](figure.png)"])("bibliography commands preser
   }
 });
 
-test("unreadable inline YAML blocks all three bibliography commands", async (): Promise<void> => {
-  const project = editFixture(projectFixture(), "chapters/z-intro.md", "~~~bibliography\nentry: [broken\n~~~\n");
+test.each(["entry: [broken", "*missing", "entry: *missing", "entry: {versions: *missing}"])(
+  "unreadable inline YAML blocks all three bibliography commands: %s", async (yaml: string): Promise<void> => {
+  const path = "chapters/z-intro.md";
+  const source = "~~~bibliography\n" + yaml + "\n~~~\n";
+  const project = editFixture(projectFixture(), path, source);
   const worker = new LanguageWorker(bundled, nodeThread);
   try {
+    if (yaml.includes("*missing")) {
+      expect((await worker.run("analyze", project)).analysis.diagnostics).toContainEqual(
+        expect.objectContaining({path, from:source.indexOf(yaml), to:source.indexOf("\n~~~") + 1, code:"bibliography-yaml"}));
+    }
     await expect(worker.run("validateCitationKey", {project, key: "fresh"})).rejects.toThrow(/内嵌书目/);
     await expect(worker.run("citationImpact", {project, key: "example"})).rejects.toThrow(/内嵌书目/);
     await expect(worker.run("citationRename", {project, from: "example", to: "fresh"})).rejects.toThrow(/内嵌书目/);

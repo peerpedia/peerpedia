@@ -58,6 +58,6 @@ export class DeviceCredentials implements CredentialStore {
   async remove(origin: string, username: string): Promise<void> {
     this.session.delete(credentialKey(origin, username));
     try { await this.invoke("remove",origin,username); }
-    catch { throw new Error("会话令牌已清除，但无法确认钥匙串条目已移除。请恢复钥匙串后重试断开。"); }
+    catch { throw new Error("无法确认此账号的钥匙串条目已移除。请恢复钥匙串后重试。"); }
   }
 }

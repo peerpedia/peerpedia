@@ -35,7 +35,7 @@ export function decodeAccount(origin: string, value: unknown): AccountInfo {
 }
 
 export async function connectAccount(origin: string, token: string, transport: Transport, credentials: CredentialStore,
-  expectedUsername?: string): Promise<AccountInfo> {
+  expectedUsername?: string, persistIdentity?: (identity: AccountIdentity) => Promise<void>): Promise<AccountInfo> {
   exactOrigin(origin);
   if (!token || !/^[\x21-\x7e]+$/u.test(token)) throw new Error("请输入有效的访问令牌。");
   const response = await transport.request(origin, "/api/v1/me/", "GET", {Authorization:"Bearer " + token, Accept:"application/json"}, null);
@@ -46,6 +46,7 @@ export async function connectAccount(origin: string, token: string, transport: T
   const account = decodeAccount(origin, payload);
   if (expectedUsername !== undefined && account.username !== expectedUsername) throw new Error("令牌属于其他账号。请先断开当前账号。");
   if (account.username.includes(token)) throw new Error("站点返回的用户名包含访问令牌。");
+  await persistIdentity?.({origin, username:account.username});
   await credentials.write(origin,account.username,token);
   return account;
 }

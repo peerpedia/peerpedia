@@ -43,6 +43,18 @@ test("only saves after /me/ validates scope, expiry and the same-origin agreemen
   expect(credentials.write).toHaveBeenCalledWith(origin, "writer", token);
 });
 
+test.each([null, "old-token"])("failed identity persistence preserves existing credential %s", async (previous: string | null): Promise<void> => {
+  let saved = previous;
+  const store: CredentialStore = {read:vi.fn(), remove:vi.fn(), write:vi.fn(async (_origin:string, _user:string, token:string):Promise<void> => { saved = token; })};
+  const transport: Transport = {request:vi.fn(async ():Promise<{status:number;headers:Record<string,string>;body:Uint8Array}> =>
+    ({status:200,headers:{},body:Buffer.from(JSON.stringify(sample))}))};
+  const persist = vi.fn(async ():Promise<void> => { throw new Error("storage unavailable"); });
+  await expect(connectAccount(origin,"new-token",transport,store,previous ? sample.username : undefined,persist)).rejects.toThrow("storage unavailable");
+  expect(persist).toHaveBeenCalledWith({origin,username:sample.username});
+  expect(store.write).not.toHaveBeenCalled();
+  expect(saved).toBe(previous);
+});
+
 test("unavailable Keychain uses isolated, removable session memory", async (): Promise<void> => {
   const credentials = new DeviceCredentials("/nonexistent-peerpedia-helper");
   await credentials.write(origin, "writer", "memory-value");
@@ -50,7 +62,7 @@ test("unavailable Keychain uses isolated, removable session memory", async (): P
   expect(await credentials.read(origin, "writer")).toBe("memory-value");
   const other = new DeviceCredentials("/nonexistent-peerpedia-helper");
   await expect(other.read(origin, "writer")).rejects.toThrow();
-  await expect(credentials.remove(origin, "writer")).rejects.toThrow(/重试断开/);
+  await expect(credentials.remove(origin, "writer")).rejects.toThrow(/重试/);
   await expect(credentials.read(origin, "writer")).rejects.toThrow();
 });
 
