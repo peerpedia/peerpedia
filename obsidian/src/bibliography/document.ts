@@ -1,4 +1,4 @@
-import { CST, isMap, isScalar, isSeq, parseDocument, stringify, visit, type Document, type Pair, type ParsedNode, type Scalar, type YAMLMap } from "yaml";
+import { CST, isAlias, isMap, isScalar, isSeq, parseDocument, stringify, visit, type Document, type Pair, type ParsedNode, type Scalar, type YAMLMap } from "yaml";
 
 export interface BibliographyEntry {
   key: string;
@@ -248,6 +248,24 @@ export function removeEntry(source: string, key: string): string {
     const followingLine = source.lastIndexOf("\n", to - 1) + 1;
     if (/^[ \t]*$/.test(source.slice(followingLine, to))) to = followingLine;
     updated = replace(source, from, to, "");
+  }
+  // Aliases bind to the nearest preceding anchor of that name. A reparse alone
+  // cannot detect a surviving alias silently falling back to an earlier definition.
+  const anchors = new Set<unknown>();
+  if (isAnchored(pair.key)) anchors.add(pair.key);
+  visit(pair.value, (_key: unknown, node: unknown): void => { if (isAnchored(node)) anchors.add(node); });
+  if (anchors.size) {
+    for (const survivor of parsed.pairs) {
+      if (survivor === pair) continue;
+      for (const field of survivor.value!.items) {
+        if (!field.value) continue;
+        visit(field.value, (_key: unknown, node: unknown): void => {
+          if (isAlias(node) && anchors.has(node.resolve(parsed.doc))) {
+            throw sharedDataError(`条目「${survivor.key.value}」的 ${field.key.value} `);
+          }
+        });
+      }
+    }
   }
   parse(updated);
   return updated;

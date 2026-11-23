@@ -16,6 +16,8 @@ export function openBuffers(app: App, path: string): readonly string[] {
 }
 
 export function moveScope(scope: WritingScope, oldPath: string, newPath: string): WritingScope {
+  oldPath = oldPath.normalize();
+  newPath = newPath.normalize();
   const moved = (rules: Readonly<Record<string, boolean>>): Record<string, boolean> => {
     const next = { ...rules };
     for (const [path, enabled] of Object.entries(rules)) {
@@ -153,6 +155,7 @@ export class ExternalScopeMoves {
   async changed(path: string, created: boolean): Promise<void> {
     if (path.split("/").includes(".peerpedia-obsidian")) return;
     const current = this.scope();
+    path = path.normalize();
     const configured = Object.hasOwn(current.folders, path) || Object.hasOwn(current.files, path);
     if (!configured && (!created || !this.identities.size)) return;
     const id = await this.identity(path);

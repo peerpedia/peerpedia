@@ -184,7 +184,7 @@ export class WritingProjects {
     this.previous.clear();
   }
 
-  private rootFor(path: string): string | null {
+  rootFor(path: string): string | null {
     if (this.knownRoots.has(path)) return this.knownRoots.get(path) ?? null;
     if (!isRelativePath(path)) return null;
     let parent = path;

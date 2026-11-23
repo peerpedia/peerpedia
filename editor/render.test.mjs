@@ -270,3 +270,9 @@ test(
   "BananaMark validates hidden overflow table cells on first build",
   discardedCellMath,
 );
+test("rejected chapter images retain their file and UTF-16 coordinates", /** @returns {Promise<void>} */ async () => {
+  await assert.rejects(renderDocument({ pages: [
+    { id: "intro", markdown: "# One" },
+    { id: "proof", markdown: "# Proof\r\n\r\n😀 ![[figure.png]]" },
+  ] }), {file: "proof.md", line: 3, column: 4});
+});

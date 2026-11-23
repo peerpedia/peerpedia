@@ -129,18 +129,7 @@ def renderer_processes(runtime: Path) -> list[int]:
     return [int(line.split(maxsplit=1)[0]) for line in processes.splitlines() if line.strip().endswith(argv)]
 
 
-def verify(page: Page, context: BrowserContext, vault: Path, package: Path, evidence: Path) -> None:
-    page.set_default_timeout(8000)
-    page.bring_to_front()
-    print("TEST WINDOW", page.title(), page.url, flush=True)
-    page.wait_for_function("typeof app !== 'undefined' && app.workspace.layoutReady", polling=100)
-    assert Path(page.evaluate("app.vault.adapter.getBasePath()")).resolve() == vault.resolve()
-    assert page.evaluate("!app.plugins.getPlugin('peerpedia')")
-    installed = vault / PLUGIN
-    manifest = json.loads((package / "package-manifest.json").read_text())
-    for name, digest in manifest["sha256"].items():
-        assert sha256((installed / name).read_bytes()).hexdigest() == digest, name
-    runtime = installed / "renderer"
+def offline(page: Page, context: BrowserContext, runtime: Path) -> list[str]:
     # The macOS policy is applied to the actual bundled executable without replacing any package files.
     probe = subprocess.check_output([
         "/usr/bin/sandbox-exec", "-p", NETWORK_POLICY, str(runtime / "bin/node"), "-e",
@@ -171,6 +160,22 @@ def verify(page: Page, context: BrowserContext, vault: Path, package: Path, evid
     context.route("https://**/*", deny)
     context.set_offline(True)
     assert page.evaluate("navigator.onLine") is False
+    return requests
+
+
+def verify(page: Page, context: BrowserContext, vault: Path, package: Path, evidence: Path) -> None:
+    page.set_default_timeout(8000)
+    page.bring_to_front()
+    print("TEST WINDOW", page.title(), page.url, flush=True)
+    page.wait_for_function("typeof app !== 'undefined' && app.workspace.layoutReady", polling=100)
+    assert Path(page.evaluate("app.vault.adapter.getBasePath()")).resolve() == vault.resolve()
+    assert page.evaluate("!app.plugins.getPlugin('peerpedia')")
+    installed = vault / PLUGIN
+    manifest = json.loads((package / "package-manifest.json").read_text())
+    for name, digest in manifest["sha256"].items():
+        assert sha256((installed / name).read_bytes()).hexdigest() == digest, name
+    runtime = installed / "renderer"
+    requests = offline(page, context, runtime)
     trust = page.get_by_role("button", name="Trust author and enable plugins")
     if trust.is_visible():
         trust.click()

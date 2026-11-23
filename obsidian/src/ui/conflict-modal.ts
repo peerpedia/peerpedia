@@ -10,7 +10,7 @@ export async function openLocalFile(path: string, reveal: boolean): Promise<void
 }
 
 export function errorMessage(error: unknown): string {
-  if (error instanceof ProjectReadError) return `无法读取「${error.issue.path}」。请打开原文件检查内容和路径。`;
+  if (error instanceof ProjectReadError) return `无法读取「${error.issue.path}」。${error.issue.message} 请打开原文件检查。`;
   if (error instanceof Error && /[\u3400-\u9fff]/.test(error.message)) return error.message;
   return "操作未完成。请检查文件名称、文件夹位置及读写权限。";
 }

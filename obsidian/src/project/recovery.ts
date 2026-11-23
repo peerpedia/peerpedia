@@ -11,7 +11,7 @@ export interface RecoveryFile { path: string; versions: RecoveryVersion[] }
 interface Journal {
   kind?: string;
   move?: { from: string; to: string };
-  files: (FileChange & { beforeText: string | null })[];
+  files: (FileChange & { beforeText: string | null; externalText?: string })[];
 }
 interface Observation { path: string; diskAtRead?: string | null; disk: string | null; editors: string[] }
 
@@ -61,7 +61,8 @@ export async function recoverIn(tree: AnchoredFiles, root: string): Promise<read
       } else {
         const observed = await observations(tree, path);
         paths = [...new Set([...data.files.map((f: FileChange): string => f.path), ...observed.map((o: Observation): string => o.path)])];
-        message = data.kind === "conflict" ? "保存前发现不同版本，可核对磁盘、编辑器与拟写内容。" : "上次写入中断。可核对原稿、拟写内容和磁盘现状。";
+        message = data.kind === "native-conflict" ? "外部修改与编辑器草稿冲突，已保留三个版本供核对。"
+          : data.kind === "conflict" ? "保存前发现不同版本，可核对磁盘、编辑器与拟写内容。" : "上次写入中断。可核对原稿、拟写内容和磁盘现状。";
       }
     } catch { /* Keep damaged recovery records visible. */ } finally { tree.releaseRecord(path); }
     notices.push({ transactionId: id, paths, message });
@@ -85,7 +86,8 @@ export async function inspectRecovery(tree: AnchoredFiles, root: string, id: str
     const entry = data.files[index];
     if (entry) {
       add("修改前", entry.beforeText);
-      add("拟写入", entry.afterText);
+      add(data.kind === "native-conflict" ? "编辑器草稿" : "拟写入", entry.afterText);
+      add("外部修改", entry.externalText);
       const displaced = await optionalSource(tree, join(dir, data.move?.from === path ? "moved.md" : "file-" + index));
       if (displaced && displaced.text !== entry.beforeText && displaced.text !== entry.afterText) add("保留的外部文件", displaced.text);
     }

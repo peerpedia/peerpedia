@@ -1,3 +1,4 @@
+import { pruneDiagramCache } from "./tikz-cache";
 import { stdin, stdout } from "node:process";
 import { createInterface } from "node:readline";
 
@@ -184,6 +185,11 @@ async function render(request: RenderRequest): Promise<RenderResponse> {
     };
   } catch (error: unknown) {
     return normalizeError(request, error, last);
+  } finally {
+    const cache = process.env.BANANAMARK_CACHE;
+    if (cache) await pruneDiagramCache(cache).catch((error: unknown): void => {
+      process.stderr.write(`TikZ cache cleanup: ${String(error)}\n`);
+    });
   }
 }
 

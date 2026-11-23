@@ -2,6 +2,7 @@
 // directory descriptors are owned by the caller. This module never accepts an absolute path.
 #define NAPI_VERSION 8
 #include <node_api.h>
+#include <copyfile.h>
 #include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
@@ -93,6 +94,25 @@ static napi_value announce_entry(napi_env env, napi_callback_info info) {
     return result(env, futimens(integer(env, a[0]), times));
 }
 
+// Darwin copies extended attributes (including resource forks), ACLs, flags and stat metadata
+// between the two already-pinned regular files. A content edit keeps its fresh write time.
+static napi_value copy_metadata(napi_env env, napi_callback_info info) {
+    size_t n = 3;
+    napi_value a[3];
+    napi_get_cb_info(env, info, &n, a, NULL, NULL);
+    if (n != 3) return failure(env, EINVAL);
+    int from = integer(env, a[0]), to = integer(env, a[1]);
+    struct stat original, stage;
+    if (fstat(from, &original) || fstat(to, &stage)) return failure(env, errno);
+    if (!S_ISREG(original.st_mode) || !S_ISREG(stage.st_mode)) return failure(env, EINVAL);
+    if (fcopyfile(from, to, NULL, COPYFILE_METADATA) < 0) return failure(env, errno);
+    if (!integer(env, a[2])) {
+        const struct timespec times[2] = {{0, UTIME_OMIT}, stage.st_mtimespec};
+        if (futimens(to, times) < 0) return failure(env, errno);
+    }
+    return result(env, fsync(to));
+}
+
 static napi_value list_entries(napi_env env, napi_callback_info info) {
     size_t n = 1;
     napi_value a[1], out;
@@ -125,6 +145,7 @@ static napi_value initialize(napi_env env, napi_value exports) {
         {"rmdir", NULL, remove_directory, NULL, NULL, NULL, napi_default, NULL},
         {"rename", NULL, rename_entry, NULL, NULL, NULL, napi_default, NULL},
         {"announce", NULL, announce_entry, NULL, NULL, NULL, napi_default, NULL},
+        {"metadata", NULL, copy_metadata, NULL, NULL, NULL, napi_default, NULL},
         {"list", NULL, list_entries, NULL, NULL, NULL, napi_default, NULL},
     };
     napi_define_properties(env, exports, sizeof(methods) / sizeof(methods[0]), methods);

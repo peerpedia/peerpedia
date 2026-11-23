@@ -404,3 +404,18 @@ test("failure inspection keeps two successive observed disk versions despite a l
     {label: "当前磁盘内容", text: "之后的自动保存"},
   ]));
 });
+test("replacing and renaming an existing chapter preserve Finder metadata", async (): Promise<void> => {
+  const {execFileSync} = await import("node:child_process");
+  const base = await setup();
+  const store = new VaultProjectStore(base, events, {prepareRename: async (): Promise<OpenChapterMove> =>
+    ({reconnect: async (): Promise<void> => {}})});
+  const path = join(base, "paper", first.path);
+  const attribute = "com.apple.metadata:_kMDItemUserTags";
+  const tag = "62706c6973743030a10153526564080a000000000000010100000000000000020000000000000000000000000000000e";
+  execFileSync("/usr/bin/xattr", ["-wx", attribute, tag, path]);
+  const read = (name: string): string => execFileSync("/usr/bin/xattr", ["-px", attribute, name], {encoding:"utf8"}).replace(/\s/g, "").toLowerCase();
+  const updated = await store.apply("paper", fixture.revision, [change(first, "Revised")]);
+  expect(read(path)).toBe(tag);
+  await store.renameChapter(updated, updated.config.chapters![0].id, "renamed.md");
+  expect(read(join(base, "paper/renamed.md"))).toBe(tag);
+});

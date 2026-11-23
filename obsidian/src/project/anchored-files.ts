@@ -18,6 +18,7 @@ interface Native {
   rmdir(dir: number, name: string): void;
   rename(from: number, name: string, to: number, target: string, flag: number): void;
   announce(fd: number): void;
+  metadata(from: number, to: number, preserveTimes: number): void;
   list(dir: number): string[];
 }
 let bindings: Native | undefined;
@@ -187,6 +188,24 @@ export class AnchoredFiles {
     const { dir, name } = this.parent(path);
     const fd = native().open(dir.fd, name, constants.O_RDONLY, 0);
     try { return fstatSync(fd).mode & 0o777; } finally { closeSync(fd); }
+  }
+
+  copyMetadata(source: string, stage: string, preserveTimes: boolean): (path: string) => void {
+    const from = this.parent(source), to = this.parent(stage);
+    const original = native().open(from.dir.fd, from.name, constants.O_RDONLY, 0);
+    let identity: BigIntStats;
+    try {
+      identity = fstatSync(original, {bigint: true});
+      const dest = native().open(to.dir.fd, to.name, constants.O_RDONLY, 0);
+      try { native().metadata(original, dest, Number(preserveTimes)); } finally { closeSync(dest); }
+    } finally { closeSync(original); }
+    return (path: string): void => {
+      const live = this.parent(path);
+      const fd = native().open(live.dir.fd, live.name, constants.O_RDONLY, 0);
+      try {
+        if (!same(identity, fstatSync(fd, {bigint: true}))) throw new Error("复制元数据时发现外部更改，原文件已被替换。");
+      } finally { closeSync(fd); }
+    };
   }
 
   publicationSignal(stage: string, target: string): () => void {

@@ -26,3 +26,7 @@ test("disabling editing leaves the chapter in the publication", (): void => {
   expect(toPublicationDocument(project).chapters.map((chapter: { id: string }): string => chapter.id))
     .toEqual(["intro", "proof"]);
 });
+test("canonical-equivalent file spellings retain the override", (): void => {
+  expect(resolveScope("Café/été.md".normalize("NFD"), {"Café": true}, {"Café/été.md": false})).toBe(false);
+  expect(resolveScope("Café/été.md".normalize("NFD"), {}, {"Café/été.md": true})).toBe(true);
+});

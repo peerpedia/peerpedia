@@ -274,3 +274,8 @@ test("a stale bibliography form cannot overwrite externally changed YAML", async
     await rm(directory, { recursive: true, force: true });
   }
 });
+test("deletion cannot retarget a surviving field to an earlier anchor of the same name", (): void => {
+  const source = "a: {type: book, title: &t Alpha}\nb: {type: book, title: &t Beta}\nc: {type: book, title: *t}\n";
+  expect((): string => removeEntry(source, "b")).toThrow(/c.*title.*YAML/u);
+  expect(readEntries(removeEntry(source, "a"))[1].fields.title).toBe("Beta");
+});

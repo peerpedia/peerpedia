@@ -6,14 +6,14 @@ import type { TAbstractFile, Vault } from "obsidian";
 
 import { isMissing, isRelativePath, locatePath, pathKey } from "../project/paths";
 import {
-  CONFIG_PATH, parsePaperConfig, projectMembers, projectRevision, type FileChange,
+  CONFIG_PATH, parsePaperConfig, projectMembers, projectRevision, sourceDigest, type FileChange,
   type ProjectEvent, type ProjectStore,
 } from "../project/store";
 import { ProjectReadError, type ChapterSpec, type ProjectSnapshot, type SourceFile } from "../project/types";
 
 import { AnchoredFiles, withAnchors } from "../project/anchored-files";
 import { readSource } from "../project/source-file";
-import { keepConflict, PreconditionConflict, safePath, writeTransaction, type WriteHost } from "../project/transaction";
+import { keepConflict, newJournal, PreconditionConflict, safePath, writeTransaction, type WriteHost } from "../project/transaction";
 import { recoverIn, inspectRecovery, type RecoveryFile, type RecoveryNotice } from "../project/recovery";
 
 const WATCH_SETTLE_MS = 30;
@@ -143,6 +143,40 @@ export class VaultProjectStore implements ProjectStore {
     const found = await locatePath(await this.directory(root), path, path);
     if (!found) throw new Error("找不到原文件。");
     return found.absolute;
+  }
+
+  async recordNativeConflict(root: string, path: string, drafts: readonly {base: string; local: string}[],
+    observed: (disk: string) => void): Promise<RecoveryNotice | undefined> {
+    safePath(path);
+    return this.anchored(root, async (tree: AnchoredFiles): Promise<RecoveryNotice | undefined> => {
+      // Start the descriptor-pinned read before the native view can merge or autosave the external text.
+      const external = await tree.source(join(root, path));
+      if (!external) return;
+      observed(external.text);
+      const normalized = (value: string): string => value.replace(/\r\n/g, "\n");
+      const disk = normalized(external.text);
+      const divergent = drafts.filter(({base, local}: {base: string; local: string}): boolean =>
+        normalized(base) !== normalized(local) && normalized(base) !== disk && normalized(local) !== disk);
+      if (!divergent.length) return;
+      const manifest = await tree.source(join(root, CONFIG_PATH));
+      if (!manifest) return;
+      const config = parsePaperConfig(manifest.text);
+      const members = projectMembers(config).slice(1).filter((name: string): boolean => name !== config.bibliography);
+      const member = members.find((name: string): boolean => name.normalize() === path.normalize());
+      if (!member) return;
+      await rejectNestedProject(this.basePath, root, join(this.basePath, root));
+      // One durable record per distinct pane draft, even if their bases differ.
+      let notice: RecoveryNotice | undefined;
+      for (const {base, local} of divergent) {
+        const dir = await newJournal(tree, root);
+        const files = [{path: member, beforeDigest: sourceDigest(Buffer.from(base)), beforeText: base,
+          afterText: local, externalText: external.text}];
+        await tree.file(join(dir, "journal.json"), JSON.stringify({kind: "native-conflict", files}));
+        await tree.sync(dir);
+        notice = {transactionId: basename(dir), paths: [member], message: "已保留修改前、编辑器草稿和外部修改。"};
+      }
+      return notice;
+    });
   }
 
   async recoveryFiles(root: string, id: string): Promise<readonly RecoveryFile[]> {

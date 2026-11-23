@@ -76,7 +76,7 @@ export class ProjectPanel extends ItemView {
     }
   }
 
-  private async reveal(root: string, record: RecoveryNotice): Promise<void> {
+  async revealRecovery(root: string, record: RecoveryNotice): Promise<void> {
     const form = new Modal(this.app);
     form.setTitle("恢复文件");
     form.contentEl.addClass("peerpedia-paper-form");
@@ -103,7 +103,7 @@ export class ProjectPanel extends ItemView {
   private async conflict(root: string, error: unknown): Promise<void> {
     const records = await this.store.recovery(root).catch((): RecoveryNotice[] => []);
     if (this.root === root) { this.records = records; this.snapshot = null; await this.reload(); }
-    new ConflictModal(this.app, error, records, (record: RecoveryNotice): Promise<void> => this.reveal(root, record)).open();
+    new ConflictModal(this.app, error, records, (record: RecoveryNotice): Promise<void> => this.revealRecovery(root, record)).open();
   }
 
   private async save(project: ProjectSnapshot, changes: readonly FileChange[]): Promise<void> {
@@ -142,7 +142,7 @@ export class ProjectPanel extends ItemView {
       item.createEl("p", { text: record.message });
       item.createEl("small", { text: record.paths.join("、") });
       button(item, "查看恢复文件", (): void => {
-        void this.reveal(root, record).catch((err: unknown): void => { new Notice(errorMessage(err)); });
+        void this.revealRecovery(root, record).catch((err: unknown): void => { new Notice(errorMessage(err)); });
       });
     }
     const project = this.snapshot;

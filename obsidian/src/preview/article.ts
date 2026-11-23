@@ -44,7 +44,10 @@ function copyNode(node: Node, parent: Node, doc: Document): void {
       const safe = (target as HTMLElement).style;
       for (const property of Array.from(css)) {
         const v = css.getPropertyValue(property);
-        if (inline.has(property) && /^[\w\s.,%+\-#]+$/.test(v)) safe.setProperty(property, v);
+        if (/^border(?:-(?:left|right|top|bottom))?-style$/.test(property) && /^(solid|dashed)$/.test(v)) safe.setProperty(property, v);
+        else if ((property === "border-width" || property === "--bm-tikz-tag-space") && /^(?:\d+(?:\.\d+)?|\.\d+)em$/.test(v.trim())) safe.setProperty(property, v);
+        else if (property === "margin" && /^0(?:px)? -?(?:\d+(?:\.\d+)?|\.\d+)em$/.test(v)) safe.setProperty(property, v);
+        else if (inline.has(property) && /^[\w\s.,%+\-#]+$/.test(v)) safe.setProperty(property, v);
       }
     }
   }

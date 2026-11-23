@@ -5,6 +5,7 @@ export function resolveScope(
   folders: Readonly<Record<string, boolean>>,
   files: Readonly<Record<string, boolean>>,
 ): boolean {
+  path = path.normalize();
   if (!isRelativePath(path)) return false;
   if (Object.hasOwn(files, path)) return files[path];
   let parent = path;

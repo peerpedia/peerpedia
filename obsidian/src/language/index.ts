@@ -10,6 +10,7 @@ import { validReferenceName } from "bananamark/internal/scan.mjs";
 import { declaredLabels } from "bananamark-codemirror";
 import { isMap, isNode, isScalar, isSeq, parseDocument, type Node, type YAMLMap } from "yaml";
 
+import { publicationImage } from "../../../editor/chapter-title.js";
 import { dialectOptions } from "../../../editor/dialect.js";
 import type { Diagnostic } from "./diagnostics";
 
@@ -108,7 +109,7 @@ function itemLabels(source: string, path: string): LabelTarget[] {
   const normalizedBreaks = Array.from(source.matchAll(/\r\n/g),
     (match: RegExpMatchArray, removed: number): number => (match.index ?? 0) - removed,
   );
-  const items = parseLists(source.replace(/\r\n?/g, "\n")).items;
+  const items = parseLists(source.replace(/\r\n/g, "\n")).items;
   const labels: LabelTarget[] = [];
   let removed = 0;
   for (const { id, start, end } of items) {
@@ -256,10 +257,24 @@ export function scanChapter(source: string, path: string): {
   };
 
   addLabels(itemLabels(source, path));
-  parseSource(source).iterate({
+  const tree = parseSource(source);
+  // Link/caption analysis skips subtrees that can still contain a publish-blocking image.
+  if (source.includes("![")) tree.iterate({
+    enter(node: SyntaxNodeRef): void {
+      const range = publicationImage(source, node);
+      if (range) diagnostics.push({path, ...range, message: "论文不支持图片，请使用 TikZ 图形。"});
+    },
+  });
+  tree.iterate({
     enter(ref: SyntaxNodeRef): false | void {
       const { name, from, to, node } = ref;
       if (from < escapedReferenceEnd) return false;
+      if (name === "Image") return false;
+      if (name === "PlainBracket" && source.startsWith("[[", from)) {
+        const wiki = /\[\[[^\[\]\r\n]+\]\]/y;
+        wiki.lastIndex = from;
+        if (wiki.test(source)) diagnostics.push({path, from, to: wiki.lastIndex, message: "论文会按普通文字显示此 Obsidian 链接。"});
+      }
       if (name === "Escape" && source.startsWith("\\{@", from)) {
         const literal = readReference(source, from + 1, { ignoreEscape: true });
         if (literal?.key !== undefined) escapedReferenceEnd = literal.end;

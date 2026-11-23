@@ -44,3 +44,8 @@ test("a new edit, a newer preview, closing the form and a changed project each i
   current = false;
   expect(latest()).toBe(false);
 });
+test.each(["## Original {@sec:old}*", "## Original* {@sec:old .red}", "## Original {@sec:old .red}", "##  Original   ##", "Original {@sec:old}*\r\n-----"])(
+  "changing the visible title preserves the source delimiters in %s", (heading: string): void => {
+    const source = "\uFEFF" + heading + "\r\n\r\nBody\r\n";
+    expect(previewTitle(source, "Revised").text).toBe(source.replace("Original", "Revised"));
+  });

@@ -128,3 +128,20 @@ test("finds the cited version definition at the alias occurrence, not at its tit
   });
   expect(analysis.diagnostics).toEqual([]);
 });
+test("reports image and literal wiki syntax at the actual chapter offsets", (): void => {
+  const tokens = ["![图](figure.png)", "![[figure.png]]", "[[普通笔记|别名]]"];
+  const source = "😀\r\n" + tokens.join(" ") + "\r\n\r\n`[[code]]`\n\n~~~md\n![[example]]\n~~~\n";
+  const issues = analyzeProject(editFixture(projectFixture(), intro, source)).diagnostics
+    .filter((issue: {path: string}): boolean => issue.path === intro);
+  expect(issues.map((issue: {from: number; to: number}): string => source.slice(issue.from, issue.to))).toEqual(tokens);
+});
+
+test("a lone CR cannot introduce an ordered-list label", (): void => {
+  const result = analyzeProject(editFixture(projectFixture(), intro, "Prose\r1. {@item:false} First"));
+  expect(result.labels.some((label: {key: string}): boolean => label.key === "item:false")).toBe(false);
+});
+test("the publication image rule also inspects nested link contents", (): void => {
+  const source = "[![caption](figure.png)](article)";
+  const issues = analyzeProject(editFixture(projectFixture(), intro, source)).diagnostics;
+  expect(issues).toContainEqual({path:intro, from:1, to:23, message:"论文不支持图片，请使用 TikZ 图形。"});
+});

@@ -1,3 +1,4 @@
+import type { Text } from "@codemirror/state";
 import { EditorView, type ViewUpdate } from "@codemirror/view";
 import { editorInfoField, FileSystemAdapter, MarkdownView, Notice, Plugin, type Editor, type MarkdownFileInfo, type TAbstractFile, type WorkspaceLeaf } from "obsidian";
 
@@ -15,6 +16,7 @@ import { WritingProjects } from "./host/writing-projects";
 import type { Reference } from "./language/index";
 import { findTarget } from "./language/targets";
 import { resolveScope } from "./project/scope";
+import type { RecoveryNotice } from "./project/recovery";
 import { CONFIG_PATH } from "./project/store";
 
 export interface WritingScope {
@@ -26,7 +28,7 @@ function scopeRules(value: unknown): Record<string, boolean> {
   if (!value || typeof value !== "object" || Array.isArray(value)) return {};
   return Object.fromEntries(Object.entries(value).filter(
     (entry: [string, unknown]): entry is [string, boolean] => typeof entry[1] === "boolean",
-  ));
+  ).map(([path, enabled]: [string, boolean]): [string, boolean] => [path.normalize(), enabled]));
 }
 
 export default class PeerpediaPlugin extends Plugin {
@@ -74,9 +76,9 @@ export default class PeerpediaPlugin extends Plugin {
       }
       return undefined;
     };
-    const openPanel = async (): Promise<ProjectPanel> => {
+    const openPanel = async (selectedRoot?: string): Promise<ProjectPanel> => {
       let leaf = this.app.workspace.getLeavesOfType(PROJECT_PANEL)[0];
-      const root = await paperRoot(this.app.workspace.getActiveFile());
+      const root = selectedRoot ?? await paperRoot(this.app.workspace.getActiveFile());
       if (!leaf) {
         leaf = this.app.workspace.getRightLeaf(false) ?? this.app.workspace.getLeaf("tab");
         await leaf.setViewState({ type: PROJECT_PANEL, active: true, state: { root } });
@@ -116,9 +118,17 @@ export default class PeerpediaPlugin extends Plugin {
     this.registerEvent(this.app.workspace.on("active-leaf-change", (leaf: WorkspaceLeaf | null): void => {
       if (leaf?.view instanceof MarkdownView) notifyPreviews(leaf.view, true, true);
     }));
+    // Host consumers can update TextFileView.data before vault.modify is delivered.
+    // Hold the immutable native document and its then-current base until disk acknowledges it.
+    const pendingDrafts = new WeakMap<MarkdownView, {path: string; base: string; doc: Text}>();
     this.registerEditorExtension(EditorView.updateListener.of((update: ViewUpdate): void => {
       if (!update.docChanged && !update.selectionSet && !(update.focusChanged && update.view.hasFocus)) return;
       const info = update.state.field(editorInfoField, false);
+      if (update.docChanged && info instanceof MarkdownView && info.file && this.writingProjects?.rootFor(info.file.path) != null) {
+        const prior = pendingDrafts.get(info);
+        const base = prior?.path === info.file.path && prior.doc === update.startState.doc ? prior.base : info.data;
+        pendingDrafts.set(info, {path: info.file.path, base, doc: update.state.doc});
+      }
       if (info instanceof MarkdownView) queueMicrotask((): void => notifyPreviews(info, update.docChanged, update.focusChanged && update.view.hasFocus));
     }));
     const showPanel = (create: boolean): void => {
@@ -135,6 +145,45 @@ export default class PeerpediaPlugin extends Plugin {
     const editors = new WritingEditors((path: string): boolean =>
       resolveScope(path, this.writingScope.folders, this.writingScope.files));
     const projects = new WritingProjects(this.app, adapter.getBasePath(), (): void => editors.invalidate());
+    this.registerEvent(this.app.vault.on("modify", (file: TAbstractFile): void => {
+      if (!/\.md$/i.test(file.path)) return;
+      // Capture at the event boundary. Obsidian reads the new bytes asynchronously,
+      // then may replace both its last-loaded data and the live source buffer.
+      const drafts: {base: string; local: string}[] = [];
+      const acknowledged: ((disk: string) => void)[] = [];
+      for (const leaf of this.app.workspace.getLeavesOfType("markdown")) {
+        const view = leaf.view;
+        if (!(view instanceof MarkdownView) || view.file !== file || view.getMode() !== "source") continue;
+        const pending = pendingDrafts.get(view);
+        const tracked = pending?.path === file.path ? pending : undefined;
+        const base = tracked?.base ?? view.data, local = tracked?.doc.toString() ?? view.editor.getValue();
+        if (base === local) { pendingDrafts.delete(view); continue; }
+        if (tracked) acknowledged.push((disk: string): void => {
+          if (disk.replace(/\r\n/g, "\n") === base.replace(/\r\n/g, "\n")) return;
+          const current = pendingDrafts.get(view);
+          if (current === tracked) pendingDrafts.delete(view);
+          else if (current?.path === tracked.path && current.base === tracked.base) current.base = disk;
+        });
+        if (!drafts.some((draft: {base: string; local: string}): boolean => draft.base === base && draft.local === local)) {
+          drafts.push({base, local});
+        }
+      }
+      if (!drafts.length) return;
+      const root = projects.rootFor(file.path);
+      if (root === null) return;
+      const member = root ? file.path.slice(root.length + 1) : file.path;
+      const diskObserved = (disk: string): void => { for (const seen of acknowledged) seen(disk); };
+      void store.recordNativeConflict(root, member, drafts, diskObserved).then((record: RecoveryNotice | undefined): void => {
+        if (!record) return;
+        const message = document.createDocumentFragment();
+        message.createSpan({text: `「${member}」收到外部修改，已保留草稿。 `});
+        message.createEl("button", {text: "核对版本"}).onclick = (): void => {
+          void openPanel(root).then((panel: ProjectPanel): Promise<void> => panel.revealRecovery(root, record))
+            .catch((error: unknown): void => { new Notice(errorMessage(error)); });
+        };
+        new Notice(message, 15000);
+      }).catch((error: unknown): void => { new Notice(`无法保留草稿版本。${errorMessage(error)}`); });
+    }));
     const suggest = new BananaMarkSuggest(
       this.app,
       (editor: Editor, path: string): ReturnType<WritingEditors["viewFor"]> => editors.viewFor(editor, path),
@@ -213,6 +262,7 @@ export default class PeerpediaPlugin extends Plugin {
   }
 
   updateWritingScope(scope: WritingScope): Promise<void> {
+    scope = {folders: scopeRules(scope.folders), files: scopeRules(scope.files)};
     this.writingScope = scope;
     this.refreshWritingScope();
     // Serialize rename bursts and setting edits. Other plugin settings survive each save.

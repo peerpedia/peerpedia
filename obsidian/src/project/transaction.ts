@@ -53,7 +53,7 @@ function normalized(text: string | null): string | null {
   return text === null ? null : text.replace(/\r\n?/g, "\n");
 }
 
-async function newJournal(tree: AnchoredFiles, directory: string): Promise<string> {
+export async function newJournal(tree: AnchoredFiles, directory: string): Promise<string> {
   await tree.directories(join(directory, RECOVERY_DIR));
   const recovery = join(directory, RECOVERY_DIR);
   const journal = join(recovery, randomUUID());
@@ -177,11 +177,13 @@ export async function writeTransaction(
       const target = join(root, file.path);
       await tree.directories(join(root, dirname(file.path)));
       const staged = join(journal, `file-${index}`);
+      let checkMetadata: ((path: string) => void) | undefined;
       if (!move || file.path !== move.from) {
         if (file.afterText !== null) {
           await tree.file(staged, file.afterText, file.beforeDigest === null ? 0o644 : tree.mode(target));
         }
       }
+      if (file.beforeText !== null && file.afterText !== null) checkMetadata = tree.copyMetadata(target, staged, false);
       // Recheck all unchanged dependencies, including unrelated project members and split panes.
       for (const path of expected.keys()) await check(path);
       if (move && file.path === move.from) {
@@ -209,6 +211,7 @@ export async function writeTransaction(
           const source = await tree.source(moved);
           if (source?.digest !== file.beforeDigest) throw new Error("移动时原文件已更改，已保留外部内容。");
           await tree.file(staged, source!.text, mode);
+          tree.copyMetadata(moved, staged, true)(moved);
           published.set(move.to, tree.publicationSignal(staged,destination));
           await atomicFiles.publish(staged, destination, tree);
         } catch (error: unknown) {
@@ -217,6 +220,7 @@ export async function writeTransaction(
             const source = await tree.source(moved);
             if (source) {
               await tree.file(restore, source.text, mode);
+              tree.copyMetadata(moved, restore, true)(moved);
               await atomicFiles.publish(restore, target, tree);
               await tree.sync(dirname(target));
               await openMove.reconnect(vaultPath(move.from));
@@ -231,7 +235,11 @@ export async function writeTransaction(
         await atomicFiles.publish(staged, target, tree); // Exclusive creation and a single visible filesystem event.
       } else if (file.beforeText !== null) {
         if (file.afterText === null) tree.rename(target, staged, "publish");
-        else await atomicFiles.replace(staged, target, tree);
+        else {
+          checkMetadata?.(target);
+          await atomicFiles.replace(staged, target, tree);
+          checkMetadata?.(staged);
+        }
         // The displaced file survives even if another editor replaced it during the syscall.
         if ((await tree.source(staged))?.digest !== file.beforeDigest) {
           throw new Error(`替换时发现外部更改，已保留移出的文件：${file.path}`);
