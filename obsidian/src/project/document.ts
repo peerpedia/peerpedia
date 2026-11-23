@@ -1,18 +1,10 @@
 import { BananamarkError, defineDialect, transformFragment, type SyntaxNodeRef } from "bananamark";
 
-import { inspectChapter } from "../../../editor/chapter-title.js";
 import { dialectOptions } from "../../../editor/dialect.js";
 import { CONFIG_PATH, projectMembers } from "./store";
-import { ProjectReadError, type ChapterSpec, type PaperConfig, type ProjectIssue, type ProjectSnapshot, type SourceFile } from "./types";
+import { ProjectReadError, type ProjectIssue, type ProjectSnapshot, type SourceFile } from "./types";
 
-export interface PublicationDocument extends Pick<
-  PaperConfig,
-  "title" | "authors" | "abstract" | "primary_category" | "secondary_categories" | "license"
-> {
-  markdown: string;
-  chapters: readonly { id: string; title: string; markdown: string }[];
-  bibliography: string;
-}
+export { toPublicationDocument, type PublicationDocument } from "./publication";
 
 const MAX_CHAPTERS = 64;
 const MAX_TEXT_BYTES = 1024 * 1024;
@@ -21,36 +13,6 @@ const MAX_DIAGRAM_BYTES = 32 * 1024;
 const TIKZ_ENVIRONMENT = /\\begin\s*\{\s*(?:tikzcd|tikzpicture)\s*\}/;
 const dialect = defineDialect(dialectOptions);
 const parser = dialect.language.language.parser;
-
-function sourceText(files: ReadonlyMap<string, string>, path: string): string {
-  const text = files.get(path);
-  if (text === undefined) throw new ProjectReadError(path, `Missing project file "${path}".`, "missing");
-  return text;
-}
-
-function compareCodePoints(left: string, right: string): number {
-  // Python's sorted() compares Unicode code points. UTF-8 preserves that order.
-  return Buffer.compare(Buffer.from(left), Buffer.from(right));
-}
-
-export function toPublicationDocument(snapshot: ProjectSnapshot): PublicationDocument {
-  const { chapters: specs, bibliography: bibliographyPath, secondary_categories, ...metadata } = snapshot.config;
-  const files = new Map(snapshot.files.map((file: SourceFile): readonly [string, string] => [file.path, file.text]));
-  for (const path of projectMembers(snapshot.config)) sourceText(files, path);
-  const chapters = (specs ?? []).map((chapter: ChapterSpec): PublicationDocument["chapters"][number] => {
-    const markdown = sourceText(files, chapter.file);
-    return { id: chapter.id, title: inspectChapter(markdown).title, markdown };
-  });
-  return {
-    ...metadata,
-    secondary_categories: secondary_categories.slice().sort(compareCodePoints),
-    chapters,
-    markdown: chapters.length
-      ? chapters.map((chapter: PublicationDocument["chapters"][number]): string => chapter.markdown).join("\n\n")
-      : sourceText(files, "paper.md"),
-    bibliography: bibliographyPath ? sourceText(files, bibliographyPath) : "",
-  };
-}
 
 function collectCaptionDiagrams(opening: string, sizes: number[]): void {
   if (!opening.includes("caption=")) return;

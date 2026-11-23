@@ -86,3 +86,23 @@
   max-height: 14rem;
   overflow: auto;
 }
+
+.peerpedia-preview {
+  display: flex;
+  flex-direction: column;
+  gap: var(--size-4-1);
+  padding: var(--size-4-2);
+}
+
+.peerpedia-preview iframe {
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  border: 0;
+}
+
+.peerpedia-preview-position,
+.peerpedia-preview [role="status"] {
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+}

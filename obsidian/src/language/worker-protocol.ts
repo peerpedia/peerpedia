@@ -1,3 +1,4 @@
+import type { PublicationDocument } from "../project/publication";
 import type { CitationRename, CitationUse } from "../bibliography/rename";
 import type { TitlePreview } from "./title-preview";
 import type { ProjectSnapshot } from "../project/types";
@@ -5,6 +6,7 @@ import type { WritingAnalysis } from "./analysis";
 import type { CompletionContext, Suggestion } from "./completion";
 
 export interface LanguageInputs {
+  publication: ProjectSnapshot;
   validateCitationKey: { project: ProjectSnapshot; key: string };
   citationImpact: { project: ProjectSnapshot; key: string };
   citationRename: { project: ProjectSnapshot; from: string; to: string };
@@ -15,6 +17,7 @@ export interface LanguageInputs {
 }
 
 export interface LanguageOutputs {
+  publication: PublicationDocument;
   validateCitationKey: undefined;
   citationImpact: readonly CitationUse[];
   citationRename: CitationRename;

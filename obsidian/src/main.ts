@@ -1,9 +1,11 @@
-import { FileSystemAdapter, MarkdownView, Notice, Plugin, type Editor, type MarkdownFileInfo, type TAbstractFile, type WorkspaceLeaf } from "obsidian";
+import { EditorView, type ViewUpdate } from "@codemirror/view";
+import { editorInfoField, FileSystemAdapter, MarkdownView, Notice, Plugin, type Editor, type MarkdownFileInfo, type TAbstractFile, type WorkspaceLeaf } from "obsidian";
 
 import { ensurePublishedFile, ExternalScopeMoves, isStagedMove, moveScope, openBuffers, stageChapter } from "./host/file-events";
 import type { OpenChapterMove } from "./project/transaction";
 import { VaultProjectStore } from "./host/vault-store";
 import { PROJECT_PANEL, ProjectPanel } from "./ui/project-panel";
+import { PREVIEW_VIEW, PreviewView } from "./ui/preview-view";
 import { ScopeSettings } from "./ui/scope-settings";
 import { errorMessage } from "./ui/conflict-modal";
 import { WritingEditors } from "./host/editor-extension";
@@ -65,18 +67,16 @@ export default class PeerpediaPlugin extends Plugin {
       (root: string): Promise<void> => this.updateWritingScope({
         ...this.writingScope, folders: { ...this.writingScope.folders, [root]: true },
       })));
+    const paperRoot = async (file: TAbstractFile | null): Promise<string | undefined> => {
+      for (let parent = file?.parent; parent; parent = parent.parent) {
+        const folder = parent.isRoot() ? "" : parent.path;
+        if (await adapter.exists(folder ? folder + "/" + CONFIG_PATH : CONFIG_PATH)) return folder;
+      }
+      return undefined;
+    };
     const openPanel = async (): Promise<ProjectPanel> => {
       let leaf = this.app.workspace.getLeavesOfType(PROJECT_PANEL)[0];
-      let root: string | undefined;
-      const file = this.app.workspace.getActiveFile();
-      if (file) {
-        let parent = file.parent;
-        while (parent) {
-          const folder = parent.isRoot() ? "" : parent.path;
-          if (await adapter.exists(folder ? folder + "/" + CONFIG_PATH : CONFIG_PATH)) { root = folder; break; }
-          parent = parent.parent;
-        }
-      }
+      const root = await paperRoot(this.app.workspace.getActiveFile());
       if (!leaf) {
         leaf = this.app.workspace.getRightLeaf(false) ?? this.app.workspace.getLeaf("tab");
         await leaf.setViewState({ type: PROJECT_PANEL, active: true, state: { root } });
@@ -85,6 +85,42 @@ export default class PeerpediaPlugin extends Plugin {
       if (!(leaf.view instanceof ProjectPanel)) throw new Error("无法打开论文管理面板。");
       return leaf.view;
     };
+    const dir = this.manifest.dir ?? this.app.vault.configDir + "/plugins/" + this.manifest.id;
+    this.registerView(PREVIEW_VIEW, (leaf: WorkspaceLeaf): PreviewView => new PreviewView(leaf, store, dir));
+    this.addCommand({ id: "preview-paper", name: "打开论文预览", editorCallback: async (_editor: Editor, info: MarkdownView | MarkdownFileInfo): Promise<void> => {
+      if (!(info instanceof MarkdownView)) return;
+      const file = info.file;
+      try {
+        const root = await paperRoot(file);
+        if (info.file !== file || !file) return;
+        if (root === undefined) { new Notice("请在论文目录内打开章节。"); return; }
+        let leaf = this.app.workspace.getLeavesOfType(PREVIEW_VIEW).find((item: WorkspaceLeaf): boolean =>
+          item.getViewState().state?.root === root);
+        if (!leaf) {
+          leaf = this.app.workspace.createLeafBySplit(info.leaf, "vertical");
+          await leaf.setViewState({ type: PREVIEW_VIEW, state: {root}, active: false });
+        }
+        await this.app.workspace.revealLeaf(leaf);
+        if (leaf.view instanceof PreviewView) leaf.view.editorMoved(info.leaf, info.editor, file.path, true, true);
+        this.app.workspace.setActiveLeaf(info.leaf, {focus: true});
+      } catch (error: unknown) { new Notice(errorMessage(error)); }
+    } });
+    const notifyPreviews = (info: MarkdownView, changed: boolean): void => {
+      const path = info.file?.path;
+      if (!path) return;
+      for (const leaf of this.app.workspace.getLeavesOfType(PREVIEW_VIEW)) {
+        if (leaf.view instanceof PreviewView) leaf.view.editorMoved(info.leaf, info.editor, path, changed,
+          this.app.workspace.activeLeaf === info.leaf);
+      }
+    };
+    this.registerEvent(this.app.workspace.on("active-leaf-change", (leaf: WorkspaceLeaf | null): void => {
+      if (leaf?.view instanceof MarkdownView) notifyPreviews(leaf.view, true);
+    }));
+    this.registerEditorExtension(EditorView.updateListener.of((update: ViewUpdate): void => {
+      if (!update.docChanged && !update.selectionSet && !(update.focusChanged && update.view.hasFocus)) return;
+      const info = update.state.field(editorInfoField, false);
+      if (info instanceof MarkdownView) queueMicrotask((): void => notifyPreviews(info, update.docChanged));
+    }));
     const showPanel = (create: boolean): void => {
       void openPanel().then((panel: ProjectPanel): void => { if (create) panel.createForm(); })
         .catch((error: unknown): void => { new Notice(errorMessage(error)); });
@@ -109,6 +145,7 @@ export default class PeerpediaPlugin extends Plugin {
     this.register((): void => {
       suggest.dispose();
       projects.dispose();
+      this.app.workspace.detachLeavesOfType(PREVIEW_VIEW);
       this.app.workspace.detachLeavesOfType(PROJECT_PANEL);
       this.app.workspace.detachLeavesOfType(BIBLIOGRAPHY_SOURCE_VIEW);
     });

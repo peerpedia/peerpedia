@@ -1,3 +1,4 @@
+import { toPublicationDocument } from "../project/publication";
 import { citationImpact, previewCitationRename, validateNewCitationKey } from "../bibliography/rename";
 import { previewTitle } from "./title-preview";
 import { inspectChapter } from "../../../editor/chapter-title.js";
@@ -17,6 +18,9 @@ port.addEventListener("message", ({ data: request }: MessageEvent<LanguageReques
   let response: LanguageResponse;
   try {
     switch (request.kind) {
+      case "publication":
+        response = { id: request.id, kind: "publication", value: toPublicationDocument(request.value) };
+        break;
       case "validateCitationKey":
         validateNewCitationKey(request.value.project, request.value.key);
         response = { id: request.id, kind: "validateCitationKey", value: undefined };

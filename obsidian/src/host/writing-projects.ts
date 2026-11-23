@@ -64,6 +64,16 @@ function editedSource(path: string, text: string): SourceFile {
   return { path, text, digest: sourceDigest(Buffer.from(text)) };
 }
 
+/** Overlay the native LF buffer only when it differs from the original disk text (which may be CRLF). */
+export function withEditorSources(disk: ProjectSnapshot, read: (path: string) => string | undefined): ProjectSnapshot {
+  const files = disk.files.map((file: SourceFile): SourceFile => {
+    if (file.path === CONFIG_PATH || file.path === disk.config.bibliography) return file;
+    const open = read(vaultPath(disk.root, file.path));
+    return open !== undefined && open !== editorText(file.text) ? editedSource(file.path, open) : file;
+  });
+  return { ...disk, files, revision: projectRevision(files) };
+}
+
 export class WritingProjects {
   private readonly store: VaultProjectStore;
   private readonly worker = new LanguageWorker();
@@ -232,13 +242,9 @@ export class WritingProjects {
     const member = disk && projectMembers(disk.config).slice(1).find((item: string): boolean =>
       pathKey(vaultPath(disk.root, item)) === current);
     if (disk && member) {
-      const files = disk.files.map((file: SourceFile): SourceFile => {
-        if (file.path === CONFIG_PATH || file.path === disk.config.bibliography) return file;
-        const key = pathKey(vaultPath(disk.root, file.path));
-        const open = key === current ? source : buffers.get(key)?.getValue();
-        return open !== undefined && open !== editorText(file.text) ? editedSource(file.path, open) : file;
-      });
-      return { path: member, project: { ...disk, files, revision: projectRevision(files) } };
+      const project = withEditorSources(disk, (file: string): string | undefined =>
+        pathKey(file) === current ? source : buffers.get(pathKey(file))?.getValue());
+      return { path: member, project };
     }
     // Scope and membership are independent. An enabled note has its own
     // index unless it is a declared member of the paper.
