@@ -1,0 +1,72 @@
+{
+  "paper_identifier": "240229.49cee6d6cfea",
+  "snapshot_identifier": "240229.1540df8c0cb0",
+  "paper_url": "/papers/240229.49cee6d6cfea/",
+  "read_url": "/submissions/240229.1540df8c0cb0/read/",
+  "via_cli": false,
+  "ai_assisted": false,
+  "pull_request": null,
+  "hash": "1540df8c0cb004bbe2ebe6f148fe06d30d6138bf9a541af4fa94fe928ec6aead",
+  "manifest": {
+    "format": "peerpedia-submission-v4",
+    "submission_id": "00000000-0000-0000-0000-000000000068",
+    "paper_id": "00000000-0000-0000-0000-000000000001",
+    "contributor_id": 7,
+    "contributor_name": "fixture-author",
+    "base_hash": "41d272a55c48f8f07b9008fa56106a62509dcc9972b3aacf9108a2d6c3803bd4",
+    "title": "测试 «论文» 📝",
+    "authors": "测试作者\nFixture Author",
+    "abstract": "验证 \"原文\" 与反斜线 \\。",
+    "markdown_sha256": "6fb06a693561dfdcc303348a3291a80f0c0eb8f2d29146b44ac7490e6411af87",
+    "explanation": "历史版本",
+    "submitted_at": "2024-02-29T23:59:59.123456+00:00",
+    "primary_category": "cs.AI",
+    "secondary_categories": [
+      "cs.PL",
+      "math.AG"
+    ],
+    "license": "CC-BY-4.0",
+    "agreement": {
+      "version": "2026-10-19",
+      "sha256": "12b437586e9f6a916c0b0d51430548ea47e644ef7d714f091056eb028088b106",
+      "accepted_at": "2024-02-29T23:59:59.123456+00:00",
+      "acceptance_id": 3
+    },
+    "chapters": [
+      {
+        "id": "intro",
+        "title": "引言",
+        "markdown_sha256": "5247ea40473c0a2196d79caca9e5b8ff8c62ce375fa490993e7b89530d4e2c91"
+      },
+      {
+        "id": "results",
+        "title": "结果",
+        "markdown_sha256": "f9ad72e3b5ba00d2957e054f8ecdfae5fa615485b63daedaf6f9e7ed0d640f6e"
+      }
+    ],
+    "bibliography_sha256": "4026019d443fa81c95b0e5f8d8c263e10cbc91126ee2e0b4fcf4a1f797fe01df"
+  },
+  "markdown": "# 引言\r\n\r\n第一章 🧪\r\n\n\n# 结果\n\nCafé 与 Café\n",
+  "chapters": [
+    {
+      "id": "intro",
+      "title": "引言",
+      "markdown": "# 引言\r\n\r\n第一章 🧪\r\n"
+    },
+    {
+      "id": "results",
+      "title": "结果",
+      "markdown": "# 结果\n\nCafé 与 Café\n"
+    }
+  ],
+  "bibliography": "sample:\r\n  title: \"示例 📚\"\r\n",
+  "status": "accepted",
+  "url": "/submissions/240229.1540df8c0cb0/",
+  "licensing": {
+    "code": "CC-BY-4.0",
+    "label": "CC BY 4.0",
+    "url": "https://creativecommons.org/licenses/by/4.0/",
+    "description": "Share and adapt, including commercially, with attribution and notice of changes.",
+    "declaration": null
+  }
+}

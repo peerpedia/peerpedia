@@ -1,0 +1,34 @@
+{
+  "paper_identifier": "240229.49cee6d6cfea",
+  "snapshot_identifier": "240229.49cee6d6cfea",
+  "paper_url": "/papers/240229.49cee6d6cfea/",
+  "read_url": "/submissions/240229.49cee6d6cfea/read/",
+  "via_cli": false,
+  "ai_assisted": false,
+  "pull_request": null,
+  "hash": "49cee6d6cfeae44f9ee64abc59879d30dc457b8812a0470073ce93fb006f605e",
+  "manifest": {
+    "format": "peerpedia-submission-v1",
+    "submission_id": "00000000-0000-0000-0000-000000000065",
+    "paper_id": "00000000-0000-0000-0000-000000000001",
+    "contributor_id": 7,
+    "contributor_name": "fixture-author",
+    "base_hash": null,
+    "title": "测试 «论文» 📝",
+    "authors": "测试作者\nFixture Author",
+    "abstract": "验证 \"原文\" 与反斜线 \\。",
+    "markdown_sha256": "564f1222434d4aa01a6f3c8bccea5a40af5ba0d93ed59eb2213025c16cc83880",
+    "explanation": "历史版本",
+    "submitted_at": "2024-02-29T23:59:59.123456+00:00"
+  },
+  "markdown": "# 快照 🌌\r\n\r\n原文\r\n",
+  "chapters": [],
+  "bibliography": "",
+  "status": "accepted",
+  "url": "/submissions/240229.49cee6d6cfea/",
+  "licensing": {
+    "code": null,
+    "label": "License not recorded",
+    "url": "/licenses/"
+  }
+}

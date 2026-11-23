@@ -1,3 +1,5 @@
+import type { PublicationDocument } from "../project/publication";
+
 export type JsonValue = null | boolean | number | string | JsonValue[] | {[key: string]: JsonValue};
 
 export interface AccountInfo {
@@ -27,4 +29,37 @@ export interface CredentialStore {
   read(origin: string, username: string): Promise<string | null>;
   write(origin: string, username: string, token: string): Promise<void>;
   remove(origin: string, username: string): Promise<void>;
+}
+
+export interface VerifiedSnapshot {
+  paperId: string;
+  submissionId: string;
+  publicId: string | null;
+  hash: string;
+  status: "pending" | "accepted" | "rejected" | "withdrawn" | "superseded";
+  document: PublicationDocument;
+  manifest: Readonly<Record<string, JsonValue>>;
+}
+
+export interface PrHead {
+  id: string;
+  hash: string;
+  submissionId: string;
+  owner: string;
+  status: Exclude<VerifiedSnapshot["status"], "superseded">;
+}
+
+export type RemoteTarget =
+  | {kind: "paper"; identifier: string}
+  | {kind: "snapshot"; identifier: string; expectedPaperIdentifier?: string};
+
+export interface Category {
+  id: string;
+  name: string;
+}
+
+export interface LicenseOption {
+  code: string;
+  label: string;
+  url: string;
 }

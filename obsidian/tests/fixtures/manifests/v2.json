@@ -1,0 +1,39 @@
+{
+  "paper_identifier": "240229.49cee6d6cfea",
+  "snapshot_identifier": "240229.db336f22fe6c",
+  "paper_url": "/papers/240229.49cee6d6cfea/",
+  "read_url": "/submissions/240229.db336f22fe6c/read/",
+  "via_cli": false,
+  "ai_assisted": false,
+  "pull_request": null,
+  "hash": "db336f22fe6ca0839f14fe9242cf81ebe7d92a3b1288db8a7a2b789cfa92a7af",
+  "manifest": {
+    "format": "peerpedia-submission-v2",
+    "submission_id": "00000000-0000-0000-0000-000000000066",
+    "paper_id": "00000000-0000-0000-0000-000000000001",
+    "contributor_id": 7,
+    "contributor_name": "fixture-author",
+    "base_hash": "49cee6d6cfeae44f9ee64abc59879d30dc457b8812a0470073ce93fb006f605e",
+    "title": "测试 «论文» 📝",
+    "authors": "测试作者\nFixture Author",
+    "abstract": "验证 \"原文\" 与反斜线 \\。",
+    "markdown_sha256": "564f1222434d4aa01a6f3c8bccea5a40af5ba0d93ed59eb2213025c16cc83880",
+    "explanation": "历史版本",
+    "submitted_at": "2024-02-29T23:59:59.123456+00:00",
+    "primary_category": "cs.AI",
+    "secondary_categories": [
+      "cs.PL",
+      "math.AG"
+    ]
+  },
+  "markdown": "# 快照 🌌\r\n\r\n原文\r\n",
+  "chapters": [],
+  "bibliography": "",
+  "status": "accepted",
+  "url": "/submissions/240229.db336f22fe6c/",
+  "licensing": {
+    "code": null,
+    "label": "License not recorded",
+    "url": "/licenses/"
+  }
+}

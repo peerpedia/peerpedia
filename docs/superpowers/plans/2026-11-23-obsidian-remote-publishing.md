@@ -36,9 +36,9 @@
 复用本地计划的 `ProjectStore`、`ProjectSnapshot`、`FileChange`、`PublicationDocument`、`toPublicationDocument` 与 RendererClient。新类型在 `remote/types.ts`：
 
 - `JsonValue = null | boolean | number | string | JsonValue[] | {[key:string]:JsonValue}`。
-- `VerifiedSnapshot {paperId:string; submissionId:string; publicId:string|null; hash:string; status:'pending'|'accepted'|'rejected'|'withdrawn'; document:PublicationDocument; manifest:Readonly<Record<string,JsonValue>>}`。由核验器唯一构造；不把任意网络 JSON 强转为此类型。
+- `VerifiedSnapshot {paperId:string; submissionId:string; publicId:string|null; hash:string; status:'pending'|'accepted'|'rejected'|'withdrawn'|'superseded'; document:PublicationDocument; manifest:Readonly<Record<string,JsonValue>>}`。由核验器唯一构造；不把任意网络 JSON 强转为此类型。
 - `AccountInfo {username:string; scopes:readonly string[]; expiresAt:string; agreement:{version:string; accepted:boolean; url:string}}`。
-- `PrHead {id:string; hash:string; submissionId:string; owner:string; status:VerifiedSnapshot['status']}`。
+- `PrHead {id:string; hash:string; submissionId:string; owner:string; status:'pending'|'accepted'|'rejected'|'withdrawn'}`。
 - `RemoteBinding {schemaVersion:1; origin:string; paperId:string; acceptedBase:VerifiedSnapshot; workingBase:VerifiedSnapshot; lastSubmitted:VerifiedSnapshot|null; activePr:PrHead|null; checkedAt:string}`。workingBase 允许指定历史/未接受快照作为本地起点，不能冒充当前接受基准。
 - `HttpResponse {status:number; headers:Readonly<Record<string,string>>; body:Uint8Array}`；`Transport.request(origin:string,route:string,method:'GET'|'POST',headers:Readonly<Record<string,string>>,body:Uint8Array|null):Promise<HttpResponse>`。
 - `CredentialStore.read(origin:string,username:string):Promise<string|null>`、`write(origin:string,username:string,token:string):Promise<void>`、`remove(origin:string,username:string):Promise<void>`。
@@ -63,11 +63,11 @@
 
 **Files:** 创建 `remote/{verify.ts,api.ts,links.ts}`、`tests/{protocol.test.ts,links.test.ts}`、`tests/fixtures/manifests/{v1,v2,v3,v4}.json`。
 
-**Interfaces:** `verifySnapshot(raw:unknown):VerifiedSnapshot`；`parseRemoteLink(input:string,origin:string):RemoteTarget`，`RemoteTarget {kind:'paper'|'snapshot'; identifier:string}`；`PeerpediaApi.current(paperId:string):Promise<VerifiedSnapshot>`、`snapshot(id:string):Promise<VerifiedSnapshot>`、`prs(paperId:string):Promise<readonly PrHead[]>`、`me(token:string):Promise<AccountInfo>`、`categories():Promise<readonly Category[]>`、`licenses():Promise<readonly LicenseOption[]>`，`Category {id:string;name:string}`、`LicenseOption {code:string;label:string;url:string}`。API 构造时注入 origin 与 Transport，不在构造函数请求网络。
+**Interfaces:** `verifySnapshot(raw:unknown):VerifiedSnapshot`；`parseRemoteLink(input:string,origin:string):RemoteTarget`，`RemoteTarget {kind:'paper'|'snapshot'; identifier:string; expectedPaperIdentifier?:string}`；`PeerpediaApi.current(paperId:string):Promise<VerifiedSnapshot>`、`snapshot(id:string):Promise<VerifiedSnapshot>`、`prs(paperId:string):Promise<readonly PrHead[]>`、`me(token:string):Promise<AccountInfo>`、`categories():Promise<readonly Category[]>`、`licenses():Promise<readonly LicenseOption[]>`，`Category {id:string;name:string}`、`LicenseOption {code:string;label:string;url:string}`。API 构造时注入 origin 与 Transport，不在构造函数请求网络。
 
 - [ ] 从隔离服务生成四种版本的固定记录，写失败测试：`verifySnapshot(fixture).hash` 等于 Python CLI 核验的 hash；正文、章节顺序、书目或 manifest 任一改变都拒绝。加入 CRLF、中文、emoji 和无效 UTF-8/代理对案例。
 - [ ] 运行 `npm --prefix obsidian test -- tests/protocol.test.ts tests/links.test.ts` 确认失败。按 CLI `verify` 实现 Python 兼容 canonical JSON：排序键、无空白、保留 Unicode、禁止不支持的值；哈希基于原文 bytes。分版本校验字段，不要求历史版本具有后来才新增的字段。
-- [ ] 链接解析支持网站现有 paper、submission 和相应 read 链接，以及实际存在的版本阅读链接；校验主机、路径和标识，不从任意网页执行脚本或跟随不明跳转。论文链接调用 current，快照链接调用 snapshot；manifest 提供真实 paper UUID。
+- [ ] 链接解析支持网站现有 paper、submission 和相应 read 链接，以及实际存在的版本阅读链接；校验主机、路径和标识，不从任意网页执行脚本或跟随不明跳转。论文链接调用 current，快照链接调用 snapshot；manifest 提供真实 paper UUID。版本阅读链接把论文标识保留在 expectedPaperIdentifier，供导入时查询该论文 current 并与指定快照的 paperId 交叉核对。
 - [ ] `prs` 处理分页，只保留身份/head/status 等同步所需字段。网络异常与校验失败保持不同错误。通过测试、类型检查和只读协议 fixture 核对后提交 `feat(obsidian): verify remote paper snapshots`。
 
 ## Task R3：论文导入与显式版本检查
@@ -78,7 +78,7 @@
 
 - [ ] 写失败测试：导入指定旧快照后本地文件等于旧快照，workingBase 为旧快照，acceptedBase 为明确查询到的当前版本；已存在目标目录拒绝导入；远程恶意章节 ID 不能生成越界路径；取消导入不留下半个有效项目。
 - [ ] 运行 `npm --prefix obsidian test -- tests/import.test.ts tests/binding.test.ts` 确认失败。以经过校验的章节 ID 生成相对路径，建立 `paper.json`、正文、文献，使用 `ProjectStore.create` 原子创建独立目录，之后持久化插件绑定。
-- [ ] 历史快照导入不自动更新其正文。导入单次操作可同时读取 current 以确立接受基准；此后任何拉取必须用户明确触发。当前论文关联提案未知时只显示未检查，不在打开文档时联网补全。
+- [ ] 历史快照导入不自动更新其正文。若版本链接带 expectedPaperIdentifier，用该标识读取 current 并校验其 paperId 与指定快照一致后才创建文件。导入单次操作可同时读取 current 以确立接受基准；此后任何拉取必须用户明确触发。当前论文关联提案未知时只显示未检查，不在打开文档时联网补全。
 - [ ] 面板显示最后主动检查时间与本地状态；远程 404/隐藏/令牌到期保留所有本地内容。成功通过本任务测试和网络边界测试后提交 `feat(obsidian): import papers and check versions on demand`。
 
 ## Task R4：结构化三方合并与确认写入
