@@ -16,9 +16,11 @@ import type { BindingVersion } from "../remote/binding";
 import { checkProject } from "../remote/controller";
 import { importedRevision } from "../remote/import";
 import { PeerpediaApi } from "../remote/api";
-import type { RemoteCheck, Transport } from "../remote/types";
+import type { Category, LicenseOption, RemoteCheck, Transport } from "../remote/types";
 import { MergeView } from "./merge-view";
 import type { MergeAxis } from "../remote/merge-compare";
+import type { SubmissionController } from "../remote/controller";
+import { SubmitModal } from "./submit-modal";
 import { ImportModal } from "./import-modal";
 
 export const PROJECT_PANEL = "peerpedia-project";
@@ -41,7 +43,7 @@ export class ProjectPanel extends ItemView {
 
   constructor(leaf: WorkspaceLeaf, readonly store: VaultProjectStore,
     private readonly enableFolder: (root: string) => Promise<void>, private readonly origin: () => string,
-    private readonly transport: Transport) { super(leaf); }
+    private readonly transport: Transport, private readonly submissions?: SubmissionController) { super(leaf); }
 
   override getViewType(): string { return PROJECT_PANEL; }
   override getDisplayText(): string { return "论文管理"; }
@@ -193,6 +195,12 @@ export class ProjectPanel extends ItemView {
     }
     const project = this.snapshot;
     if (!project) return;
+    if (this.submissions && !this.bindingError && !this.binding?.pendingMerge && !this.binding?.pendingImport)
+      button(this.contentEl,this.binding?.pendingSubmission ? "Review pending submission" : "Submit to Peerpedia",():void => {
+        new SubmitModal(this.app,project.root,this.store,this.submissions!,async ():Promise<void> => {
+          if (this.root === project.root) await this.selectRoot(project.root);
+        }).open();
+      });
     this.renderRemote(project);
     this.contentEl.createEl("h3", { text: project.config.title || "未命名论文" });
     button(this.contentEl, "编辑论文信息", (): void => this.metadataForm(project));
@@ -264,7 +272,7 @@ export class ProjectPanel extends ItemView {
     } else box.createEl("p",{text:"关联提案状态：本次打开后尚未检查"});
     if (this.checkError) box.createEl("p",{text:this.checkError,attr:{role:"alert"}});
     const selection = this.selection;
-    if (this.binding?.pendingMerge) return;
+    if (this.binding?.pendingMerge || this.binding?.pendingSubmission) return;
     const compare = (axis: MergeAxis): void => {
       new MergeView(this.app,project,axis,this.store,new PeerpediaApi(binding.origin,this.transport),async (observation?: RemoteCheck): Promise<void> => {
         if (selection !== this.selection) return;
@@ -326,6 +334,17 @@ export class ProjectPanel extends ItemView {
     const category = form.field("主分类", config.primary_category);
     const secondary = form.field("其他分类（用逗号分隔）", config.secondary_categories.join(", "));
     const license = form.field("许可", config.license);
+    const catalog = this.submissions?.catalog(this.binding?.binding?.origin ?? this.origin());
+    if (catalog) {
+      const addOptions = (input: HTMLInputElement|HTMLTextAreaElement, options: readonly [string,string][]): void => {
+        const list = form.contentEl.createEl("datalist");
+        list.id = randomUUID();
+        for (const [value,label] of options) list.createEl("option",{value,text:label});
+        input.setAttribute("list",list.id);
+      };
+      addOptions(category,catalog.categories.map((c:Category):[string,string] => [c.id,c.name]));
+      addOptions(license,catalog.licenses.map((v:LicenseOption):[string,string] => [v.code,v.label]));
+    }
     form.submit("保存到 paper.json", (): Promise<void> => this.save(project, [configChange(project, {
       ...config, title: title.value, authors: authors.value, abstract: abstract.value, primary_category: category.value,
       secondary_categories: secondary.value.split(/[,，]/).map((s: string): string => s.trim()).filter(Boolean), license: license.value,

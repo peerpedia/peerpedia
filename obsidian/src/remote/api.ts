@@ -29,7 +29,7 @@ function licenseOption(raw: unknown, origin: string): LicenseOption {
   return {code: nonempty(row.code), label: nonempty(row.label), url: url.href};
 }
 
-function decodeJson(body: Uint8Array): unknown {
+export function decodeJson(body: Uint8Array): unknown {
   try {
     const source = new TextDecoder("utf-8", {fatal: true}).decode(body);
     // Check the numeric lexeme before trusting its rounded JS representation.

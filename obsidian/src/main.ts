@@ -20,6 +20,9 @@ import { resolveScope } from "./project/scope";
 import type { RecoveryNotice } from "./project/recovery";
 import { CONFIG_PATH } from "./project/store";
 
+import { SubmissionController } from "./remote/controller";
+import { RendererClient } from "./preview/renderer-client";
+import type { RenderRequest, RenderResponse } from "../renderer/protocol";
 import { DEFAULT_ORIGIN, storedIdentity } from "./remote/account";
 import { DeviceCredentials } from "./remote/credentials";
 import { NodeTransport } from "./remote/transport";
@@ -43,6 +46,7 @@ export default class PeerpediaPlugin extends Plugin {
   private scopeMoves?: ExternalScopeMoves;
   private settingsWrite: Promise<void> = Promise.resolve();
   projectStore?: VaultProjectStore;
+  private connectionIdentity: AccountIdentity|null = null;
   private importOrigin = DEFAULT_ORIGIN;
   private writingEditors: WritingEditors | undefined;
   private writingProjects: WritingProjects | undefined;
@@ -73,12 +77,19 @@ export default class PeerpediaPlugin extends Plugin {
       void moves.changed(file.path, false).catch((error: unknown): void => { new Notice(errorMessage(error)); });
     }));
     const transport = new NodeTransport();
-    this.importOrigin = storedIdentity(settings?.connection)?.origin ?? DEFAULT_ORIGIN;
+    this.connectionIdentity = storedIdentity(settings?.connection);
+    this.importOrigin = this.connectionIdentity?.origin ?? DEFAULT_ORIGIN;
+    const dir = this.manifest.dir ?? this.app.vault.configDir + "/plugins/" + this.manifest.id;
+    const credentials = new DeviceCredentials(join(adapter.getBasePath(),dir,"native/keychain"));
+    const renderer = new RendererClient({runtimePath:join(adapter.getBasePath(),dir,"renderer")});
+    this.register(():void => { void renderer.dispose(); });
+    const submissions = new SubmissionController(store,():AccountIdentity|null => this.connectionIdentity,credentials,transport,
+      (request:RenderRequest,signal:AbortSignal):Promise<RenderResponse> => renderer.render(request,signal));
     this.addSettingTab(new ScopeSettings(this.app, this));
     this.registerView(PROJECT_PANEL, (leaf: WorkspaceLeaf): ProjectPanel => new ProjectPanel(leaf, store,
       (root: string): Promise<void> => this.updateWritingScope({
         ...this.writingScope, folders: { ...this.writingScope.folders, [root]: true },
-      }), (): string => this.importOrigin, transport));
+      }), (): string => this.importOrigin, transport, submissions));
     const paperRoot = async (file: TAbstractFile | null): Promise<string | undefined> => {
       for (let parent = file?.parent; parent; parent = parent.parent) {
         const folder = parent.isRoot() ? "" : parent.path;
@@ -97,11 +108,10 @@ export default class PeerpediaPlugin extends Plugin {
       if (!(leaf.view instanceof ProjectPanel)) throw new Error("无法打开论文管理面板。");
       return leaf.view;
     };
-    const dir = this.manifest.dir ?? this.app.vault.configDir + "/plugins/" + this.manifest.id;
     const cleanup = Array.isArray(settings?.connectionCleanup) ? settings.connectionCleanup.map(storedIdentity)
       .filter((item: AccountIdentity | null): item is AccountIdentity => item !== null) : [];
     const connection = new ConnectionModal(this.app, storedIdentity(settings?.connection), transport,
-      new DeviceCredentials(join(adapter.getBasePath(), dir, "native/keychain")),
+      credentials,
       (identity: AccountIdentity | null, pending: readonly AccountIdentity[]): Promise<void> => this.updateConnection(identity, pending), cleanup);
     this.addCommand({ id: "connect-account", name: "连接或断开 Peerpedia 账号", callback: (): void => connection.open() });
     this.register((): void => connection.close());
@@ -297,7 +307,7 @@ export default class PeerpediaPlugin extends Plugin {
       if (cleanup.length) {
         settings.connectionCleanup = cleanup.map((item: AccountIdentity): AccountIdentity => ({origin:item.origin, username:item.username}));
       } else delete settings.connectionCleanup;
-    }).then((): void => { this.importOrigin = identity?.origin ?? DEFAULT_ORIGIN; });
+    }).then((): void => { this.connectionIdentity = identity; this.importOrigin = identity?.origin ?? DEFAULT_ORIGIN; });
   }
 
   private mutateSettings(change: (settings: Record<string,unknown>) => void): Promise<void> {

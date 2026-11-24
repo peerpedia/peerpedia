@@ -14,6 +14,7 @@ export interface BindingVersion {
   digest: string | null;
   pendingImport: boolean;
   pendingMerge?: boolean;
+  pendingSubmission?: boolean;
 }
 
 const state = ".peerpedia-obsidian";
@@ -113,15 +114,17 @@ export async function readVersion(tree: AnchoredFiles, root: string): Promise<Bi
   tree.directory(root);
   const dir = join(root,state);
   const {binding,digest} = await records(tree,dir);
-  return {binding,digest,pendingMerge:!!await tree.source(join(dir,"merge-pending.json")),pendingImport:!binding && !!await tree.source(join(dir,pending))};
+  return {binding,digest,pendingSubmission:!!await tree.source(join(dir,"submit-pending.json")),pendingMerge:!!await tree.source(join(dir,"merge-pending.json")),pendingImport:!binding && !!await tree.source(join(dir,pending))};
 }
 
-export async function writeVersion(tree: AnchoredFiles, root: string, binding: RemoteBinding, expectedDigest: string | null, mergeTransaction?: string): Promise<void> {
+export async function writeVersion(tree: AnchoredFiles, root: string, binding: RemoteBinding, expectedDigest: string | null, mergeTransaction?: string, submissionId?: string): Promise<void> {
   // This same descriptor already owns the lock during merge finalization.
   // Its enclosing anchored operation releases ownership when it closes.
   tree.lockProject(root);
   const dir = join(root,state);
   const {binding:previous,digest,count} = await records(tree,dir);
+  const push = await tree.source(join(dir,"submit-pending.json"));
+  if (push && (!submissionId || object(object(JSON.parse(push.text)).request).id !== submissionId)) throw new Error("Resolve the pending submission first.");
   const intent = await tree.source(join(dir,"merge-pending.json"));
   if (intent && (!mergeTransaction || object(JSON.parse(intent.text)).transaction !== mergeTransaction)) throw new Error("请先处理未完成的合并。");
   if (digest !== expectedDigest) throw new Error("本地绑定已更改，请重新检查。");
@@ -175,10 +178,11 @@ export async function finishImport(tree: AnchoredFiles, root: string, revision: 
   if ((await tree.source(join(dir,first)))?.digest !== intent.digest) throw new Error("无法确认导入绑定，请打开论文面板核对。");
 }
 
-export async function isBindingSuccessor(tree: AnchoredFiles, root: string, binding: RemoteBinding, previous: string): Promise<boolean> {
+export async function isBindingSuccessor(tree: AnchoredFiles, root: string, binding: RemoteBinding, previous: string|null): Promise<boolean> {
   const dir = join(root,state);
   const tip = await records(tree,dir);
-  if (!tip.count || !isDeepStrictEqual(tip.binding,binding)) return false;
+  if (!isDeepStrictEqual(tip.binding,binding)) return false;
+  if (!tip.count) return previous === null;
   const entry = await tree.source(join(dir,history,tip.count + ".json"));
   return !!entry && object(JSON.parse(entry.text)).previous === previous;
 }

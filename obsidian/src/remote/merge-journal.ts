@@ -11,9 +11,9 @@ interface Intent extends MergeCommit { transaction: string; before: string }
 const pending = ".peerpedia-obsidian/merge-pending.json";
 
 export async function stageMerge(tree: AnchoredFiles, root: string, journal: string, before: string, commit: MergeCommit): Promise<string> {
-  const {binding,digest,pendingMerge} = await readVersion(tree,root);
+  const {binding,digest,pendingMerge,pendingSubmission} = await readVersion(tree,root);
   const verified = decodeBinding(commit.binding);
-  if (pendingMerge || digest !== commit.expectedDigest || binding?.origin !== verified.origin || binding.paperId !== verified.paperId)
+  if (pendingSubmission || pendingMerge || digest !== commit.expectedDigest || binding?.origin !== verified.origin || binding.paperId !== verified.paperId)
     throw new Error("本地绑定已更改或合并未完成，请重新核对。");
   const intent: Intent = {...commit,binding:verified,before:checksum(before),revision:checksum(commit.revision),transaction:basename(journal)};
   const stage = join(journal,"merge-intent.json");

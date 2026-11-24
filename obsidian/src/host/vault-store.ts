@@ -17,6 +17,7 @@ import { keepConflict, newJournal, PreconditionConflict, safePath, writeTransact
 import { recoverIn, inspectRecovery, type RecoveryFile, type RecoveryNotice } from "../project/recovery";
 
 import { finishImport, prepareImport, readPendingImport, readProposalBase, readVersion, writeVersion, type BindingVersion } from "../remote/binding";
+import { SubmissionJournal } from "../remote/journal";
 import { finishMerge, stageMerge } from "../remote/merge-journal";
 import { importChanges } from "../remote/import";
 import type { RemoteBinding, VerifiedSnapshot } from "../remote/types";
@@ -230,6 +231,15 @@ export class VaultProjectStore implements ProjectStore {
     writes.set(key, pending);
     try { return await pending; } finally { writes.delete(key); }
   }
+
+  readonly submissions = new SubmissionJournal(<T>(root: string, action: (tree: AnchoredFiles, readCurrent: ()=>Promise<ProjectSnapshot>)=>Promise<T>): Promise<T> =>
+    this.anchored(root,async (tree: AnchoredFiles): Promise<T> => {
+      tree.lockProject(root);
+      return action(tree,async (): Promise<ProjectSnapshot> => {
+        const project = await this.pinnedSnapshot(tree,root);
+        return writeTransaction(tree,root,project,[],this.host,(): Promise<ProjectSnapshot> => this.pinnedSnapshot(tree,root));
+      });
+    }));
 
   async readBindingVersion(root: string): Promise<BindingVersion> {
     return this.anchored(root, (tree: AnchoredFiles): Promise<BindingVersion> => readVersion(tree,root));

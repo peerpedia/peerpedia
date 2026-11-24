@@ -12,6 +12,8 @@
 
 ## Global Constraints
 
+- 用户追加要求：插件自有界面统一使用英文，包括命令、按钮、设置、状态、诊断和错误；保留用户文章及 Unicode 测试内容原文。
+
 - 网络操作由用户主动检查、导入、连接账号或提交触发；打开论文与日常编辑不检查远程。
 - 发布后继续编辑原文件，不为每次修订另建论文副本。
 - 再次提交默认向已绑定且仍开放的提案增加快照，也提供新建提案。
@@ -97,7 +99,7 @@
 
 **Files:** 创建 `remote/{journal.ts,submit.ts}`、`ui/submit-modal.ts`、`tests/{submit.test.ts,retry.test.ts}`；扩展 controller 和状态模型。
 
-**Interfaces:** `SubmissionIntent = 'publish'|'append-pr'|'new-pr'`；`SubmissionDetails {explanation:string; aiAssisted:boolean}`；`PreparedSubmission {id:string; origin:string; username:string; intent:SubmissionIntent; sourceRevision:string; payloadJson:string; payloadDigest:string}`。`prepareSubmission(project:ProjectSnapshot,binding:RemoteBinding|null,account:AccountInfo,intent:SubmissionIntent,details:SubmissionDetails):PreparedSubmission`；`persistRequest(root:string,request:PreparedSubmission):Promise<void>`；`sendPrepared(root:string,request:PreparedSubmission,token:string,transport:Transport):Promise<VerifiedSnapshot>`；`retryPending(root:string,username:string,token:string,transport:Transport):Promise<VerifiedSnapshot>`。请求 id 是 UUID 幂等键，payloadJson 是冻结字节来源，token 永不持久化在请求中。
+**Interfaces:** `SubmissionIntent = 'publish'|'append-pr'|'new-pr'`；`SubmissionDetails {explanation:string; aiAssisted:boolean}`；`PreparedSubmission {id:string; origin:string; username:string; intent:SubmissionIntent; sourceRevision:string; payloadJson:string; payloadDigest:string}`。`prepareSubmission(project:ProjectSnapshot,binding:RemoteBinding|null,account:AccountInfo,intent:SubmissionIntent,details:SubmissionDetails,selectedOrigin?:string):PreparedSubmission`；`persistRequest(root:string,request:PreparedSubmission):Promise<void>`；`sendPrepared(root:string,request:PreparedSubmission,token:string,transport:Transport):Promise<VerifiedSnapshot>`；`retryPending(root:string,username:string,token:string,transport:Transport):Promise<VerifiedSnapshot>`。请求 id 是 UUID 幂等键，payloadJson 是冻结字节来源，token 永不持久化在请求中。
 
 - [ ] 写失败测试：初次 payload 的 paper_id/base_hash 为 null；更新提案发送 `pull_request_id` 和完整 64 位 `expected_head`；同账号开放提案默认 append；新建提案不带旧 head；不接受用 stale preview 作为当前文档已校验依据。
 - [ ] 运行 `npm --prefix obsidian test -- tests/submit.test.ts tests/retry.test.ts` 确认失败。提交弹窗展示当前确切内容的预览/差异、元数据、许可、说明、AI 辅助选项及公开结果。所需分类/许可信息仅在用户打开此流程后获取，缓存供本地显示。
@@ -105,6 +107,17 @@
 - [ ] 请求先落盘后发送。`Idempotency-Key` 采用已保存 id，原 payload 包含文档、书目和章节，并符合 API 的 base/head/许可约束。验证返回快照与所请求的正文、章节、文献、metadata、论文身份匹配，不只验证快照自身 hash。收到合法回执后保留回执，再完成日志状态。
 - [ ] 加入故障测试：服务端成功但响应丢失，随后本地变更并重启，主动重试仍发送逐字节相同 payload/id，远程只有一个新快照；未确定结果时禁止另发新请求；不同用户名重试拒绝；401 更新凭据后重试仍保留原请求；429 不自动定时重发。已明确返回的校验或过期基准拒绝可解除待重试状态，未知结果保留。
 - [ ] 新论文成功后建立接受基准；修改提案成功只更新 lastSubmitted/activePr，不把 pending 当 accepted。提案后被接受时保留其后本地修改，并在用户确认更新时正确迁移基准。提案关闭时提供新提案，绝不误追加。通过测试和类型检查提交 `feat(obsidian): publish immutable requests with safe retries`。
+
+## Task R5E：统一英文插件界面
+
+**Files:** 核对并更新 `obsidian/src/`、`obsidian/renderer/`、`obsidian/native/`、`obsidian/manifest.json` 中插件自有的用户可见字符串，相关 `obsidian/tests/` 与宿主验收脚本的界面断言；使用说明在 R6 保持英文。
+
+**Interfaces:** 不改变内容、同步或发布协议。使用现有单语言界面，不引入多语言框架。用户正文、参考文献、路径、站点返回的原始内容和中文/Unicode 测试样例保留原文。
+
+- [ ] 将命令、按钮、设置、面板、弹窗、状态、诊断和错误统一为自然、简洁的英文，保持现有行为和范围。
+- [ ] 修正依赖汉字识别来决定是否显示错误消息的逻辑，让英文操作错误仍然可见；保留对底层凭据、进程和文件系统错误的适当处理，避免意外展示令牌或原始内部请求。
+- [ ] 更新受影响的测试与实际宿主探针，保留 Unicode 内容与路径覆盖，不通过翻译用户文章来达到英文界面要求。
+- [ ] 在真实隔离 Obsidian 中核对项目管理、书目、预览、账号、导入、合并和提交的英文界面；执行适当的测试、类型检查与打包检查，提交 `feat(obsidian): use English throughout plugin UI`。
 
 ## Task R6：完整流程验收与个人试用包
 
