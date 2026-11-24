@@ -6,9 +6,10 @@ This personal trial package is for Apple Silicon Macs. It was tested with Obsidi
 
 1. Keep the ZIP and its accompanying `.sha256` file together. From their directory, run `shasum -a 256 -c peerpedia-0.1.0-darwin-arm64.zip.sha256`. Continue when the ZIP reports `OK`.
 2. Extract the ZIP with Finder. The resulting `peerpedia` folder contains `manifest.json`, `main.js`, `styles.css`, `native/`, `renderer/`, and the user guide `USAGE.md`. Keep the entire folder together with its executable permissions.
-3. Choose a vault. For a first trial, create a new vault in Obsidian. Open its folder in Finder and press **⌘⇧.** to show hidden files. Place `peerpedia` inside `.obsidian/plugins/`. If you use a custom configuration directory, use its `plugins/` folder. Create the plugins folder if needed.
-4. If Peerpedia is already installed, disable it in **Settings → Community plugins** and move its entire existing plugin folder to a backup location outside `plugins/` before installing this version. Keep a backup of your paper folders, including hidden files, for rollback.
-5. Reopen the vault, allow community plugins and enable **Peerpedia**. Run **Peerpedia: Create paper** from the command palette. Choose **Multiple chapters** to start a chaptered manuscript. The installed `USAGE.md` walks through writing, preview, import and publication.
+3. Choose the vault to use. For a first trial, create a new vault in Obsidian. Open the vault folder in Finder and press **⌘⇧.** to show hidden files. Locate `.obsidian/plugins/`, or the `plugins/` folder under your custom configuration directory.
+4. **If Peerpedia is already installed**, disable it in **Settings → Community plugins**. Move the entire existing `plugins/peerpedia/` folder to a backup location outside `plugins/`. Keep its settings file (`data.json`, if present) with it. Back up your paper folders, including their hidden `.peerpedia-obsidian/` state, and check that you can open the backups.
+5. Once the destination `plugins/peerpedia/` is free, copy the newly extracted `peerpedia` folder into `plugins/`. Create the parent `plugins/` folder if needed.
+6. Reopen the vault, allow community plugins and enable **Peerpedia**. Run **Peerpedia: Create paper** from the command palette. Choose **Multiple chapters** to start a chaptered manuscript. The installed `USAGE.md` walks through writing, preview, import and publication.
 
 The file `package-manifest.json` lists SHA-256 checksums relative to the plugin folder. In that folder, `shasum -a 256 main.js` checks the plugin entry point. The renderer's `renderer/provenance.json` records the source commit and the runtime it includes.
 
