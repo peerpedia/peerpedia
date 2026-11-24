@@ -53,23 +53,28 @@ export class LanguageWorker {
     private readonly connect: (source: string) => LanguageThread = browserThread,
   ) {}
 
-  run<K extends LanguageKind>(kind: K, value: LanguageInputs[K]): Promise<LanguageOutputs[K]> {
+  run<K extends LanguageKind>(kind: K, value: LanguageInputs[K], signal?: AbortSignal): Promise<LanguageOutputs[K]> {
+    if (signal?.aborted) return Promise.reject(new UserFacingError("BananaMark request cancelled."));
     if (this.disposed) return Promise.reject(new UserFacingError("BananaMark language worker is closed."));
     return new Promise<LanguageOutputs[K]>((resolve: (output: LanguageOutputs[K]) => void, reject: (error: Error) => void): void => {
       const thread = this.thread ?? this.start();
       const id = ++this.sequence;
+      const finish = (): void => { signal?.removeEventListener("abort", cancel); this.pending.delete(id); };
+      const cancel = (): void => { finish(); reject(new UserFacingError("BananaMark request cancelled.")); };
       this.pending.set(id, {
         receive: (response: LanguageResponse): void => {
+          finish();
           if (response.kind === "error") reject(new UserFacingError(response.message));
           else if (response.kind === kind) resolve(response.value as LanguageOutputs[K]);
           else reject(new UserFacingError("Unexpected BananaMark language worker reply."));
         },
-        reject,
+        reject: (error: Error): void => { finish(); reject(error); },
       });
+      signal?.addEventListener("abort", cancel, {once:true});
       try {
         thread.request({ id, kind, value } as LanguageRequest);
       } catch (error: unknown) {
-        this.pending.delete(id);
+        finish();
         reject(error instanceof Error ? error : new Error(String(error)));
       }
     });

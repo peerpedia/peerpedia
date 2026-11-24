@@ -18,10 +18,10 @@
 <section id="install">
   <h2>Download and install</h2>
   <p><a href="{{ repository_url }}/releases/download/v{{ project_version }}/peerpedia-obsidian-{{ project_version }}-darwin-arm64.zip">Download Peerpedia {{ project_version }} for Obsidian — Mac with Apple silicon</a> · <a href="{{ repository_url }}/releases/download/v{{ project_version }}/peerpedia-obsidian-{{ project_version }}-darwin-arm64.zip.sha256">SHA-256 checksum</a></p>
-  <p>This package is for desktop Macs with an Apple M-series chip. It was tested with Obsidian 1.15.1 on macOS 15.6.1. Intel Macs, Windows, Linux and mobile are not supported by this package. It includes the renderer, fonts and diagram tools; no separate Node.js, Python or TeX installation is needed.</p>
+  <p>This package is for desktop Macs with an Apple M-series chip. It requires Obsidian 1.15.1 or newer and was tested on macOS 15.6.1. Intel Macs, Windows, Linux and mobile are not supported by this package. It includes the renderer, fonts and diagram tools; no separate Node.js, Python or TeX installation is needed.</p>
   <ol class="help-steps">
     <li>Install <a href="https://obsidian.md/download">Obsidian</a> and open or create the vault where you want to write. A vault is a folder on your computer.</li>
-    <li>Download the ZIP above and extract it in Finder. Keep the entire extracted <code>peerpedia</code> folder together, including <code>native/</code> and <code>renderer/</code>.</li>
+    <li>Download the ZIP above and extract it in Finder. The extracted <code>peerpedia</code> folder contains three files: <code>main.js</code>, <code>manifest.json</code> and <code>styles.css</code>. The renderer, fonts and diagram tools are embedded in these files.</li>
     <li>Open your vault folder in Finder. Press <kbd>⌘⇧.</kbd> to show hidden files. Open <code>.obsidian</code> and create a <code>plugins</code> folder if it does not exist. If you use a custom configuration folder, use its <code>plugins</code> folder instead.</li>
     <li>Copy the extracted folder into <code>.obsidian/plugins/peerpedia/</code>. You should find <code>manifest.json</code>, <code>main.js</code> and <code>styles.css</code> directly inside that folder. If Peerpedia is already installed, follow <a href="#update">Update the plugin</a> below first.</li>
     <li>Reopen the vault. In <strong>Settings → Community plugins</strong>, enable community plugins and turn on <strong>Peerpedia</strong>. This is a manual installation, so it will not appear through searching the community directory.</li>
@@ -30,7 +30,7 @@
   <details class="help-disclosure"><summary>Verify the download</summary>
     <p>Save the ZIP and checksum in the same folder. In Terminal, change to that folder and run:</p>
     <pre><code>shasum -a 256 -c peerpedia-obsidian-{{ project_version }}-darwin-arm64.zip.sha256</code></pre>
-    <p>The result should say <code>OK</code>. The archive also includes per-file checksums in <code>package-manifest.json</code>.</p>
+    <p>The result should say <code>OK</code>. A successful check confirms that the archive matches the published checksum.</p>
   </details>
   <p>See Obsidian’s <a href="https://obsidian.md/help/teams/deploy">manual plugin installation documentation</a> for the vault plugin-folder convention.</p>
 </section>
@@ -57,7 +57,7 @@
   <h2>Chapters, formatting and references</h2>
   <p>Use Obsidian’s <strong>Source mode</strong> to edit BananaMark. In <strong>Settings → Peerpedia</strong>, enable writing assistance for the relevant folder or individual files. Individual file rules take priority over folder rules. The plugin supplies syntax colors, completion, diagnostics and reference navigation. See <a href="{% url 'help_writing' %}">Writing and formatting</a> for the supported syntax and examples.</p>
   <p>In <strong>Manuscript</strong>, click a chapter to open it. Use <strong>+</strong> to add one, drag chapters to reorder them, or open a chapter’s <strong>…</strong> menu to rename or remove it. Removing a chapter from the paper leaves its source file in the vault. A chapter’s first heading supplies its published title.</p>
-  <p><strong>References</strong> opens the shared bibliography. Search by title, author or citation key; click an entry to edit it. Use <strong>Add reference</strong> for a new entry or its <strong>…</strong> menu to rename a key or delete it. <strong>Paper details</strong> holds the title, authors, abstract, subjects and license. Click the paper title to switch between papers.</p>
+  <p><strong>References</strong> opens the shared bibliography. Search by title, author or citation key. Choose <strong>Edit YAML source</strong> to add, edit or remove entries in the shared file. Saving checks the YAML structure; invalid YAML keeps the dialog and your draft open without changing the file. Preview checks citation and publication rules. Use the <strong>Rename citation key</strong> button beside an entry, then <strong>Find citations</strong> and <strong>Confirm rename</strong>, to update its citations across the paper. Direct changes to keys or deleted entries in YAML do not automatically rewrite citations. <strong>Paper details</strong> holds the title, authors, abstract, subjects and license. Click the paper title to switch between papers.</p>
   <p>Editing and preview work offline and do not upload your changes. If a preview cannot render, its status explains the problem and retains the last successful preview until the source is corrected.</p>
 </section>
 <section id="connect">
@@ -69,7 +69,7 @@
     <li>In Obsidian, choose <strong>Peerpedia: Connect or disconnect a Peerpedia account</strong>. Enter <code>{{ site_url }}</code> and paste the token into the token field. Choose <strong>Connect and verify account</strong>.</li>
     <li>Check that the account and site are correct. Later, the paper’s <strong>… → Peerpedia account</strong> menu opens the same connection panel.</li>
   </ol>
-  <p>The token is shown only once on the website. Keep it out of notes, chats and source repositories. The plugin stores it in macOS Keychain, outside the vault; if Keychain is unavailable, the connection lasts for the current session only. Revoke tokens from the website’s Access tokens page.</p>
+  <p>The token is shown only once on the website. Keep it out of notes, chats and source repositories. The plugin stores it using Obsidian secret storage; its settings contain a secret reference rather than the token. If secret storage is unavailable, the connection lasts for the current session only. Revoke tokens from the website’s Access tokens page.</p>
 </section>
 <section id="publish">
   <h2>Publish a version</h2>
@@ -92,7 +92,7 @@
   <ol class="help-steps">
     <li>Back up your manuscript folders, including hidden binding and recovery files. Disable <strong>Peerpedia</strong> in <strong>Settings → Community plugins</strong>.</li>
     <li>Move the existing <code>.obsidian/plugins/peerpedia/</code> folder to a backup location outside <code>plugins/</code>. Copy the new complete <code>peerpedia</code> folder into its place.</li>
-    <li>If the old plugin folder contains <code>data.json</code>, copy that file into the new plugin folder to retain your writing scope and account settings. Keep the original backup. The token itself remains in Keychain.</li>
+    <li>If the old plugin folder contains <code>data.json</code>, copy that file into the new plugin folder to retain your writing scope and account settings. Keep the original backup. When upgrading from 0.1.3, reconnect your account once to save the token in Obsidian secret storage. The new plugin does not read or remove the old macOS Keychain entry. If you no longer have the token, create a new one on the website.</li>
     <li>Reopen the vault, enable Peerpedia, and open a chapter with <strong>Peerpedia: Open paper preview</strong>. Confirm the version in Community plugins. Manual packages must be updated manually.</li>
   </ol>
   <p>To roll back, disable the plugin and restore the backed-up plugin folder. To remove saved credentials, use <strong>Peerpedia account → Disconnect and remove local credentials</strong> before removing the plugin. Removing the plugin leaves manuscripts in the vault and does not remove anything already published.</p>
@@ -102,7 +102,7 @@
     <h3>There is no Open preview button.</h3><p>Use <kbd>⌘P</kbd> → <strong>Peerpedia: Open paper preview</strong>. To restore the right panel, run <strong>Peerpedia: Manage paper</strong>. Check that you are looking at <strong>Manuscript</strong>, not Obsidian’s <strong>Outline</strong>.</p>
     <h3>The command palette has no Peerpedia commands.</h3><p>Check the active vault, the enabled plugin switch, and the folder path. <code>manifest.json</code> must be at <code>.obsidian/plugins/peerpedia/manifest.json</code>, not inside an extra nested folder. Reopen the vault after installation.</p>
     <h3>Formulas or theorem blocks appear as raw text.</h3><p>Open the dedicated <strong>Paper preview</strong> tab, rather than Obsidian’s reading mode. For source colors and completion, enable the folder in <strong>Settings → Peerpedia</strong> and use Source mode.</p>
-    <h3>The preview runtime is missing or cannot start.</h3><p>Check that this is an Apple silicon Mac and that the entire ZIP was extracted, including the renderer and native tools. Reinstall the complete package using the update steps. Report the displayed error through <a href="{{ repository_url }}/issues">the issue tracker</a>.</p>
+    <h3>The plugin or preview cannot start.</h3><p>Check that this is an Apple silicon Mac running Obsidian 1.15.1 or newer and that all three plugin files came from the same release. Reinstall the complete package using the update steps. Report the displayed error through <a href="{{ repository_url }}/issues">the issue tracker</a>.</p>
     <h3>The account or submission needs attention.</h3><p>Check the token’s expiry and permissions, verified email and agreement status. For a pending retry, reconnect the same site and account. For a stale version, check and compare the latest accepted version before submitting again.</p>
 </section>
 {% endblock %}

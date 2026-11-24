@@ -1,3 +1,6 @@
+from collections.abc import Callable
+from typing import Any
+
 import unittest
 import subprocess
 from deploy import verified_release, BACKUP_PATH_FILTER
@@ -6,7 +9,7 @@ SHA = "a" * 40
 
 
 class ReleaseGateTests(unittest.TestCase):
-    def test_old_and_new_backup_output_produce_one_path(self):
+    def test_old_and_new_backup_output_produce_one_path(self) -> None:
         path = "backups/peerpedia-20261019T041302Z.dump"
         for output in [
             path + "\n",
@@ -21,8 +24,10 @@ class ReleaseGateTests(unittest.TestCase):
             )
             self.assertEqual(result.stdout, path + "\n")
 
-    def reader(self, status="success", jobs=None, head=SHA):
-        def read(path):
+    def reader(
+        self, status: str = "success", jobs: list[dict[str, Any]] | None = None, head: str = SHA
+    ) -> Callable[[str], dict[str, Any]]:
+        def read(path: str) -> dict[str, Any]:
             if path == "branches/main":
                 return {"commit": {"sha": head}}
             if "/jobs?" in path:
@@ -31,7 +36,7 @@ class ReleaseGateTests(unittest.TestCase):
                     if jobs is not None
                     else [
                         {"name": n, "conclusion": "success"}
-                        for n in ["test", "browser", "quality", "security"]
+                        for n in ["test", "browser", "quality", "security", "obsidian"]
                     ]
                 }
             return {
@@ -47,7 +52,7 @@ class ReleaseGateTests(unittest.TestCase):
 
         return read
 
-    def test_all_gates_required(self):
+    def test_all_gates_required(self) -> None:
         self.assertEqual(verified_release(SHA, self.reader()), "https://example.org/run")
         for reader in [
             self.reader("failure"),
@@ -57,10 +62,10 @@ class ReleaseGateTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 verified_release(SHA, reader)
 
-    def test_no_run_or_latest_failed_rerun_blocks_release(self):
+    def test_no_run_or_latest_failed_rerun_blocks_release(self) -> None:
         base = self.reader()
 
-        def read(path):
+        def read(path: str) -> dict[str, Any]:
             if "workflows/" in path:
                 return {
                     "workflow_runs": [
@@ -76,3 +81,15 @@ class ReleaseGateTests(unittest.TestCase):
             verified_release(
                 SHA, lambda p: base(p) if p == "branches/main" else {"workflow_runs": []}
             )
+
+    def test_plugin_gate_missing_failed_or_skipped_blocks_release(self) -> None:
+        website = [
+            {"name": name, "conclusion": "success"}
+            for name in ("test", "browser", "quality", "security")
+        ]
+        for conclusion in (None, "failure", "skipped", "cancelled"):
+            jobs = website + (
+                [{"name": "obsidian", "conclusion": conclusion}] if conclusion else []
+            )
+            with self.subTest(conclusion=conclusion), self.assertRaises(ValueError):
+                verified_release(SHA, self.reader(jobs=jobs))

@@ -86,10 +86,10 @@
 .peerpedia-bibliography-list { list-style:none; margin:0; padding:0; }
 .peerpedia-bibliography-list>li { display:flex; align-items:center; border-bottom:1px solid var(--peerpedia-line); padding:14px 0; gap:12px; }
 .peerpedia-bibliography-list>li[hidden] { display:none; }
-.peerpedia-bibliography-list .peerpedia-reference-link { display:flex; flex-direction:column; align-items:flex-start; flex:1; height:auto; padding:0; text-align:left; white-space:normal; gap:6px; box-shadow:none; background:transparent; line-height:1.5; }
-.peerpedia-reference-link strong { font-weight:550; }
-.peerpedia-reference-link small { font-size:var(--font-ui-smaller); color:var(--text-muted); }
-.peerpedia-reference-link code { font-size:11px; color:var(--peerpedia-accent); background:transparent; }
+.peerpedia-bibliography-list .peerpedia-reference { display:flex; flex-direction:column; align-items:flex-start; flex:1; min-width:0; overflow-wrap:anywhere; gap:6px; line-height:1.5; }
+.peerpedia-reference strong { font-weight:550; }
+.peerpedia-reference small { font-size:var(--font-ui-smaller); color:var(--text-muted); }
+.peerpedia-reference code { font-size:11px; color:var(--peerpedia-accent); background:transparent; }
 .peerpedia-bibliography-view { display:flex; flex-direction:column; }
 .peerpedia-bibliography-text { flex:1; width:100%; min-height:10rem; resize:none; font-family:var(--font-monospace); line-height:1.5; white-space:pre; tab-size:2; }
 .peerpedia-paper-form .peerpedia-bibliography-editor { min-height:min(50vh,28rem); resize:vertical; }

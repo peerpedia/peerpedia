@@ -1,0 +1,43 @@
+diff --git a/node_modules/node-tikzjax/dist/bootstrap.d.ts b/node_modules/node-tikzjax/dist/bootstrap.d.ts
+index ff78148..03459d4 100644
+--- a/node_modules/node-tikzjax/dist/bootstrap.d.ts
++++ b/node_modules/node-tikzjax/dist/bootstrap.d.ts
+@@ -64,3 +64,6 @@ export declare function getTexPreamble(options?: TeXOptions): string;
+  * ```
+  */
+ export declare function dumpMemfs(): IFs;
++
++export interface EngineAssets { core: Uint8Array; wasm: Uint8Array; readFile(name: string): Uint8Array; }
++export declare function setAssetLoader(loader: () => Promise<EngineAssets>): void;
+diff --git a/node_modules/node-tikzjax/dist/bootstrap.js b/node_modules/node-tikzjax/dist/bootstrap.js
+index 25b173c..1e48e7c 100644
+--- a/node_modules/node-tikzjax/dist/bootstrap.js
++++ b/node_modules/node-tikzjax/dist/bootstrap.js
+@@ -46,7 +46,27 @@ const TEX_FILES_EXTRACTED_PATH = (0, path_1.join)('/', 'tex_files');
+ /**
+  * Load necessary files into memory.
+  */
++/** @typedef {{core:Uint8Array, wasm:Uint8Array, readFile:(name:string)=>Uint8Array}} EngineAssets */
++/** @type {undefined|(()=>Promise<EngineAssets>)} */
++let assetLoader;
++/** Supply immutable embedded engine resources before the first compilation.
++ * @param {()=>Promise<EngineAssets>} loader @returns {void} */
++function setAssetLoader(loader) {
++    if (coredump || bytecode || memfs) throw new Error('TeX assets are already initialized');
++    assetLoader = loader;
++}
++exports.setAssetLoader = setAssetLoader;
++/** @returns {Promise<void>} */
+ async function load() {
++    if (assetLoader) {
++        if (coredump && bytecode && memfs) return;
++        const assets = await assetLoader();
++        if (!assets.core.byteLength || !assets.wasm.byteLength) throw new Error('Empty TeX engine assets');
++        coredump = assets.core;
++        bytecode = assets.wasm;
++        memfs = {readFileSync: assets.readFile};
++        return;
++    }
+     if (!coredump) {
+         const stream = (0, fs_1.createReadStream)(COREDUMP_PATH).pipe((0, zlib_1.createGunzip)());
+         coredump = await stream2buffer(stream);

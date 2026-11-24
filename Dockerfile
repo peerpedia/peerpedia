@@ -3,6 +3,12 @@ WORKDIR /app/packages/peerpedia-theme
 COPY packages/peerpedia-theme/package*.json ./
 RUN npm ci --ignore-scripts
 
+WORKDIR /app/packages/peerpedia-renderer
+COPY packages/peerpedia-renderer/package*.json ./
+RUN npm ci --ignore-scripts
+COPY packages/peerpedia-renderer/ ./
+RUN npm run prepare:browser
+
 WORKDIR /app/editor
 COPY editor/package*.json ./
 RUN npm ci --ignore-scripts
@@ -29,7 +35,9 @@ CMD ["gunicorn", "config.wsgi:application", "--bind", "0.0.0.0:8000", "--workers
 FROM node:22-alpine AS content-renderer
 WORKDIR /app/editor
 COPY --from=reader-assets /app/editor /app/editor
-RUN mkdir /cache && chown node:node /cache
+COPY --from=reader-assets /app/packages/peerpedia-renderer /app/packages/peerpedia-renderer
+RUN npm prune --omit=dev --ignore-scripts --prefix /app/packages/peerpedia-renderer \
+    && mkdir /cache && chown node:node /cache
 ENV BANANAMARK_CACHE=/cache
 USER node
 CMD ["node", "render-server.mjs"]

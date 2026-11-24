@@ -1,10 +1,10 @@
-# Peerpedia 0.1.3
+# Peerpedia 0.1.4
 
 A small, public research-publishing application built with Django and PostgreSQL. Researchers write or upload Markdown, organize chapters, propose frozen changes, review papers, and preserve their publication history.
 
 [Website](https://peerpedia.dev) · [Usage guide](https://peerpedia.dev/help/) · [Source](https://github.com/peerpedia/peerpedia)
 
-[Download 0.1.3](https://github.com/peerpedia/peerpedia/releases/tag/v0.1.3) · [Install the CLI](cli/README.md) · [Release notes](CHANGELOG.md)
+[Download 0.1.4](https://github.com/peerpedia/peerpedia/releases/tag/v0.1.4) · [Install the CLI](cli/README.md) · [Release notes](CHANGELOG.md)
 
 The software uses the [MIT license](LICENSE). Papers have their own author-selected licenses. Developer information is on the [About page](https://peerpedia.dev/about/).
 
@@ -33,6 +33,8 @@ Use Python 3.12–3.14 and Node 22 or newer. Python 3.13 is used by the producti
 python3 -m venv .venv
 .venv/bin/python -m pip install -r requirements.lock
 npm ci --prefix packages/peerpedia-theme
+npm ci --prefix packages/peerpedia-renderer
+npm run prepare:browser --prefix packages/peerpedia-renderer
 npm ci --prefix editor
 npm run build --prefix editor
 .venv/bin/python manage.py migrate
@@ -428,7 +430,9 @@ API no longer publish or accept passage discussions.
 
 Install development-only checks with `pip install -r requirements-dev.txt` and
 `npm ci --ignore-scripts --prefix packages/peerpedia-theme` and
-`npm ci --ignore-scripts --prefix editor`. Run:
+`npm ci --ignore-scripts --prefix editor`. Install the shared renderer with
+`npm ci --ignore-scripts --prefix packages/peerpedia-renderer` and apply its explicit
+browser compatibility patches with `npm run prepare:browser --prefix packages/peerpedia-renderer`. Run:
 
 ```sh
 python -m ruff check accounts publishing config cli/peerpedia_cli cli_tests browser_tests scripts
@@ -438,10 +442,10 @@ editor/node_modules/.bin/prettier --check 'editor/*.js' 'editor/*.mjs' 'static/*
 python -m unittest discover -s scripts -p 'test_*_unit.py'
 ```
 
-Full CI runs `test`, `browser`, `quality`, and `security` on pushes, pull requests,
+Full CI runs `test`, `browser`, `quality`, `security`, and `obsidian` on pushes, pull requests,
 and manual runs. The daily scheduled run checks Python and npm dependency security
 only, and appears in GitHub Actions as **Daily security scan**. It does not push
-commits or deploy the website. Deployment still requires all four jobs to pass
+commits or deploy the website. Deployment still requires all five jobs to pass
 on the exact main commit.
 
 CI also checks that `requirements.lock` satisfies `requirements.txt`. Update both

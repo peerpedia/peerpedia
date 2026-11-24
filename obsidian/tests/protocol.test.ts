@@ -3,10 +3,10 @@ import { PeerpediaApi, HttpStatusError } from "../src/remote/api";
 import { TransportError } from "../src/remote/transport";
 import type { HttpResponse, Transport } from "../src/remote/types";
 import { ProtocolError, verifySnapshot } from "../src/remote/verify";
-import v1 from "./fixtures/manifests/v1.json";
-import v2 from "./fixtures/manifests/v2.json";
-import v3 from "./fixtures/manifests/v3.json";
-import v4 from "./fixtures/manifests/v4.json";
+import v1 from "../../tests/fixtures/publication-protocol/v1.json";
+import v2 from "../../tests/fixtures/publication-protocol/v2.json";
+import v3 from "../../tests/fixtures/publication-protocol/v3.json";
+import v4 from "../../tests/fixtures/publication-protocol/v4.json";
 
 const origin = "https://fixture.example";
 const paper = v4.manifest.paper_id;

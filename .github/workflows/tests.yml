@@ -22,8 +22,69 @@ jobs:
       - uses: actions/setup-node@v7
         with:
           node-version: "22"
+      - run: npm audit --prefix obsidian --audit-level=high
       - run: npm audit --prefix editor --audit-level=high
       - run: npm audit --prefix packages/peerpedia-theme --audit-level=high
+      - run: npm audit --prefix packages/peerpedia-renderer --audit-level=high
+  obsidian:
+    if: github.event_name != 'schedule'
+    # Standard Apple Silicon runner: https://docs.github.com/en/actions/reference/runners/github-hosted-runners
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: |
+            obsidian/package-lock.json
+            packages/peerpedia-renderer/package-lock.json
+            editor/package-lock.json
+            packages/peerpedia-theme/package-lock.json
+      - uses: actions/setup-python@v7
+        with:
+          # pgserver 0.1.4 ships macOS wheels through Python 3.12.
+          python-version: "3.12"
+      - name: Require the supported package platform
+        run: node -e 'if (process.platform !== "darwin" || process.arch !== "arm64") process.exit(1)'
+      - run: npm ci --ignore-scripts --prefix packages/peerpedia-renderer
+      - run: npm run prepare:browser --prefix packages/peerpedia-renderer
+      - run: npm ci --ignore-scripts --prefix editor
+      - run: npm ci --ignore-scripts --prefix packages/peerpedia-theme
+      - run: npm ci --prefix obsidian
+      - run: npm run typecheck --prefix packages/peerpedia-renderer
+      - run: npm run typecheck --prefix obsidian
+      - run: npm run check:types --prefix obsidian
+      - run: obsidian/node_modules/.bin/eslint -c obsidian/eslint.config.mjs 'packages/peerpedia-renderer/**/*.ts'
+      - run: npm run build --prefix obsidian
+      - run: npm test --prefix obsidian
+      - run: pip install -r requirements.lock -r requirements-browser.txt pgserver==0.1.4
+      - run: npm run test:django --prefix obsidian
+        env:
+          PEERPEDIA_TEST_PYTHON: python
+          PEERPEDIA_PG_PYTHON: python
+      - name: Build the complete offline plugin
+        run: npm run package --prefix obsidian -- "$RUNNER_TEMP/peerpedia"
+      - name: Install the minimum supported Obsidian in temporary storage
+        run: |
+          curl --fail --location --retry 3 --output "$RUNNER_TEMP/Obsidian.dmg" https://github.com/obsidianmd/obsidian-releases/releases/download/v1.15.1/Obsidian-1.15.1.dmg
+          echo "e05c7e3e2262b14c965bb246dcb74a30fc9098bd669e42957c4d9f788d04fdf4  $RUNNER_TEMP/Obsidian.dmg" | shasum -a 256 -c -
+          hdiutil attach "$RUNNER_TEMP/Obsidian.dmg" -nobrowse -mountpoint "$RUNNER_TEMP/obsidian-volume"
+          cp -R "$RUNNER_TEMP/obsidian-volume/Obsidian.app" "$RUNNER_TEMP/Obsidian.app"
+          hdiutil detach "$RUNNER_TEMP/obsidian-volume"
+      - name: Require real offline host acceptance
+        run: python obsidian/scripts/validate-offline-host.py "$RUNNER_TEMP/Obsidian.app" "$RUNNER_TEMP/peerpedia" obsidian/tests/fixtures/render-paper.json "$RUNNER_TEMP/host-evidence"
+      - name: Require real publication host acceptance
+        run: python obsidian/scripts/validate-publication-host.py "$RUNNER_TEMP/Obsidian.app" "$RUNNER_TEMP/peerpedia" "$RUNNER_TEMP/publication-evidence"
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: obsidian-validation
+          path: |
+            ${{ runner.temp }}/host-evidence/
+            ${{ runner.temp }}/publication-evidence/
+          retention-days: 7
   quality:
     permissions:
       contents: read
@@ -43,12 +104,16 @@ jobs:
           node-version: "22"
           cache: npm
           cache-dependency-path: |
+            packages/peerpedia-renderer/package-lock.json
             editor/package-lock.json
             packages/peerpedia-theme/package-lock.json
       - run: npm ci --ignore-scripts --prefix packages/peerpedia-theme
+      - run: npm ci --ignore-scripts --prefix packages/peerpedia-renderer
+      - run: npm run prepare:browser --prefix packages/peerpedia-renderer
       - run: npm ci --ignore-scripts --prefix editor
+      - run: npm test --prefix packages/peerpedia-renderer
       - run: npm test --prefix packages/peerpedia-theme
-      - run: editor/node_modules/.bin/prettier --check 'editor/*.js' 'editor/*.mjs' 'static/*.js' 'packages/peerpedia-theme/{scripts,tests}/*.mjs'
+      - run: editor/node_modules/.bin/prettier --check 'editor/*.js' 'editor/*.mjs' 'static/*.js' 'packages/peerpedia-theme/{scripts,tests}/*.mjs' 'packages/peerpedia-renderer/*.{js,mjs,ts,mts}' 'packages/peerpedia-renderer/{browser,tests}/*.{ts,mjs}'
       - run: for source in static/*.js editor/*.js editor/*.mjs; do node --check "$source"; done
       - run: python -m unittest discover -s scripts -p 'test_*_unit.py'
       - run: python scripts/check_dependencies.py
@@ -123,9 +188,12 @@ jobs:
           node-version: "22"
           cache: npm
           cache-dependency-path: |
+            packages/peerpedia-renderer/package-lock.json
             editor/package-lock.json
             packages/peerpedia-theme/package-lock.json
       - run: npm ci --ignore-scripts --prefix packages/peerpedia-theme
+      - run: npm ci --ignore-scripts --prefix packages/peerpedia-renderer
+      - run: npm run prepare:browser --prefix packages/peerpedia-renderer
       - run: npm ci --ignore-scripts --prefix editor
       - run: npm run build --prefix editor
       - run: python manage.py collectstatic --noinput
@@ -164,9 +232,12 @@ jobs:
           node-version: "22"
           cache: npm
           cache-dependency-path: |
+            packages/peerpedia-renderer/package-lock.json
             editor/package-lock.json
             packages/peerpedia-theme/package-lock.json
       - run: npm ci --ignore-scripts --prefix packages/peerpedia-theme
+      - run: npm ci --ignore-scripts --prefix packages/peerpedia-renderer
+      - run: npm run prepare:browser --prefix packages/peerpedia-renderer
       - run: npm ci --ignore-scripts --prefix editor
       - run: npm run build --prefix editor
       - run: python scripts/test_browser.py

@@ -72,7 +72,9 @@ export function localTheme(
   if (manifest.stylesheet !== "style.css") throw new UserFacingError("The preview stylesheet manifest is invalid.");
   const local = (path: string): string => {
     const url = new URL(resource(path));
-    if (url.protocol !== "app:") throw new UserFacingError("Preview assets must be local.");
+    if (url.protocol !== "app:" && !/^data:font\/(?:woff2?|ttf);base64,[A-Za-z0-9+/]+={0,2}$/.test(url.href)) {
+      throw new UserFacingError("Preview assets must be local fonts.");
+    }
     return url.href;
   };
   const fonts = manifest.tikz.fonts.map((path: string): string => {

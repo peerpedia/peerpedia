@@ -1,3 +1,4 @@
+import type { LanguageWorker } from "../host/language-worker";
 import { join } from "node:path";
 import { shell } from "electron";
 import { FileSystemAdapter, ItemView, MarkdownView, Notice, type Editor, type ViewStateResult, type WorkspaceLeaf } from "obsidian";
@@ -8,7 +9,8 @@ import { openSourceTarget, warnNavigationFailure } from "../host/source-navigati
 import { withEditorSources } from "../host/writing-projects";
 import { PreviewController } from "../preview/controller";
 import { PreviewReader, readTheme } from "../preview/reader";
-import { previewRenderer } from "../preview/runtime";
+import type { PublicationDocument } from "../project/publication";
+import type { RenderService } from "../preview/browser-renderer-client";
 import { bindSourceButton, chapterPath, locatePreview, pageForSource, previewMember, rawCoordinates, targetPath } from "../preview/source-map";
 import { pathKey } from "../project/path-identity";
 import { CONFIG_PATH, type ProjectStore } from "../project/store";
@@ -42,11 +44,12 @@ export class PreviewView extends ItemView {
   private coordinates?: {source: SourceFile; raw: (offset: number) => number};
   private closed = false;
 
-  constructor(leaf: WorkspaceLeaf, private readonly store: ProjectStore, private readonly dir: string) {
+  constructor(leaf: WorkspaceLeaf, private readonly store: ProjectStore, language: LanguageWorker, renderer: RenderService) {
     super(leaf);
-    const adapter = this.app.vault.adapter as FileSystemAdapter;
-    this.controller = new PreviewController(previewRenderer(join(adapter.getBasePath(), dir, "renderer")),
-      (): void => this.refresh());
+    this.controller = new PreviewController({
+      convert: (project: ProjectSnapshot, signal: AbortSignal): Promise<PublicationDocument> => language.run("publication", project, signal),
+      render: renderer.render.bind(renderer),
+    }, (): void => this.refresh());
   }
 
   override getViewType(): string { return PREVIEW_VIEW; }
@@ -93,7 +96,7 @@ export class PreviewView extends ItemView {
     this.status = state.createDiv({attr: {role: "status"}});
     this.position = state.createDiv({cls: "peerpedia-preview-position"});
     try {
-      const {theme, css} = await readTheme(this.app.vault.adapter,this.dir);
+      const {theme, css} = readTheme();
       if (this.closed) return;
       const frame = this.contentEl.createEl("iframe", {attr: {title: "Paper manuscript"}});
       this.reader = new PreviewReader(frame, theme, css, (value: string): void => this.openLink(value), (): void => {
@@ -111,7 +114,7 @@ export class PreviewView extends ItemView {
     this.closed = true;
     this.stop?.();
     ++this.readId;
-    await this.controller.dispose();
+    this.controller.dispose();
   }
 
   private async reload(root: string): Promise<void> {

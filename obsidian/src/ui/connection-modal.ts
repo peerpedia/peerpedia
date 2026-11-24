@@ -3,7 +3,7 @@ import { UserFacingError } from "../user-error";
 import { errorMessage } from "./conflict-modal";
 import { Modal, type App } from "obsidian";
 import { connectAccount, DEFAULT_ORIGIN } from "../remote/account";
-import type { DeviceCredentials } from "../remote/credentials";
+import type { AccountCredentials } from "../remote/host-credentials";
 import type { AccountIdentity, AccountInfo, Transport } from "../remote/types";
 
 export class ConnectionModal extends Modal {
@@ -13,7 +13,7 @@ export class ConnectionModal extends Modal {
   private draftOrigin = DEFAULT_ORIGIN;
 
   constructor(app: App, private identity: AccountIdentity | null,
-    private readonly transport: Transport, private readonly credentials: DeviceCredentials,
+    private readonly transport: Transport, private readonly credentials: AccountCredentials,
     private readonly save: (identity: AccountIdentity | null, cleanup: readonly AccountIdentity[]) => Promise<void>,
     private cleanup: readonly AccountIdentity[] = []) {
     super(app);
@@ -79,7 +79,7 @@ export class ConnectionModal extends Modal {
       secret.value = "";
       void this.act(async (): Promise<void> => {
         const token = entered || (this.identity && await this.credentials.read(origin, this.identity.username));
-        if (!token) throw new UserFacingError("Enter an access token.");
+        if (!token) throw new UserFacingError("Enter an access token to reconnect. Tokens from earlier macOS Keychain installations are left unchanged.");
         this.verified = await connectAccount(origin, token, this.transport, this.credentials, this.identity?.username,
           (identity: AccountIdentity): Promise<void> => this.remember(identity, this.excluding(identity)));
       });
@@ -92,8 +92,9 @@ export class ConnectionModal extends Modal {
       const link = el.createEl("a", {text:"View agreement", href:account.agreement.url});
       link.target = "_blank";
       link.rel = "noopener noreferrer";
-      const device = this.credentials.persistence(this.identity.origin,this.identity.username) === "keychain";
-      el.createEl("p", {text:device ? "The token is stored in this Mac’s Keychain." : "The token is available for this session only."});
+      const persistence = this.credentials.persistence(this.identity.origin,this.identity.username);
+      el.createEl("p", {text:persistence === "session" ? "The token is available for this session only." :
+        "The token is stored in Obsidian secret storage for this vault."});
     }
     if (this.identity) {
       const disconnect = el.createEl("button", {text:"Disconnect and remove local credentials"});
@@ -106,17 +107,17 @@ export class ConnectionModal extends Modal {
           const pending = this.excluding(previous);
           try {
             await this.credentials.remove(previous.origin, previous.username);
-            this.message = "Account disconnected and local credentials removed.";
+            this.message = "Account disconnected and this plugin’s saved token removed. Older macOS Keychain entries are unchanged.";
           } catch {
             pending.push(previous);
-            this.message = "The session token was cleared. Retry removing the saved credentials when Keychain is available.";
+            this.message = "The session token was cleared. Retry removing the saved credentials when secret storage is available.";
           }
           await this.remember(null, pending);
         });
       };
     }
     for (const target of this.cleanup) {
-      el.createEl("p", {text:`Keychain removal pending for ${target.username} (${target.origin}).`});
+      el.createEl("p", {text:`Saved token removal pending for ${target.username} (${target.origin}).`});
       const retry = el.createEl("button", {text:"Retry removing saved credentials"});
       retry.disabled = this.busy;
       retry.onclick = (): void => {

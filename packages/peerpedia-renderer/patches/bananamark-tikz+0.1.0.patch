@@ -1,0 +1,19 @@
+diff --git a/node_modules/bananamark-tikz/src/index.mjs b/node_modules/bananamark-tikz/src/index.mjs
+index a6c15d5..f69f2f6 100644
+--- a/node_modules/bananamark-tikz/src/index.mjs
++++ b/node_modules/bananamark-tikz/src/index.mjs
+@@ -272,12 +272,13 @@ export function tikz({ cache, fonts: fontOptions = {}, timeout = 15000, workerId
+       return removed;
+     },
+     /** Stops the worker; a shared one (workerIdleTimeout) stops once it has idled that long. */
++    /** @returns {Promise<void>} */
+     async close() {
+       if (worker) await discard(worker);
+       if (workerIdleTimeout && shared.worker) {
+         const idle = shared.worker;
+         shared.timer = setTimeout(() => { if (shared.worker === idle) void discard(idle); }, workerIdleTimeout);
+-        shared.timer.unref();
++        shared.timer.unref?.();
+       }
+     },
+   };

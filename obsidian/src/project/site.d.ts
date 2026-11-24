@@ -6,3 +6,7 @@ declare module "*/editor/chapter-title.js" {
 declare module "*/editor/dialect.js" {
   export const dialectOptions: object;
 }
+
+declare module "*/peerpedia-theme/scripts/embedded.mjs" {
+  export function embeddedTheme(directory: string): Promise<object>;
+}

@@ -1,5 +1,8 @@
 # Offline authoring acceptance
 
+> Historical record of the earlier personal package. The current three-file candidate uses browser Workers and Obsidian SecretStorage; the old Node renderer and Swift credential helper have been removed from source. Current reproduction steps are in [installation](installation.md), and current results are in [the migration report](../../docs/superpowers/plans/2026-11-25-obsidian-community-migration-results.md).
+
+
 The combined personal package, its digest, the tested platform and the remote workflow are recorded in [manual publishing acceptance](remote-acceptance.md). This record covers the local authoring checks and how to repeat them.
 
 ## Relocated package in Obsidian

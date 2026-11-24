@@ -3,18 +3,26 @@
 from __future__ import annotations
 from copy import deepcopy
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-import hashlib, json, runpy, socket, ssl, subprocess, sys, tempfile, time
+import hashlib
+import json
+import runpy
+import socket
+import ssl
+import subprocess
+import sys
+import tempfile
+import time
 from pathlib import Path
 from threading import Thread
 from typing import Any
-from uuid import UUID
+from uuid import UUID, uuid4
 from playwright.sync_api import Page, Locator, BrowserContext, sync_playwright
 
 root = Path(__file__).resolve().parents[2]
 app, package, evidence = (Path(arg).resolve() for arg in sys.argv[1:])
 evidence.mkdir(parents=True, exist_ok=True)
 base = runpy.run_path(str(root / "obsidian/scripts/validate-offline-host.py"))
-raw = json.loads((root / "obsidian/tests/fixtures/manifests/v4.json").read_text())
+raw = json.loads((root / "tests/fixtures/publication-protocol/v4.json").read_text())
 requests: list[str] = []
 posts: list[tuple[str, bytes]] = []
 commits: dict[str, tuple[bytes, dict[str, Any]]] = {}
@@ -134,7 +142,9 @@ class Handler(BaseHTTPRequestHandler):
             self.reply({}, 500)
 
     def do_POST(self: Handler) -> None:
-        assert self.path == "/api/v1/push/" and self.headers.get("Authorization") == "Bearer " + token
+        assert (
+            self.path == "/api/v1/push/" and self.headers.get("Authorization") == "Bearer " + token
+        )
         body = self.rfile.read(int(self.headers["Content-Length"]))
         posts.append((self.headers["Idempotency-Key"], body))
         key = posts[-1][0]
@@ -159,9 +169,17 @@ def modal(context: BrowserContext, title: str) -> Locator:
         for page in context.pages:
             form = page.locator(".modal").filter(has_text=title)
             if form.count() and form.is_visible():
-                return form
+                marker = "acceptance-" + uuid4().hex
+                form.evaluate(
+                    """/** @param {HTMLElement} el @param {string} marker @returns {void} */
+                    (el,marker) => el.setAttribute('data-acceptance-modal',marker)""",
+                    marker,
+                )
+                return page.locator(f'[data-acceptance-modal="{marker}"]')
         time.sleep(0.1)
-    raise AssertionError(str([(p.url, p.locator("body").inner_text()[-850:]) for p in context.pages]))
+    raise AssertionError(
+        str([(p.url, p.locator("body").inner_text()[-850:]) for p in context.pages])
+    )
 
 
 def command(page: Page, name: str) -> None:
@@ -216,8 +234,15 @@ with tempfile.TemporaryDirectory(prefix="r5-host-") as tmp:
                 markdown="",
                 chapters=[
                     dict(id="intro", title="Intro", markdown="# Intro\n\nOriginal text"),
-                    dict(id="proof", title="Proof", markdown="# Proof\n\n" + r"$\frac{a}{b}$" + "\n\n```math {@eq:diagram}\n"
-                         + r"\begin{tikzcd} A\arrow[r] & B\end{tikzcd}" + "\n```"),
+                    dict(
+                        id="proof",
+                        title="Proof",
+                        markdown="# Proof\n\n"
+                        + r"$\frac{a}{b}$"
+                        + "\n\n```math {@eq:diagram}\n"
+                        + r"\begin{tikzcd} A\arrow[r] & B\end{tikzcd}"
+                        + "\n```",
+                    ),
                 ],
                 bibliography="",
             )
@@ -226,17 +251,21 @@ with tempfile.TemporaryDirectory(prefix="r5-host-") as tmp:
     base["prepare"](vault, profile, package, fixture)
     reserved_fixture = vault / "Reserved member"
     reserved_fixture.mkdir()
-    (reserved_fixture / "paper.json").write_text(json.dumps(
-        {"title":"Reserved fixture","authors":"Fixture","abstract":"Synthetic","bibliography":"notes/.PeerPedia/refs.yaml"}
-    ))
-    helper = vault / base["PLUGIN"] / "native/keychain"
-    helper.rename(helper.with_name("original-keychain"))
-    # A denied Security framework operation returns this exact helper response.
-    helper.write_text("#!/bin/sh\ncat > /dev/null\nprintf '%s\\n' '{\"ok\":false}'\n")
-    helper.chmod(0o700)
+    (reserved_fixture / "paper.json").write_text(
+        json.dumps(
+            {
+                "title": "Reserved fixture",
+                "authors": "Fixture",
+                "abstract": "Synthetic",
+                "bibliography": "notes/.PeerPedia/refs.yaml",
+            }
+        )
+    )
     with (
         sync_playwright() as pw,
-        base["isolated_host"](app, profile, work / "home", evidence / "host-process.log") as address,
+        base["isolated_host"](
+            app, profile, work / "home", evidence / "host-process.log"
+        ) as address,
     ):
         browser = pw.chromium.connect_over_cdp(address)
         context = browser.contexts[0]
@@ -265,14 +294,18 @@ with tempfile.TemporaryDirectory(prefix="r5-host-") as tmp:
         trust = page.get_by_role("button", name="Trust author and enable plugins")
         if trust.is_visible():
             trust.click()
+        page.evaluate("""/** @returns {void} */ () => {
+            window.originalSetSecret = app.secretStorage.setSecret.bind(app.secretStorage);
+            app.secretStorage.setSecret = /** @returns {never} */ () => {throw new Error('Synthetic unavailable secret storage');};
+        }""")
         page.evaluate("app.plugins.enablePluginAndSave('peerpedia')")
         base["open_source"](page, base["PROJECT"] + "/intro.md")
         command(page, "manage-paper")
         panel = page.locator(".peerpedia-project-panel")
-        panel.get_by_role("button", name="Submit to Peerpedia").wait_for()
+        panel.get_by_role("button", name="Publish", exact=True).wait_for()
         assert not requests
         command(page, "connect-account")
-        form = modal(context, "Connect Peerpedia account")
+        form = modal(context, "Connect Peerpedia")
         form.get_by_label("Site URL").fill(origin)
         form.get_by_label("Access token").fill("invalid-synthetic-token")
         form.get_by_role("button", name="Connect and verify account").click()
@@ -286,22 +319,34 @@ with tempfile.TemporaryDirectory(prefix="r5-host-") as tmp:
         form.get_by_text("The token is available for this session only.", exact=True).wait_for()
         form.get_by_text("Publishing agreement 1: Accepted", exact=True).wait_for()
         form.page.screenshot(path=str(evidence / "account.png"))
-        helper.unlink()
+        page.evaluate("void (app.secretStorage.setSecret = window.originalSetSecret)")
+        form.get_by_text("Update connection details", exact=True).click()
         form.locator("input[type=password]").fill(token)
-        form.get_by_role("button", name="Connect and verify account").click()
-        form.get_by_text("The token is available for this session only.", exact=True).wait_for()
-        print("PASS displayed session-only storage for a rejected helper operation and missing helper")
+        form.get_by_role("button", name="Verify connection").click()
+        form.get_by_text(
+            "The token is stored in Obsidian secret storage for this vault.", exact=True
+        ).wait_for()
+        settings = json.loads((vault / base["PLUGIN"] / "data.json").read_text())
+        assert "credentialReferences" in settings and token not in json.dumps(settings)
+        print(
+            "PASS session fallback and successful host-secret persistence without plaintext plugin settings"
+        )
         form.page.keyboard.press("Escape")
-        panel.get_by_role("button", name="Submit to Peerpedia").click()
-        form = modal(context, "Submit to Peerpedia")
+        panel.get_by_role("button", name="Publish", exact=True).click()
+        form = modal(context, "Publish a version")
         form.get_by_label("Explanation").fill("Host confirmation")
         form.get_by_label("AI assisted").check()
-        form.get_by_role("button", name="Preview submission").click()
+        form.get_by_role("button", name="Review submission").click()
         confirm = form.get_by_role("button", name="Confirm submission", exact=True)
         confirm.or_(form.get_by_role("alert")).wait_for(timeout=50_000)
         assert confirm.is_visible(), form.inner_text()
-        form.get_by_text("Rendered manuscript", exact=True).click()
-        assert form.locator("iframe").count() == 1, "Confirmation must use the themed manuscript reader"
+        assert (
+            form.get_by_text("Rendered manuscript", exact=True).locator("..").get_attribute("open")
+            is not None
+        )
+        assert form.locator("iframe").count() == 1, (
+            "Confirmation must use the themed manuscript reader"
+        )
         frame = form.frame_locator("iframe")
         frame.get_by_text("Original text", exact=True).wait_for()
         chapters = form.get_by_label("Manuscript chapter")
@@ -316,7 +361,9 @@ with tempfile.TemporaryDirectory(prefix="r5-host-") as tmp:
               grid:tag.gridTemplateColumns, svg:!!doc.querySelector('.bm-tikz-layout svg')};
         }""")
         assert geometry["position"] == "absolute" and geometry["overflow"] == "hidden", geometry
-        assert geometry["rule"] != "0px" and len(geometry["grid"].split()) == 3 and geometry["svg"], geometry
+        assert (
+            geometry["rule"] != "0px" and len(geometry["grid"].split()) == 3 and geometry["svg"]
+        ), geometry
         form.locator("iframe").screenshot(path=evidence / "confirmation-math.png")
         print("PASS themed confirmation fraction and tagged diagram", geometry, flush=True)
         chapters.select_option(label="Intro")
@@ -345,10 +392,10 @@ with tempfile.TemporaryDirectory(prefix="r5-host-") as tmp:
         first = json.loads(posts[0][1])
         assert "Confirmed host edit" in first["markdown"] and first["ai_assisted"]
         form.page.keyboard.press("Escape")
-        panel.get_by_role("button", name="Review pending submission").wait_for()
+        panel.get_by_role("button", name="Resume submission").wait_for()
         edit("# Intro\n\nUnsubmitted later edit")
-        panel.get_by_role("button", name="Review pending submission").click()
-        form = modal(context, "Submit to Peerpedia")
+        panel.get_by_role("button", name="Resume submission").click()
+        form = modal(context, "Publish a version")
         form.get_by_role("button", name="Retry saved submission").wait_for()
         assert "Unsubmitted later edit" not in form.inner_text()
         form.page.screenshot(path=str(evidence / "retry.png"))
@@ -362,10 +409,15 @@ with tempfile.TemporaryDirectory(prefix="r5-host-") as tmp:
         )
         state = manuscript.parent / ".peerpedia-obsidian"
         record = json.loads((state / "binding.json").read_text())["binding"]
-        assert record["origin"] == origin and record["acceptedBase"]["hash"] == receipt(first, 1)["hash"]
+        assert (
+            record["origin"] == origin
+            and record["acceptedBase"]["hash"] == receipt(first, 1)["hash"]
+        )
         assert not (state / "submit-pending.json").exists()
         assert all(token.encode() not in f.read_bytes() for f in state.rglob("*") if f.is_file())
-        assert not chrome and page.evaluate("window.pluginNodeRequests === 0 && window.blockedSiteAttempts === 0")
+        assert not chrome and page.evaluate(
+            "window.pluginNodeRequests === 0 && window.blockedSiteAttempts === 0"
+        )
         print(
             "PASS Obsidian submit + changed revision requires a second confirmation; 2 identical POSTs, 1 snapshot; native later edit retained"
         )
@@ -379,33 +431,49 @@ with tempfile.TemporaryDirectory(prefix="r5-host-") as tmp:
         )
         form.page.keyboard.press("Escape")
         retained_edit = manuscript.read_text()
-        panel.get_by_text("Local files: Changed", exact=True).wait_for()
+
+        def local_status(expected: str) -> None:
+            for _ in range(100):
+                panel.get_by_role("button", name="Versions and remote changes", exact=True).click()
+                status_form = modal(context, "Versions and remote changes")
+                matched = status_form.get_by_text(
+                    "Local files: " + expected, exact=True
+                ).is_visible()
+                status_form.page.keyboard.press("Escape")
+                if matched:
+                    return
+                time.sleep(0.1)
+            raise AssertionError("Local status did not become " + expected)
+
+        local_status("Changed")
         edit(first["chapters"][0]["markdown"])
-        panel.get_by_text("Local files: Match the working version", exact=True).wait_for()
-        form.page.screenshot(path=evidence / "working-match.png")
+        local_status("Match the working version")
+        page.screenshot(path=evidence / "working-match.png")
         proof = manuscript.with_name("proof.md")
         proof.rename(proof.with_suffix(".held"))
-        panel.get_by_text("Local files: Unavailable (source file missing)", exact=True).wait_for()
-        panel.get_by_text("Source file missing", exact=True).wait_for()
+        local_status("Unavailable (source file missing)")
+        panel.get_by_text("Source file missing", exact=True).first.wait_for()
         proof.with_suffix(".held").rename(proof)
-        panel.get_by_text("Local files: Match the working version", exact=True).wait_for()
-        print("PASS custom source paths match the working snapshot; missing member remains actionable")
+        local_status("Match the working version")
+        print(
+            "PASS custom source paths match the working snapshot; missing member remains actionable"
+        )
         edit(retained_edit)
-        panel.get_by_text("Local files: Changed", exact=True).wait_for()
+        local_status("Changed")
         for intent in ("Create a new proposal", "Add a snapshot to the open proposal"):
-            panel.get_by_role("button", name="Submit to Peerpedia").click()
-            form = modal(context, "Submit to Peerpedia")
+            panel.get_by_role("button", name="Publish", exact=True).click()
+            form = modal(context, "Publish a version")
             select = form.get_by_label("Submission type")
             select.wait_for()
             assert select.locator("option:checked").inner_text() == intent
             if intent == "Create a new proposal":
                 post_count = len(posts)
-                form.get_by_role("button", name="Preview submission").click()
+                form.get_by_role("button", name="Review submission").click()
                 form.get_by_role("alert").filter(has_text="Enter an explanation").wait_for()
                 assert len(posts) == post_count
                 form.get_by_role("button", name="Review again").click()
             form.get_by_label("Explanation").fill(intent)
-            form.get_by_role("button", name="Preview submission").click()
+            form.get_by_role("button", name="Review submission").click()
             confirm = form.get_by_role("button", name="Confirm submission", exact=True)
             confirm.wait_for()
             text = form.text_content() or ""
@@ -450,37 +518,52 @@ with tempfile.TemporaryDirectory(prefix="r5-host-") as tmp:
             ("different-writer", "pending", "belongs to different-writer"),
             (username, "withdrawn", "is withdrawn"),
         ]:
-            panel.get_by_role("button", name="Submit to Peerpedia").click()
-            form = modal(context, "Submit to Peerpedia")
+            panel.get_by_role("button", name="Publish", exact=True).click()
+            form = modal(context, "Publish a version")
             form.get_by_text(reason, exact=False).wait_for()
-            assert form.get_by_label("Submission type").locator("option:checked").inner_text() == "Create a new proposal"
+            assert (
+                form.get_by_label("Submission type").locator("option:checked").inner_text()
+                == "Create a new proposal"
+            )
             form.page.screenshot(path=evidence / ("proposal-" + proposal_status + ".png"))
             form.page.keyboard.press("Escape")
         print("PASS closed and other-owned proposal explanations")
         proposal_owner, proposal_status = username, "pending"
         old = list(commits.values())[1][1]
         request_count = len(requests)
-        panel.get_by_role("button", name="Import from Peerpedia").click()
+        command(page, "import-paper")
         form = modal(context, "Import paper from Peerpedia")
         form.get_by_label("Site URL").fill(origin)
-        form.get_by_label("Paper, snapshot, or version reading link").fill(origin + "/submissions/" + old["manifest"]["submission_id"] + "/")
+        form.get_by_label("Paper, snapshot, or version reading link").fill(
+            origin + "/submissions/" + old["manifest"]["submission_id"] + "/"
+        )
         form.get_by_label("New folder in the vault", exact=False).fill("Historical")
         assert len(requests) == request_count
         form.get_by_role("button", name="Import paper", exact=True).click()
         form.wait_for(state="hidden")
-        panel.get_by_text("Local files: Match the working version", exact=True).wait_for()
+        local_status("Match the working version")
         history = vault / "Historical/.peerpedia-obsidian"
         saved = json.loads((history / "binding.json").read_text())["binding"]
         assert saved["workingBase"]["hash"] == old["hash"] and saved["activePr"] is None
-        assert saved["proposalSource"]["id"] == old["pull_request"]["id"] and saved["proposalSource"]["number"] == 1
-        panel.get_by_role("button", name="Check remote version").click()
-        panel.get_by_text("Linked proposal: pending", exact=True).wait_for()
-        panel.get_by_text("The linked proposal has a snapshot that has not been merged.", exact=True).wait_for()
+        assert (
+            saved["proposalSource"]["id"] == old["pull_request"]["id"]
+            and saved["proposalSource"]["number"] == 1
+        )
+        panel.get_by_role("button", name="Versions and remote changes", exact=True).click()
+        remote = modal(context, "Versions and remote changes")
+        remote.get_by_role("button", name="Check remote version").click()
+        remote.get_by_text("Linked proposal: pending", exact=True).wait_for()
+        remote.get_by_text(
+            "The linked proposal has a snapshot that has not been merged.", exact=True
+        ).wait_for()
         tip = json.loads((history / "binding-history/1.json").read_text())
         assert "binding" not in tip and "checkedAt" in tip
         assert len(requests) == request_count + 4
         page.screenshot(path=evidence / "historical-proposal.png")
-        print("PASS historical import retained snapshot 1; manual check observed snapshot 2 and wrote only its timestamp")
+        print(
+            "PASS historical import retained snapshot 1; manual check observed snapshot 2 and wrote only its timestamp"
+        )
+        remote.page.keyboard.press("Escape")
         page.bring_to_front()
         base["open_source"](page, "Historical/chapters/intro.md")
         page.evaluate("""/** @returns {void} */ () => {
@@ -491,12 +574,17 @@ with tempfile.TemporaryDirectory(prefix="r5-host-") as tmp:
         }""")
         page.keyboard.press("Control+Space")
         for _ in range(100):
-            choices = [tab.get_by_text("::: theorem", exact=True) for tab in context.pages
-                       if tab.get_by_text("::: theorem", exact=True).is_visible()]
+            choices = [
+                tab.get_by_text("::: theorem", exact=True)
+                for tab in context.pages
+                if tab.get_by_text("::: theorem", exact=True).is_visible()
+            ]
             if choices:
                 break
             time.sleep(0.1)
-        assert choices, [(tab.url, tab.locator("body").inner_text()[-500:]) for tab in context.pages]
+        assert choices, [
+            (tab.url, tab.locator("body").inner_text()[-500:]) for tab in context.pages
+        ]
         suggestion = choices[0]
         suggestion.page.screenshot(path=evidence / "native-completion.png")
         suggestion.click()
@@ -504,15 +592,46 @@ with tempfile.TemporaryDirectory(prefix="r5-host-") as tmp:
         page.keyboard.press("Meta+z")
         assert page.evaluate("sourceLeaf.view.editor.getValue().endsWith(':::')")
         assert len(requests) == request_count + 4
-        print("PASS native source-mode theorem completion, acceptance and one-step undo without a site request")
-        panel.get_by_role("button", name="Open paper", exact=True).click()
-        form = modal(context, "Open paper")
-        form.get_by_label("Folder in the vault", exact=False).fill(reserved_fixture.name)
-        form.get_by_role("button", name="Open", exact=True).click()
-        panel.get_by_role("alert").filter(has_text="Unsafe project path").wait_for()
+        print(
+            "PASS native source-mode theorem completion, acceptance and one-step undo without a site request"
+        )
+        panel.locator("button[title='Switch paper']").click()
+        for _ in range(100):
+            pickers = [
+                tab.locator("input.prompt-input")
+                for tab in context.pages
+                if tab.locator("input.prompt-input").is_visible()
+            ]
+            if pickers:
+                break
+            time.sleep(0.1)
+        assert pickers, [
+            (tab.url, tab.locator("body").inner_text()[-500:]) for tab in context.pages
+        ]
+        picker = pickers[0]
+        picker.fill(reserved_fixture.name)
+        picker.page.locator(".suggestion-item").filter(has_text=reserved_fixture.name).click()
+        for _ in range(100):
+            notices = [
+                tab.get_by_text("Unsafe project path", exact=False)
+                for tab in context.pages
+                if tab.get_by_text("Unsafe project path", exact=False).is_visible()
+            ]
+            if notices:
+                break
+            time.sleep(0.05)
+        assert notices, [
+            (tab.url, tab.locator("body").inner_text()[-2000:]) for tab in context.pages
+        ]
+        assert not (reserved_fixture / "notes").exists()
+        assert panel.locator("button[title='Switch paper']").inner_text() != "Reserved fixture"
         page.screenshot(path=evidence / "reserved-member.png")
         assert len(requests) == request_count + 4
-        print("PASS ordinary project open refused reserved membership using an absent synthetic path")
-        assert not chrome and page.evaluate("window.pluginNodeRequests === 0 && window.blockedSiteAttempts === 0")
+        print(
+            "PASS ordinary project open refused reserved membership using an absent synthetic path"
+        )
+        assert not chrome and page.evaluate(
+            "window.pluginNodeRequests === 0 && window.blockedSiteAttempts === 0"
+        )
         print("PASS zero guarded Chromium, unexpected Node HTTP or off-origin HTTPS attempts")
     server.shutdown()

@@ -35,7 +35,6 @@ export class ProjectPanel extends ItemView {
   private stop?: () => void;
   private readId = 0;
   private selection = 0;
-  private readonly languageWorker = new LanguageWorker();
   private readonly titles = new Map<string, {digest: string; title: Promise<string>}>();
   private records: readonly RecoveryNotice[] = [];
 
@@ -47,7 +46,7 @@ export class ProjectPanel extends ItemView {
 
   constructor(leaf: WorkspaceLeaf, readonly store: VaultProjectStore,
     private readonly enableFolder: (root: string) => Promise<void>, private readonly origin: () => string,
-    private readonly transport: Transport, private readonly dir: string, private readonly submissions?: SubmissionController,
+    private readonly transport: Transport, private readonly languageWorker: LanguageWorker, private readonly submissions?: SubmissionController,
     private readonly workspaceActions?: {preview: (root: string) => Promise<void>; connect: () => void}) { super(leaf); }
 
   override getViewType(): string { return PROJECT_PANEL; }
@@ -60,7 +59,7 @@ export class ProjectPanel extends ItemView {
     if (typeof root === "string") await this.selectRoot(root);
   }
   override async onOpen(): Promise<void> { this.render(); }
-  override async onClose(): Promise<void> { this.stop?.(); ++this.readId; ++this.selection; this.languageWorker.dispose(); this.titles.clear(); }
+  override async onClose(): Promise<void> { this.stop?.(); ++this.readId; ++this.selection; this.titles.clear(); }
 
   async selectRoot(root: string): Promise<void> {
     this.stop?.();
@@ -240,7 +239,7 @@ export class ProjectPanel extends ItemView {
     });
     if (this.binding?.pendingSubmission && root !== null && this.submissions && !this.bindingError && !this.binding.pendingMerge && !this.binding.pendingImport) {
       button(el,"Resume submission",(): void => {
-        new SubmitModal(this.app,root,this.store,this.submissions!,this.dir,async (): Promise<void> => {
+        new SubmitModal(this.app,root,this.store,this.submissions!,async (): Promise<void> => {
           if(this.root===root)await this.selectRoot(root);
         }).open();
       }).addClass("mod-cta");
@@ -262,7 +261,7 @@ export class ProjectPanel extends ItemView {
     if (this.submissions && !this.bindingError && !this.binding?.pendingMerge && !this.binding?.pendingImport
       && !this.binding?.pendingSubmission && complete) {
       button(tools,this.binding?.pendingSubmission ? "Resume submission" : "Publish",(): void => {
-        new SubmitModal(this.app,project.root,this.store,this.submissions!,this.dir,async ():Promise<void> => {
+        new SubmitModal(this.app,project.root,this.store,this.submissions!,async ():Promise<void> => {
           if(this.root===project.root)await this.selectRoot(project.root);
         }).open();
       }).addClass("mod-cta");

@@ -78,8 +78,20 @@ class ObsidianGuideTests(SimpleTestCase):
             "data.json",
             "Connect and verify account",
             "Review submission",
+            "Edit YAML source",
+            "Rename citation key",
+            "Obsidian secret storage",
+            "reconnect your account once",
+            "three files",
         ):
             self.assertContains(response, text)
+        for obsolete in (
+            "Add reference",
+            "click an entry to edit",
+            "package-manifest.json",
+            "including <code>native/</code>",
+        ):
+            self.assertNotContains(response, obsolete)
         anchors = Anchors()
         anchors.feed(body)
         self.assertEqual(len(anchors.ids), len(set(anchors.ids)))

@@ -6,6 +6,15 @@ import { toPublicationDocument } from "../src/project/document";
 import type { ProjectSnapshot } from "../src/project/types";
 import { projectFixture } from "./fixtures";
 
+test("embedded theme accepts only font data and rejects active or remote resources", (): void => {
+  const manifest = {stylesheet:"style.css",katex:{fonts:["fonts/katex/Main.woff2"]},tikz:{fonts:["tikz/cmr10.ttf"]}};
+  const theme = localTheme(manifest, (): string => "data:font/woff2;base64,AAAA");
+  expect(theme.katex.get("./fonts/katex/Main.woff2")).toBe("data:font/woff2;base64,AAAA");
+  for (const value of ["data:text/html;base64,AAAA","data:font/woff2,<script>","https://remote.invalid/font.woff2"]) {
+    expect((): PreviewTheme => localTheme(manifest, (): string => value)).toThrow();
+  }
+});
+
 function harness(): {
   controller: PreviewController;
   pending: { request: RenderRequest; signal: AbortSignal; finish: (response: RenderResponse) => void }[];
@@ -16,7 +25,6 @@ function harness(): {
     convert: async (project: ProjectSnapshot): Promise<ReturnType<typeof toPublicationDocument>> => toPublicationDocument(project),
     render: (request: RenderRequest, signal: AbortSignal): Promise<RenderResponse> =>
       new Promise((finish: (response: RenderResponse) => void): void => { pending.push({ request, signal, finish }); }),
-    dispose: async (): Promise<void> => {},
   }, (): void => {});
   return { controller, pending };
 }
@@ -85,4 +93,26 @@ test("switching papers clears the previous preview and cancels its in-flight ren
   await vi.advanceTimersByTimeAsync(0);
   expect(controller.state().result).toBeNull();
   await controller.dispose();
+});
+
+test("closing one preview leaves its shared renderer available to another preview", async (): Promise<void> => {
+  vi.useFakeTimers();
+  const dispose = vi.fn(async (): Promise<void> => {});
+  const renderer = {
+    convert: async (project: ProjectSnapshot): Promise<ReturnType<typeof toPublicationDocument>> => toPublicationDocument(project),
+    render: vi.fn(async (request: RenderRequest): Promise<RenderResponse> => ({...request,pages:[]})),
+    dispose,
+  };
+  const left = new PreviewController(renderer, (): void => {});
+  const right = new PreviewController(renderer, (): void => {});
+  left.update(projectFixture());
+  right.update(projectFixture());
+  await vi.advanceTimersByTimeAsync(300);
+  await left.dispose();
+  expect(dispose).not.toHaveBeenCalled();
+  right.update({...projectFixture(),revision:"next"});
+  await vi.advanceTimersByTimeAsync(300);
+  expect(right.state().renderedRevision).toBe("next");
+  await right.dispose();
+  expect(dispose).not.toHaveBeenCalled();
 });

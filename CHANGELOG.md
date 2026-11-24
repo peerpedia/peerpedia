@@ -1,5 +1,14 @@
 # Release notes
 
+## 0.1.4
+
+- Install the Obsidian plugin from three files, with the shared website renderer, fonts and diagram engine embedded for offline use. No separate renderer process or credential helper is needed.
+- Use Obsidian secret storage for account tokens. Users upgrading from 0.1.3 reconnect once; existing macOS Keychain entries are left untouched.
+- Simplify References to a searchable list, YAML source editing with validation, and safe citation-key renaming across the paper.
+- Share the language worker and analysis cache across writing tools and previews; keep cancellation local to each consumer.
+- Update the website Help and installation guide to match the released UI and upgrade path. The plugin remains a manual installation for Apple silicon Macs with Obsidian 1.15.1 or newer.
+- Require offline Obsidian and publication host checks alongside the backend, browser, quality and security release gates; preserve bounded production builds.
+
 ## 0.1.3
 
 - Release the Peerpedia Obsidian plugin for Apple silicon Macs, with a bundled offline renderer and shared website styles.

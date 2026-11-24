@@ -4,75 +4,18 @@ import { dirname, join } from "node:path";
 import type { Vault } from "obsidian";
 import { expect, test } from "vitest";
 
-import { addEntry, patchEntry, readEntries, removeEntry, restoreSourceLineEndings } from "../src/bibliography/document";
-import { citationImpact, planCitationRename, validateNewCitationKey } from "../src/bibliography/rename";
+import { readEntries, restoreSourceLineEndings } from "../src/bibliography/document";
+import { planCitationRename, previewCitationRename } from "../src/bibliography/rename";
 import { VaultProjectStore } from "../src/host/vault-store";
 import type { SourceFile } from "../src/project/types";
 import type { FileChange } from "../src/project/store";
 import { editFixture, projectFixture } from "./fixtures";
 
-test("editing a scalar keeps comments, unknown fields, formatting, BOM, and CRLF", (): void => {
-  const source = "\uFEFF# 书目\r\n---\r\n\"example\" : # 条目\r\n"
-    + "   title : '原题'   # 译名待定\r\n   local-data: { enabled: true,   list: [a,b] }\r\n\r\n"
-    + "other: {title: untouched, type: book} # 另一条\r\n...";
-  const updated = patchEntry(source, "example", { title: "新题" });
-  expect(updated).toBe(source.replace("'原题'", "'新题'"));
-  expect(readEntries(updated)).toEqual([
-    { key: "example", fields: { title: "新题", "local-data": { enabled: true, list: ["a", "b"] } } },
-    { key: "other", fields: { title: "untouched", type: "book" } },
-  ]);
-});
-
 const aliasedVersion = "example:\n  type: book\n  title: &shared other\n  shorttitle: *shared\n"
   + "  versions: [{relation: edition, key: *shared}]\n";
 
-test("editing a shared anchor refuses a change to another field or a cited version key", (): void => {
-  expect((): string => patchEntry(aliasedVersion, "example", { title: "A new title" })).toThrow(/title.*YAML source file/);
-  expect(readEntries(aliasedVersion)[0].fields).toMatchObject({
-    title: "other", shorttitle: "other", versions: [{ key: "other" }],
-  });
-  expect(patchEntry(aliasedVersion, "example", { title: "other" })).toBe(aliasedVersion);
-});
-
 const anchoredRecord = "example: &record\n  type: book\n  title: Original\n  note: 'See @example.'\n"
   + "other:\n  type: book\n  title: Other\n  local-record: *record\n";
-
-test("editing or adding a field under an anchored entry refuses changes to aliased copies", (): void => {
-  expect((): string => patchEntry(anchoredRecord, "example", { title: "A new title" })).toThrow(/title.*YAML source file/);
-  expect((): string => patchEntry(anchoredRecord, "example", { year: 2026 })).toThrow(/year.*YAML source file/);
-  expect(patchEntry(anchoredRecord, "example", { title: "Original" })).toBe(anchoredRecord);
-});
-
-test("editing a different field leaves its anchored sibling and aliases intact", (): void => {
-  const updated = patchEntry(aliasedVersion, "example", { year: 2026 });
-  expect(updated).toBe(aliasedVersion + "  year: 2026\n");
-  expect(readEntries(updated)[0].fields).toMatchObject({ shorttitle: "other", versions: [{ key: "other" }] });
-});
-
-test("editing a block scalar preserves its header comment and neighboring bytes", (): void => {
-  const updated = patchEntry("work:\r\n  title: |- # 标题\r\n    old\r\n  year: 2026\r\n", "work", {title: "更新\n标题"});
-  expect(updated).toBe("work:\r\n  title: |- # 标题\r\n    更新\r\n    标题\r\n  year: 2026\r\n");
-});
-
-test("adding a field preserves unrelated flow and block formatting", (): void => {
-  const flow = "work: {title : old, local: [a, b],  } # comment\n";
-  const block = "work:\n   title :  old  # comment\nnext: { title: next }\n";
-  expect(patchEntry(flow, "work", { year: 2026 })).toBe("work: {title : old, local: [a, b],  year: 2026} # comment\n");
-  expect(patchEntry(block, "work", { year: 2026 })).toBe("work:\n   title :  old  # comment\n   year: 2026\nnext: { title: next }\n");
-});
-
-test("flow punctuation in a patched value stays inside that field", (): void => {
-  const source = "work: { title: old, type: book } # preserve\n";
-  const updated = patchEntry(source, "work", { title: "New, expanded title" });
-  expect(readEntries(updated)).toEqual([{key: "work", fields: {title: "New, expanded title", type: "book"}}]);
-  expect(updated).toMatch(/^work: \{ title: .+, type: book \} # preserve\n$/);
-});
-
-test("the edit form can fill an empty YAML field without moving its comment", (): void => {
-  const source = "work:\n  title:\n  author:  # add author\n  type: book\n";
-  expect(patchEntry(source, "work", {title: "New title", author: "New Author"})).toBe(
-    "work:\n  title: New title\n  author:  New Author # add author\n  type: book\n");
-});
 
 test("source editing keeps mixed line endings on untouched lines", (): void => {
   const original = "\uFEFF# first\r\nwork:\n  title: old\r\n# footer\n";
@@ -88,37 +31,9 @@ test("escaped braced references stay literal during rename", (): void => {
     .toBe("See \\{@example}, \\@example, and {@updated}; then \\{@literal @example}.\n");
 });
 
-test("adding and deleting entries retains adjacent YAML and its comments", (): void => {
-  const keep = "# 书目说明\r\na: {type: book, title: A}   # 保留\r\n";
-  const source = keep + "b:\r\n  title: B\r\n  type: book\r\n";
-  expect(removeEntry(source, "b")).toBe(keep);
-  expect(addEntry(keep, "b", { title: "B", type: "book" })).toBe(source);
-  expect(readEntries(removeEntry(keep, "a"))).toEqual([]);
-  expect(removeEntry(keep, "a")).toContain("# 书目说明");
-  expect((): string => addEntry(source, "a", {title: "覆盖"})).toThrow();
-});
-
-test("deleting a block entry preserves the outdented comment before the next entry", (): void => {
-  const kept = "# Source for B\nb: {type: book, title: B}\n";
-  expect(removeEntry("a:\n  type: book\n  title: A\n  # Note on the title\n" + kept, "a")).toBe(kept);
-});
-
-test("deleting an indented entry preserves the next entry's root indentation", (): void => {
-  const kept = "  b: {type: book, title: B}\n  c: {type: book, title: C}\n";
-  expect(removeEntry("  a:\n    title: A\n    # Owned comment\n" + kept, "a")).toBe(kept);
-});
-
-test("deleting a nested block entry preserves a document footer and its CRLF", (): void => {
-  const source = "a:\r\n  title: A\r\n  versions:\r\n    - relation: edition\r\n"
-    + "      title: Edition\r\n    # Edition note\r\n# Bibliography footer\r\n";
-  expect(removeEntry(source, "a")).toBe("# Bibliography footer\r\n");
-});
-
-test("malformed YAML and invalid root or entry structures cannot be patched", (): void => {
+test("source validation rejects malformed YAML and invalid root or entry structures", (): void => {
   for (const source of ["example: [oops\n", "- title: Nope\n", "example: 42\n", "example: {title: A, title: B}\n", "example: {title: A}\n---\nexample: {title: B}\n", "example: {title: !!unknown A}\n"]) {
     expect((): ReturnType<typeof readEntries> => readEntries(source)).toThrow();
-    expect((): string => patchEntry(source, "example", {title: "lost"})).toThrow();
-    expect((): string => addEntry(source, "new", {title: "new"})).toThrow();
   }
 });
 
@@ -140,7 +55,7 @@ test("rename changes the key and parsed references in every chapter, preserving 
     .toBe(first.replace("@example, {@example}， [另见](@example)", "@新参考, {@新参考}， [另见](@新参考)"));
   expect(changes.find((item: FileChange): boolean => item.path === "chapters/a-proof.md")?.afterText)
     .toBe("Proof\n=====\n\n::: theorem {@thm:main}\nA statement [@新参考].\n:::\n");
-  const impact = citationImpact(project, "example");
+  const impact = previewCitationRename(project, "example", "updated").references;
   expect(impact.map(({path, line}: {path: string; line: number}): [string, number] => [path, line])).toEqual([
     ["chapters/z-intro.md", 1], ["chapters/z-intro.md", 1], ["chapters/z-intro.md", 1], ["chapters/a-proof.md", 5],
   ]);
@@ -181,7 +96,7 @@ test("rename updates rendered YAML prose in shared, inline, and version fields",
   });
   const changedInline = edits.find((change: FileChange): boolean => change.path === "chapters/z-intro.md")!.afterText!;
   expect(changedInline).toBe(inline.replace("body @example", "body @new-key").replace("note: '@example and", "note: '@new-key and"));
-  expect(citationImpact(project, "example")).toEqual(expect.arrayContaining([
+  expect(previewCitationRename(project, "example", "updated").references).toEqual(expect.arrayContaining([
     expect.objectContaining({ path: "references.yaml", entry: "other", field: "note" }),
     expect.objectContaining({ path: "references.yaml", entry: "other", field: "howpublished" }),
     expect.objectContaining({ path: "references.yaml", entry: "other", field: "note", version: 1 }),
@@ -210,10 +125,13 @@ test("renaming an anchored citation key does not change an aliased title field",
   expect((): readonly FileChange[] => planCitationRename(project, "example", "updated")).toThrow(/Citation key.*example.*YAML source file/);
 });
 
-test("deleting an entry reports references to its alternate versions", (): void => {
+test("renaming an entry keeps its alternate version key and citations intact", (): void => {
   const source = "example:\n  type: book\n  title: A\n  versions: [{relation: edition, key: second}]\n";
   const project = editFixture(editFixture(projectFixture(), "references.yaml", source), "chapters/z-intro.md", "See @second.");
-  expect(citationImpact(project, "example").map((entry: {key: string}): string => entry.key)).toEqual(["second", "example"]);
+  const renamed = previewCitationRename(project, "example", "updated");
+  expect(renamed.references.map((entry: {key: string}): string => entry.key)).toEqual(["example"]);
+  expect(renamed.changes.some((change: FileChange): boolean => change.path === "chapters/z-intro.md")).toBe(false);
+  expect(renamed.changes[0].afterText).toContain("key: second");
 });
 
 test("rename rejects collisions with shared entries, version keys, and chapter definitions", (): void => {
@@ -233,21 +151,21 @@ test("rename rejects a key defined by an alias in a shared bibliography version"
   expect((): readonly FileChange[] => planCitationRename(project, "example", "other")).toThrow(/Citation key "other" already exists/);
 });
 
-test("a key defined by an aliased inline bibliography version cannot be added", (): void => {
+test("rename rejects a key defined by an aliased inline bibliography version", (): void => {
   const inline = "~~~bibliography\n" + aliasedVersion.replace("example:", "inline-entry:") + "~~~\n";
   const project = editFixture(projectFixture(), "chapters/z-intro.md", inline);
-  expect((): void => validateNewCitationKey(project, "other")).toThrow(/Citation key "other" already exists/);
+  expect((): readonly FileChange[] => planCitationRename(project, "example", "other")).toThrow(/Citation key "other" already exists/);
 });
 
-test("adding a citation key checks inline and shared definitions before saving", (): void => {
+test("renaming a citation key checks validity and shared definitions before saving", (): void => {
   const project = projectFixture();
   for (const key of ["example", "sec:intro", "thm:main", "bad key", "-reserved"]) {
-    expect((): void => validateNewCitationKey(project, key)).toThrow();
+    expect((): readonly FileChange[] => planCitationRename(project, "example", key)).toThrow();
   }
-  expect((): void => validateNewCitationKey(project, "new-citation")).not.toThrow();
+  expect((): readonly FileChange[] => planCitationRename(project, "example", "new-citation")).not.toThrow();
 });
 
-test("a stale bibliography form cannot overwrite externally changed YAML", async (): Promise<void> => {
+test("a stale bibliography source draft cannot overwrite externally changed YAML", async (): Promise<void> => {
   const directory = await mkdtemp(join(tmpdir(), "peerpedia-bibliography-"));
   const fixture = projectFixture();
   const root = join(directory, fixture.root);
@@ -261,7 +179,7 @@ test("a stale bibliography form cannot overwrite externally changed YAML", async
     const store = new VaultProjectStore(await realpath(directory), host);
     const opened = await store.read(fixture.root);
     const file = opened.files.find((item: SourceFile): boolean => item.path === "references.yaml")!;
-    const draft = patchEntry(file.text, "example", {title: "表单草稿"});
+    const draft = "# Source draft\n" + file.text;
     const disk = join(root, file.path);
     const external = "# 外部修改\r\n" + file.text;
     await writeFile(disk, external);
@@ -269,13 +187,8 @@ test("a stale bibliography form cannot overwrite externally changed YAML", async
       {path: file.path, beforeDigest: file.digest, afterText: draft},
     ])).rejects.toThrow("The paper changed elsewhere");
     expect(await readFile(disk, "utf8")).toBe(external);
-    expect(readEntries(draft)[0].fields.title).toBe("表单草稿");
+    expect(readEntries(draft)).toEqual(readEntries(file.text));
   } finally {
     await rm(directory, { recursive: true, force: true });
   }
-});
-test("deletion cannot retarget a surviving field to an earlier anchor of the same name", (): void => {
-  const source = "a: {type: book, title: &t Alpha}\nb: {type: book, title: &t Beta}\nc: {type: book, title: *t}\n";
-  expect((): string => removeEntry(source, "b")).toThrow(/title.*entry "c".*YAML/u);
-  expect(readEntries(removeEntry(source, "a"))[1].fields.title).toBe("Beta");
 });

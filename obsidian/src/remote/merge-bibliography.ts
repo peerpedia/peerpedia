@@ -1,14 +1,13 @@
 import { isDeepStrictEqual as equal } from "node:util";
-import { isAlias, isMap, isNode, isScalar, parseDocument, visit } from "yaml";
-import { readEntries } from "../bibliography/document";
+import { isAlias, isMap, isNode, isScalar, visit } from "yaml";
+import { readEntries, parseBibliography } from "../bibliography/document";
 import { mergeText } from "./merge-text";
 
 interface Parts { header: string; entries: Map<string,string> }
 type Conflict = (target: string, base: string|null, local: string|null, remote: string|null) => string|null;
 
 function parts(source: string): Parts {
-  readEntries(source);
-  const doc = parseDocument(source);
+  const {doc} = parseBibliography(source);
   const entries = new Map<string,string>();
   if (doc.contents === null) return {header:source,entries};
   if (!isMap(doc.contents) || doc.contents.flow || doc.directives.docStart || doc.directives.docEnd) throw new Error();

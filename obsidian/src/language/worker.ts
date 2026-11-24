@@ -1,7 +1,7 @@
 import { userErrorMessage } from "../user-error";
 import { ProjectReadError } from "../project/types";
 import { toPublicationDocument } from "../project/publication";
-import { citationImpact, previewCitationRename, validateNewCitationKey } from "../bibliography/rename";
+import { previewCitationRename } from "../bibliography/rename";
 import { previewTitle } from "./title-preview";
 import { inspectChapter } from "../../../editor/chapter-title.js";
 import { analyzeWriting, projectLabels, type SourceAnalysisCache } from "./analysis";
@@ -22,13 +22,6 @@ port.addEventListener("message", ({ data: request }: MessageEvent<LanguageReques
     switch (request.kind) {
       case "publication":
         response = { id: request.id, kind: "publication", value: toPublicationDocument(request.value) };
-        break;
-      case "validateCitationKey":
-        validateNewCitationKey(request.value.project, request.value.key);
-        response = { id: request.id, kind: "validateCitationKey", value: undefined };
-        break;
-      case "citationImpact":
-        response = { id: request.id, kind: "citationImpact", value: citationImpact(request.value.project, request.value.key) };
         break;
       case "citationRename":
         response = { id: request.id, kind: "citationRename",

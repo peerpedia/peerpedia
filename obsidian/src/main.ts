@@ -1,3 +1,4 @@
+import { LanguageWorker } from "./host/language-worker";
 import { UserFacingError } from "./user-error";
 import { join } from "node:path";
 import type { Text } from "@codemirror/state";
@@ -24,10 +25,10 @@ import { WorkspaceContext } from "./ui/workspace-context";
 import { projectMembers, CONFIG_PATH } from "./project/store";
 
 import { SubmissionController } from "./remote/controller";
-import { RendererClient } from "./preview/renderer-client";
+import { BrowserRendererClient } from "./preview/browser-renderer-client";
 import type { RenderRequest, RenderResponse } from "../renderer/protocol";
 import { DEFAULT_ORIGIN, storedIdentity } from "./remote/account";
-import { DeviceCredentials } from "./remote/credentials";
+import { HostCredentials, type CredentialReferences } from "./remote/host-credentials";
 import { NodeTransport } from "./remote/transport";
 import type { AccountIdentity } from "./remote/types";
 import { ConnectionModal } from "./ui/connection-modal";
@@ -57,7 +58,7 @@ export default class PeerpediaPlugin extends Plugin {
   override async onload(): Promise<void> {
     const adapter = this.app.vault.adapter;
     if (!(adapter instanceof FileSystemAdapter)) return;
-    const settings: { writingScope?: Partial<WritingScope>; connection?: unknown; connectionCleanup?: unknown } | null = await this.loadData();
+    const settings: { writingScope?: Partial<WritingScope>; connection?: unknown; connectionCleanup?: unknown; credentialReferences?: unknown } | null = await this.loadData();
     this.writingScope = {
       folders: scopeRules(settings?.writingScope?.folders),
       files: scopeRules(settings?.writingScope?.files),
@@ -82,9 +83,13 @@ export default class PeerpediaPlugin extends Plugin {
     const transport = new NodeTransport();
     this.connectionIdentity = storedIdentity(settings?.connection);
     this.importOrigin = this.connectionIdentity?.origin ?? DEFAULT_ORIGIN;
-    const dir = this.manifest.dir ?? this.app.vault.configDir + "/plugins/" + this.manifest.id;
-    const credentials = new DeviceCredentials(join(adapter.getBasePath(),dir,"native/keychain"));
-    const renderer = new RendererClient({runtimePath:join(adapter.getBasePath(),dir,"renderer")});
+    const language = new LanguageWorker();
+    this.register((): void => language.dispose());
+    const credentials = new HostCredentials(this.app.secretStorage, settings?.credentialReferences,
+      (references: CredentialReferences): Promise<void> => this.mutateSettings((data: Record<string, unknown>): void => {
+        data.credentialReferences = references;
+      }));
+    const renderer = new BrowserRendererClient();
     this.register(():void => { void renderer.dispose(); });
     const submissions = new SubmissionController(store,():AccountIdentity|null => this.connectionIdentity,credentials,transport,
       (request:RenderRequest,signal:AbortSignal):Promise<RenderResponse> => renderer.render(request,signal));
@@ -92,7 +97,7 @@ export default class PeerpediaPlugin extends Plugin {
     this.registerView(PROJECT_PANEL, (leaf: WorkspaceLeaf): ProjectPanel => new ProjectPanel(leaf, store,
       (root: string): Promise<void> => this.updateWritingScope({
         ...this.writingScope, folders: { ...this.writingScope.folders, [root]: true },
-      }), (): string => this.importOrigin, transport, dir, submissions, {
+      }), (): string => this.importOrigin, transport, language, submissions, {
         preview:(root: string): Promise<void> => openPaperPreview(root), connect:(): void => connection.open(),
       }));
     const paperRoot = async (file: TAbstractFile | null): Promise<string | undefined> => {
@@ -125,7 +130,7 @@ export default class PeerpediaPlugin extends Plugin {
       (identity: AccountIdentity | null, pending: readonly AccountIdentity[]): Promise<void> => this.updateConnection(identity, pending), cleanup);
     this.addCommand({ id: "connect-account", name: "Connect or disconnect a Peerpedia account", callback: (): void => connection.open() });
     this.register((): void => connection.close());
-    this.registerView(PREVIEW_VIEW, (leaf: WorkspaceLeaf): PreviewView => new PreviewView(leaf, store, dir));
+    this.registerView(PREVIEW_VIEW, (leaf: WorkspaceLeaf): PreviewView => new PreviewView(leaf, store, language, renderer));
     const openPaperPreview = async (selectedRoot?: string): Promise<void> => {
       const root = selectedRoot ?? await paperRoot(this.app.workspace.getActiveFile());
       if(root===undefined){new Notice("Open a chapter in a paper folder first.");return;}
@@ -218,7 +223,7 @@ export default class PeerpediaPlugin extends Plugin {
     }));
     const editors = new WritingEditors((path: string): boolean =>
       resolveScope(path, this.writingScope.folders, this.writingScope.files));
-    const projects = new WritingProjects(this.app, adapter.getBasePath(), (): void => editors.invalidate());
+    const projects = new WritingProjects(this.app, adapter.getBasePath(), (): void => editors.invalidate(), language);
     this.registerEvent(this.app.vault.on("modify", (file: TAbstractFile): void => {
       if (!/\.md$/i.test(file.path)) return;
       // Capture at the event boundary. Obsidian reads the new bytes asynchronously,
@@ -261,7 +266,7 @@ export default class PeerpediaPlugin extends Plugin {
     const suggest = new BananaMarkSuggest(
       this.app,
       (editor: Editor, path: string): ReturnType<WritingEditors["viewFor"]> => editors.viewFor(editor, path),
-      projects,
+      projects, language,
     );
     this.writingEditors = editors;
     this.writingProjects = projects;
