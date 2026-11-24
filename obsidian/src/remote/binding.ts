@@ -76,7 +76,7 @@ interface BindingHistory {
   count: number;
 }
 
-async function records(tree: AnchoredFiles, dir: string, visit?: (binding: RemoteBinding) => void): Promise<BindingHistory> {
+async function records(tree: AnchoredFiles, dir: string, visit?: (binding: RemoteBinding) => void, atDigest?: string): Promise<BindingHistory> {
   let names: string[];
   try { names = tree.list(join(dir,history)); }
   catch (error: unknown) { if (!isMissing(error)) throw error; names = []; }
@@ -90,6 +90,7 @@ async function records(tree: AnchoredFiles, dir: string, visit?: (binding: Remot
   let binding = decodeBinding(rootRecord.binding);
   visit?.(binding);
   let digest = initial.digest;
+  if (atDigest === digest) return {binding,digest,count:0};
   const expected = new Set(names);
   for (let index = 1; index <= names.length; ++index) {
     const name = index + ".json";
@@ -106,8 +107,15 @@ async function records(tree: AnchoredFiles, dir: string, visit?: (binding: Remot
       visit?.(binding);
     }
     digest = entry.digest;
+    if (atDigest === digest) return {binding,digest,count:index};
   }
   return {binding,digest,count:names.length};
+}
+
+export async function bindingAtDigest(tree:AnchoredFiles, root:string, expected:string):Promise<RemoteBinding> {
+  const version = await records(tree,join(root,state),undefined,expected);
+  if (version.digest !== expected || !version.binding) throw new Error("Could not verify the original binding for this submission.");
+  return version.binding;
 }
 
 export async function readVersion(tree: AnchoredFiles, root: string): Promise<BindingVersion> {
@@ -129,7 +137,7 @@ export async function writeVersion(tree: AnchoredFiles, root: string, binding: R
   if (intent && (!mergeTransaction || object(JSON.parse(intent.text)).transaction !== mergeTransaction)) throw new Error("请先处理未完成的合并。");
   if (digest !== expectedDigest) throw new Error("本地绑定已更改，请重新检查。");
   if (!previous && await tree.source(join(dir,pending))) throw new Error("请先完成导入绑定。");
-  if (!await tree.source(join(root,"paper.json"))) throw new Error("论文缺少 paper.json。");
+  if (!push && !await tree.source(join(root,"paper.json"))) throw new Error("论文缺少 paper.json。");
   const verified = decodeBinding(binding);
   if (previous && (previous.origin !== verified.origin || previous.paperId !== verified.paperId)) throw new Error("论文绑定身份已更改。");
   if (isDeepStrictEqual(previous,verified)) return;

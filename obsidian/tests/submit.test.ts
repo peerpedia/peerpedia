@@ -32,7 +32,8 @@ test("selected loopback and site agreement, token scopes, metadata normalization
 test("self-consistent snapshots with different submitted content, identity, AI flag or proposal are refused", ():void => {
   const request = prepareSubmission(project,binding,account,"append-pr",details);
   const valid = receipt(binding.acceptedBase.hash,binding.activePr!.id,2);
-  expect(verifyReceipt(request,valid).snapshot.hash).toBe(valid.hash);
+  const head = {...binding.activePr!,number:1};
+  expect(verifyReceipt(request,valid,head).snapshot.hash).toBe(valid.hash);
   const mutations:((row:Receipt)=>void)[] = [
     (row:Receipt):void => { row.manifest.title+="!"; },(row:Receipt):void => { row.manifest.authors+="!"; },
     (row:Receipt):void => { row.manifest.abstract+="!"; },(row:Receipt):void => { row.manifest.explanation+="!"; },
@@ -49,6 +50,13 @@ test("self-consistent snapshots with different submitted content, identity, AI f
   for (const mutate of mutations) {
     const row = structuredClone(valid);
     mutate(row);
-    expect(():unknown => verifyReceipt(request,rehash(row))).toThrow();
+    expect(():unknown => verifyReceipt(request,rehash(row),head)).toThrow();
   }
+});
+
+test("append receipts must be the exact successor of the reviewed ordinal", ():void => {
+  const request = prepareSubmission(project,binding,account,"append-pr",details);
+  const head = {...binding.activePr!,number:7};
+  expect(verifyReceipt(request,receipt(binding.acceptedBase.hash,head.id,8),head).proposal?.number).toBe(8);
+  expect(():unknown=>verifyReceipt(request,receipt(binding.acceptedBase.hash,head.id,999),head)).toThrow();
 });

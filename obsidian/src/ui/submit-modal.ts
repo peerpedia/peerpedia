@@ -22,7 +22,6 @@ function showRequest(box:HTMLElement, request:PreparedSubmission): void {
   if (doc.bibliography) { box.createEl("h4",{text:"Bibliography"}); box.createEl("pre",{text:doc.bibliography}); }
   box.createEl("p",{text:request.origin+" · "+request.username+" · "+labels[request.intent]});
   if (doc.expected_head) box.createEl("p",{text:"Current proposal snapshot · "+doc.expected_head});
-  box.createEl("p",{text:request.intent === "publish" ? "Confirming will publish this paper publicly." : "Confirming will create a public proposal snapshot for consideration."});
 }
 
 function changes(box:HTMLElement, previous:PublicationDocument, current:PublicationDocument):void {
@@ -75,7 +74,13 @@ export class SubmitModal extends Modal {
     const el = this.contentEl;
     el.empty();
     el.createEl("p",{text:context.identity.origin+" · "+context.identity.username});
+    if (context.changedHead) el.createEl("p",{text:"The open proposal has changed. Compare it before appending, or create an independent proposal."});
     const mode = el.createEl("label",{text:"Submission type "}).createEl("select");
+    if (context.changedHead) {
+      const choose = mode.createEl("option",{text:"Choose a submission type",value:""});
+      choose.disabled = true;
+      choose.selected = true;
+    }
     mode.createEl("option",{text:labels[context.intent],value:context.intent});
     if (context.intent === "append-pr") mode.createEl("option",{text:labels["new-pr"],value:"new-pr"});
     const lookup = el.createEl("details");
@@ -86,10 +91,12 @@ export class SubmitModal extends Modal {
     explanation.value = this.details.explanation;
     const ai = el.createEl("label",{text:"AI assisted "}).createEl("input",{type:"checkbox"});
     ai.checked = this.details.aiAssisted;
-    button(el,"Preview submission",():void => {
+    const preview = button(el,"Preview submission",():void => {
       this.details = {explanation:explanation.value,aiAssisted:ai.checked};
       this.run(():Promise<void> => this.preview(mode.value as SubmissionIntent));
     });
+    preview.disabled = !mode.value;
+    mode.onchange = ():void => { preview.disabled = !mode.value; };
   }
   private async preview(intent:SubmissionIntent): Promise<void> {
     this.contentEl.setText("Validating and rendering the manuscript…");
@@ -103,6 +110,7 @@ export class SubmitModal extends Modal {
     else if (!review) box.createEl("p",{text:"The previous submission is awaiting confirmation. Retry sends the saved content below with the original request ID."});
     showRequest(box,request);
     if (review) {
+      box.createEl("p",{text:request.intent === "publish" ? "Confirming will publish this paper publicly." : "Confirming will create a public proposal snapshot for consideration."});
       const article = box.createEl("details");
       article.createEl("summary",{text:"Rendered manuscript"});
       for (const page of review.pages) article.createEl("article").appendChild(articleFragment(box.ownerDocument,page.html));

@@ -8,7 +8,7 @@ import { openBuffers } from "../host/file-events";
 import { VaultProjectStore } from "../host/vault-store";
 import { chapterTitleEdit, changeMembership, configChange, newPaper, reorderChapter } from "../project/management";
 import { RECOVERY_DIR, type RecoveryNotice } from "../project/recovery";
-import { CONFIG_PATH, type FileChange, type ProjectEvent } from "../project/store";
+import { CONFIG_PATH, projectMembers, type FileChange, type ProjectEvent } from "../project/store";
 import type { ChapterSpec, ProjectSnapshot, SourceFile } from "../project/types";
 import { ConflictModal, errorMessage, openLocalFile } from "./conflict-modal";
 
@@ -194,13 +194,17 @@ export class ProjectPanel extends ItemView {
       });
     }
     const project = this.snapshot;
-    if (!project) return;
-    if (this.submissions && !this.bindingError && !this.binding?.pendingMerge && !this.binding?.pendingImport)
+    const root = this.root;
+    const complete = project && project.files.length === projectMembers(project.config).length;
+    if (root !== null && this.submissions && !this.bindingError && !this.binding?.pendingMerge && !this.binding?.pendingImport
+      && (this.binding?.pendingSubmission || complete)) {
       button(this.contentEl,this.binding?.pendingSubmission ? "Review pending submission" : "Submit to Peerpedia",():void => {
-        new SubmitModal(this.app,project.root,this.store,this.submissions!,async ():Promise<void> => {
-          if (this.root === project.root) await this.selectRoot(project.root);
+        new SubmitModal(this.app,root,this.store,this.submissions!,async ():Promise<void> => {
+          if (this.root === root) await this.selectRoot(root);
         }).open();
       });
+    }
+    if (!project) return;
     this.renderRemote(project);
     this.contentEl.createEl("h3", { text: project.config.title || "未命名论文" });
     button(this.contentEl, "编辑论文信息", (): void => this.metadataForm(project));

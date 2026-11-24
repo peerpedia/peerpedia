@@ -4,7 +4,7 @@ import type { RenderPage, RenderRequest, RenderResponse } from "../../renderer/p
 import type { VaultProjectStore } from "../host/vault-store";
 import type { ProjectSnapshot } from "../project/types";
 import { PeerpediaApi } from "./api";
-import { checkAccount, defaultIntent, prepareSubmission, publication, type PreparedSubmission, type SubmissionDetails, type SubmissionIntent } from "./submit";
+import { checkAccount, defaultIntent, prepareSubmission, publication, type AppendHead, type PreparedSubmission, type SubmissionDetails, type SubmissionIntent } from "./submit";
 import type { AccountIdentity, AccountInfo, Category, CredentialStore, LicenseOption, RemoteBinding, Transport, VerifiedSnapshot } from "./types";
 
 import type { BindingVersion } from "./binding";
@@ -37,7 +37,7 @@ export async function checkProject(root: string, api: PeerpediaApi, store: Check
 
 export interface Catalog { categories:readonly Category[]; licenses:readonly LicenseOption[] }
 export interface SubmitContext {
-  identity:AccountIdentity; account:AccountInfo; binding:RemoteBinding|null; digest:string|null; intent:SubmissionIntent; catalog:Catalog; proposalHead:VerifiedSnapshot|null;
+  identity:AccountIdentity; account:AccountInfo; binding:RemoteBinding|null; digest:string|null; intent:SubmissionIntent; catalog:Catalog; proposalHead:VerifiedSnapshot|null; predecessor:AppendHead|null; changedHead:boolean;
 }
 export interface SubmissionReview {context:SubmitContext; project:ProjectSnapshot; request:PreparedSubmission; pages:readonly RenderPage[]}
 type Validate = (request:RenderRequest,signal:AbortSignal)=>Promise<RenderResponse>;
@@ -57,7 +57,7 @@ export class SubmissionController {
     return value;
   }
 
-  async open(root:string): Promise<SubmitContext> {
+  async open(root:string, intent?:SubmissionIntent): Promise<SubmitContext> {
     const version = await this.store.readBindingVersion(root);
     if (version.pendingSubmission || version.pendingMerge || version.pendingImport) throw new Error("Complete the pending project operation first.");
     const identity = this.identity();
@@ -67,26 +67,30 @@ export class SubmissionController {
     checkAccount(account,identity.username,version.binding ? "new-pr" : "publish");
     let binding = version.binding;
     let proposalHead:VerifiedSnapshot|null = null;
+    let predecessor:AppendHead|null = null;
+    let changedHead = false;
     if (binding) {
       const source = binding.workingBase;
       let prId = binding.activePr?.id ?? binding.proposalSource?.id;
-      if (!prId && source.status !== "accepted") {
+      if (intent !== "new-pr" && !prId && source.status !== "accepted") {
         const exact = await api.proposalSnapshot(source.submissionId);
         if (exact.snapshot.hash !== source.hash) throw new Error("The working snapshot differs from the site’s record.");
         prId = exact.proposal?.id;
       }
-      const check = await checkRemote(binding,api,prId);
+      const check = intent === "new-pr" ? {current:await api.current(binding.paperId),activePr:null} : await checkRemote(binding,api,prId);
       if (check.current.hash !== binding.acceptedBase.hash || (source.hash !== check.current.hash && source.manifest.base_hash !== check.current.hash))
         throw new Error("Compare and confirm the current accepted version first.");
       const head = check.activePr;
-      if (head?.status === "pending" && head.owner === identity.username &&
-        (binding.activePr ? head.hash !== binding.activePr.hash || head.submissionId !== binding.activePr.submissionId :
-          head.hash !== source.hash || head.submissionId !== source.submissionId)) throw new Error("The open proposal has changed. Compare and confirm its head first.");
-      if (head?.status === "pending" && head.owner === identity.username) {
+      const owned = head?.status === "pending" && head.owner === identity.username;
+      const incorporated = binding.activePr ?? source;
+      changedHead = !!owned && (head.hash !== incorporated.hash || head.submissionId !== incorporated.submissionId);
+      if (intent === "append-pr" && (!owned || changedHead)) throw new Error("Compare and confirm the open proposal before appending.");
+      if (owned && !changedHead && intent !== "new-pr") {
         const exact = await api.proposalSnapshot(head.submissionId);
         if (exact.proposal?.id !== head.id || exact.snapshot.hash !== head.hash || exact.snapshot.paperId !== binding.paperId
           || exact.snapshot.status !== "pending" || exact.snapshot.manifest.contributor_name !== identity.username) throw new Error("The proposal head changed. Review it again.");
         proposalHead = exact.snapshot;
+        predecessor = {id:head.id,submissionId:head.submissionId,hash:head.hash,number:exact.proposal.number};
       }
       binding = {...binding,activePr:head};
     }
@@ -96,11 +100,11 @@ export class SubmissionController {
       catalog = {categories,licenses};
       this.catalogs.set(api.origin,catalog);
     }
-    return {identity,account,binding,digest:version.digest,intent:defaultIntent(binding,identity.username),catalog,proposalHead};
+    return {identity,account,binding,digest:version.digest,intent:changedHead ? "new-pr" : defaultIntent(binding,identity.username),catalog,proposalHead,predecessor,changedHead};
   }
 
   async review(root:string, intent:SubmissionIntent, details:SubmissionDetails, signal:AbortSignal): Promise<SubmissionReview> {
-    const context = await this.open(root);
+    const context = await this.open(root,intent);
     const project = await this.store.read(root);
     const doc = publication(project);
     const codes = [doc.primary_category,...doc.secondary_categories];
@@ -122,11 +126,12 @@ export class SubmissionController {
 
   async confirm(review:SubmissionReview, live:()=>boolean): Promise<VerifiedSnapshot> {
     const {request,project,context} = review;
-    const now = await this.open(project.root);
-    if (!equal(now.identity,context.identity) || now.digest !== context.digest || !equal(now.binding,context.binding))
+    const now = await this.open(project.root,request.intent);
+    if (!equal(now.identity,context.identity) || now.digest !== context.digest
+      || (request.intent === "append-pr" && !equal(now.predecessor,context.predecessor)))
       throw new Error("The site, account or version changed. Preview it again before confirming.");
     const token = await this.token(request.origin,request.username);
-    await this.store.submissions.persistRequest(project.root,request,context.digest,live);
+    await this.store.submissions.persistRequest(project.root,request,context.digest,live,context.predecessor);
     return this.store.submissions.sendPrepared(project.root,request,token,this.transport);
   }
 

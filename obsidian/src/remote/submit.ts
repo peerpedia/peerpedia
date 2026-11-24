@@ -100,7 +100,8 @@ export function prepareSubmission(project: ProjectSnapshot, binding: RemoteBindi
 
 export interface PushReceipt {snapshot:VerifiedSnapshot; proposal:{id:string;number:number}|null}
 
-export function verifyReceipt(request: PreparedSubmission, raw: unknown): PushReceipt {
+export interface AppendHead {id:string; submissionId:string; hash:string; number:number}
+export function verifyReceipt(request: PreparedSubmission, raw: unknown, head?: AppendHead|null): PushReceipt {
   const row = object(raw), snapshot = verifySnapshot(row);
   const {paper_id,base_hash,explanation,ai_assisted,pull_request_id,expected_head,...doc} = frozenPayload(request);
   if (!equal(doc,snapshot.document) || row.ai_assisted !== ai_assisted || snapshot.manifest.contributor_name !== request.username
@@ -112,6 +113,8 @@ export function verifyReceipt(request: PreparedSubmission, raw: unknown): PushRe
   }
   const pr = object(row.pull_request);
   if (!isUuid(pr.id) || typeof pr.snapshot !== "number" || !Number.isSafeInteger(pr.snapshot)
-    || (pull_request_id ? pr.id !== pull_request_id || pr.snapshot < 2 || snapshot.hash === expected_head : pr.snapshot !== 1)) throw new ProtocolError();
+    || (pull_request_id ? !head || head.id !== pull_request_id || head.hash !== expected_head || !isUuid(head.submissionId)
+      || !Number.isSafeInteger(head.number) || head.number < 1 || pr.id !== head.id || pr.snapshot !== head.number+1
+      || snapshot.submissionId === head.submissionId || snapshot.hash === expected_head : pr.snapshot !== 1)) throw new ProtocolError();
   return {snapshot,proposal:{id:pr.id,number:pr.snapshot}};
 }

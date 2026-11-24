@@ -127,3 +127,27 @@ test("the modal shows the settings failure without claiming a verified or stored
   expect(control("url").disabled).toBe(false);
   expect(():TestElement => control("权限：")).toThrow(/Missing control/);
 });
+
+import { ProjectPanel } from "../src/ui/project-panel";
+import type { VaultProjectStore } from "../src/host/vault-store";
+import type { SubmissionController } from "../src/remote/controller";
+
+test("reopening an unreadable manuscript renders the saved request action from its root",async ():Promise<void>=>{
+  vi.stubGlobal("__PEERPEDIA_LANGUAGE_WORKER__", "");
+  const controls:string[]=[];
+  const store = {readBindingVersion:vi.fn().mockResolvedValue({pendingSubmission:true}),recovery:vi.fn().mockResolvedValue([]),
+    watch:vi.fn(),read:vi.fn().mockRejectedValue(new Error("invalid paper.json"))};
+  const panel = new ProjectPanel({} as WorkspaceLeaf,store as unknown as VaultProjectStore,vi.fn(),vi.fn(),{request:vi.fn()},{} as SubmissionController);
+  const content = {empty:():void=>{controls.length=0;},addClass:vi.fn(),createDiv:():unknown=>content,
+    createEl:(tag:string,options:{text?:string}):object=>{if (tag==="button") controls.push(options.text!); return {};}};
+  Object.assign(panel,{contentEl:content});
+  try {
+    await panel.selectRoot("paper");
+    expect(controls).toContain("Review pending submission");
+    expect(controls).not.toContain("Submit to Peerpedia");
+    store.readBindingVersion.mockResolvedValue({pendingSubmission:false});
+    await panel.selectRoot("paper");
+    expect(controls).not.toContain("Review pending submission");
+    expect(controls).not.toContain("Submit to Peerpedia");
+  } finally {vi.unstubAllGlobals();}
+});

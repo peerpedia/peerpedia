@@ -14,6 +14,7 @@ import { account, details, origin, project, root, snapshot } from "./fixtures/pu
 import { readFile, readdir } from "node:fs/promises";
 import { vi } from "vitest";
 import { AnchoredFiles } from "../src/project/anchored-files";
+import original from "./fixtures/manifests/v4.json";
 import { binding, receipt, rehash } from "./fixtures/publishing";
 import { SubmissionController } from "../src/remote/controller";
 import type { RenderPage as RenderResponsePage, RenderRequest, RenderResponse } from "../renderer/protocol";
@@ -59,6 +60,7 @@ test("lost response fences new publishes, reopens the frozen bytes after a local
 function site(push:()=>HttpResponse|Promise<HttpResponse>):Transport {
   return {async request(_origin:string,route:string):Promise<HttpResponse> {
     if (route==="/api/v1/me/") return response(200,{...account,expires_at:account.expiresAt});
+    if (route==="/api/v1/submissions/"+snapshot.submissionId+"/") return response(200,{...original,status:"pending",pull_request:{id:binding.activePr!.id,snapshot:1}});
     if (route==="/api/v1/categories/") return response(200,{categories:["cs.AI","cs.PL","math.AG"].map((code:string):object=>({code,name:code}))});
     if (route==="/api/v1/licenses/") return response(200,{licenses:[{code:"CC-BY-4.0",label:"CC BY",url:"/license/"}]});
     if (route!=="/api/v1/push/") throw new Error("unexpected route "+route);
@@ -208,4 +210,129 @@ test("a documented credential rejection followed by a definite stale response re
   await expect(store.submissions.sendPrepared(root,request,"expired-secret",site(():HttpResponse=>response(401,{error:{code:"invalid_token"}})))).rejects.toThrow();
   await expect(store.submissions.retryPending(root,account.username,"replacement-secret",site(():HttpResponse=>response(409,{error:{code:"stale_base"}})))).rejects.toThrow();
   expect(await store.submissions.pending(root)).toBeNull();
+});
+
+test.each(["proposal","status","httpStatus","licenseLabel"])("offline recovery refuses a corrupted %s after a verified new proposal receipt",async (field:string):Promise<void>=>{
+  await store.saveBinding(root,binding,null);
+  const request = prepareSubmission(project,binding,account,"new-pr",details);
+  await store.submissions.persistRequest(root,request);
+  const prId = "00000000-0000-0000-0000-0000000000ee";
+  const raw = receipt(snapshot.hash,prId);
+  const rename = AnchoredFiles.prototype.rename;
+  const fault = vi.spyOn(AnchoredFiles.prototype,"rename").mockImplementation(function(this:AnchoredFiles,from:string,to:string,mode:"swap"|"publish"):void {
+    if (to.endsWith("binding-history/1.json")) throw new Error("before binding");
+    rename.call(this,from,to,mode);
+  });
+  try { await expect(store.submissions.sendPrepared(root,request,"test-only-token",site(():HttpResponse=>response(201,raw)))).rejects.toThrow("before binding"); }
+  finally { fault.mockRestore(); }
+  const path = join(vault,root,".peerpedia-obsidian/submit-"+request.id+"-receipt.json");
+  const saved = JSON.parse(await readFile(path,"utf8"));
+  if (field==="proposal") saved.raw.pull_request.id = "00000000-0000-0000-0000-0000000000ef";
+  else if (field==="status") saved.raw.status = "withdrawn";
+  else if (field==="licenseLabel") saved.raw.licensing.label="changed";
+  else saved.httpStatus=200;
+  await writeFile(path,JSON.stringify(saved));
+  await expect(reopen().submissions.recoverReceipt(root,request)).rejects.toThrow();
+  expect(await reopen().loadBinding(root)).toEqual(binding);
+  expect(await reopen().submissions.pending(root)).toEqual(request);
+});
+
+test("direct append freezes exact predecessor before POST and rejects impossible superseded ordinal on restarted replay",async ():Promise<void>=>{
+  await store.saveBinding(root,binding,null);
+  const req = prepareSubmission(project,binding,account,"append-pr",details), previous = binding.activePr!;
+  const exact = vi.spyOn(PeerpediaApi.prototype,"proposalSnapshot").mockResolvedValue({snapshot:{...snapshot,status:"pending"},proposal:{id:previous.id,number:6}});
+  const first = site(():HttpResponse=>{throw new Error("lost response");});
+  try {
+    await store.submissions.persistRequest(root,req);
+    await expect(store.submissions.sendPrepared(root,req,"test-token",first)).rejects.toThrow("lost response");
+    expect(exact).toHaveBeenCalledExactlyOnceWith(previous.submissionId);
+    exact.mockRejectedValue(new Error("original frozen proof must be used"));
+    const bad = {...receipt(snapshot.hash,previous.id,999),status:"superseded"};
+    await expect(reopen().submissions.retryPending(root,account.username,"test-token",site(():HttpResponse=>response(200,bad)))).rejects.toThrow();
+    expect(await reopen().submissions.pending(root)).toEqual(req);
+    const good = {...bad,pull_request:{id:previous.id,snapshot:7}};
+    await reopen().submissions.retryPending(root,account.username,"test-token",site(():HttpResponse=>response(200,good)));
+    expect((await store.loadBinding(root))?.proposalSource?.number).toBe(7);
+    expect(exact).toHaveBeenCalledTimes(1);
+  } finally {exact.mockRestore();}
+});
+
+test("a changed unrelated head prevents append but allows independent new-proposal review and confirmation",async ():Promise<void>=>{
+  await store.saveBinding(root,binding,null);
+  const head = binding.activePr!, newId = "00000000-0000-0000-0000-0000000000ee";
+  const current = vi.spyOn(PeerpediaApi.prototype,"current").mockResolvedValue(snapshot);
+  const prs = vi.spyOn(PeerpediaApi.prototype,"prs").mockResolvedValue([{...head,hash:"a".repeat(64)}]);
+  const controller = new SubmissionController(store,():{origin:string;username:string}=>({origin,username:account.username}),
+    {read:async ():Promise<string>=>"site-token",write:vi.fn(),remove:vi.fn()},site(():HttpResponse=>response(201,receipt(snapshot.hash,newId))),
+    async (req:RenderRequest):Promise<RenderResponse>=>({id:req.id,revision:req.revision,pages:req.document.chapters.map(
+      (ch:RenderRequest["document"]["chapters"][number]):RenderResponsePage=>({id:ch.id,title:ch.title,html:"text",targets:[]}))}));
+  try {
+    expect((await controller.open(root)).intent).toBe("new-pr");
+    await expect(controller.review(root,"append-pr",details,new AbortController().signal)).rejects.toThrow();
+    const review = await controller.review(root,"new-pr",details,new AbortController().signal);
+    expect(JSON.parse(review.request.payloadJson)).not.toHaveProperty("pull_request_id");
+    prs.mockResolvedValue([{...head,hash:"b".repeat(64)}]);
+    await controller.confirm(review,():boolean=>true);
+    expect((await store.loadBinding(root))?.activePr?.id).toBe(newId);
+  } finally {current.mockRestore(); prs.mockRestore();}
+});
+
+test("controller freezes the ordinal compared at confirmation and a restart keeps that exact predecessor",async ():Promise<void>=>{
+  await store.saveBinding(root,binding,null);
+  const head = binding.activePr!;
+  const current = vi.spyOn(PeerpediaApi.prototype,"current").mockResolvedValue(snapshot);
+  const prs = vi.spyOn(PeerpediaApi.prototype,"prs").mockResolvedValue([head]);
+  const exact = vi.spyOn(PeerpediaApi.prototype,"proposalSnapshot").mockResolvedValue({snapshot:{...snapshot,status:"pending"},proposal:{id:head.id,number:6}});
+  const post = vi.fn(():HttpResponse=>response(201,receipt(snapshot.hash,head.id,999)));
+  const controller = new SubmissionController(store,():{origin:string;username:string}=>({origin,username:account.username}),
+    {read:async ():Promise<string>=>"site-token",write:vi.fn(),remove:vi.fn()},site(post),async (req:RenderRequest):Promise<RenderResponse>=>({
+      id:req.id,revision:req.revision,pages:req.document.chapters.map((ch:RenderRequest["document"]["chapters"][number]):RenderResponsePage=>
+        ({id:ch.id,title:ch.title,html:"<p>test</p>",targets:[]}))}));
+  try {
+    const review = await controller.review(root,"append-pr",details,new AbortController().signal);
+    exact.mockResolvedValueOnce({snapshot:{...snapshot,status:"pending"},proposal:{id:head.id,number:7}});
+    await expect(controller.confirm(review,():boolean=>true)).rejects.toThrow(/changed/);
+    expect(post).not.toHaveBeenCalled();
+    await expect(controller.confirm(review,():boolean=>true)).rejects.toThrow();
+    expect(post).toHaveBeenCalledTimes(1);
+    expect(exact).toHaveBeenCalledTimes(3);
+    const pending = JSON.parse(await readFile(join(vault,root,".peerpedia-obsidian/submit-pending.json"),"utf8"));
+    expect(pending.head).toEqual({id:head.id,hash:head.hash,submissionId:head.submissionId,number:6});
+    expect(await reopen().submissions.pending(root)).toEqual(review.request);
+    post.mockReturnValue(response(200,receipt(snapshot.hash,head.id,7)));
+    await reopen().submissions.retryPending(root,account.username,"site-token",site(post));
+    expect(exact).toHaveBeenCalledTimes(3);
+  } finally {current.mockRestore();prs.mockRestore();exact.mockRestore();}
+});
+
+test("old unsigned receipt can only complete after an explicit verified same-key replay",async ():Promise<void>=>{
+  const request = prepareSubmission(project,null,account,"publish",details);
+  await store.submissions.persistRequest(root,request);
+  const path = join(vault,root,".peerpedia-obsidian/submit-"+request.id+"-receipt.json");
+  await writeFile(path,JSON.stringify({id:request.id,payloadDigest:request.payloadDigest,checkedAt:new Date().toISOString(),raw:receipt(null)}));
+  await expect(reopen().submissions.recoverReceipt(root,request)).rejects.toThrow();
+  const post = vi.fn(():HttpResponse=>response(200,receipt(null)));
+  await reopen().submissions.retryPending(root,account.username,"site-token",site(post));
+  expect(post).toHaveBeenCalledTimes(1);
+  const saved = JSON.parse(await readFile(path,"utf8"));
+  expect(saved.httpStatus).toBe(200);
+  expect(saved.digest).toMatch(/^[0-9a-f]{64}$/);
+});
+test("a verified saved receipt finishes offline even after later paper.json becomes unreadable",async ():Promise<void>=>{
+  const req = prepareSubmission(project,null,account,"publish",details);
+  await store.submissions.persistRequest(root,req);
+  const rename = AnchoredFiles.prototype.rename;
+  const fault = vi.spyOn(AnchoredFiles.prototype,"rename").mockImplementation(function(this:AnchoredFiles,from:string,to:string,mode:"swap"|"publish"):void {
+    if (to.endsWith("/binding.json")) throw new Error("before binding");
+    rename.call(this,from,to,mode);
+  });
+  try { await expect(store.submissions.sendPrepared(root,req,"local-secret",site(():HttpResponse=>response(201,receipt(null))))).rejects.toThrow("before binding"); }
+  finally { fault.mockRestore(); }
+  const config = join(vault,root,"paper.json"), damaged = Buffer.from([255]);
+  await writeFile(config,damaged);
+  const reopened = reopen();
+  await expect(reopened.read(root)).rejects.toThrow();
+  await reopened.submissions.recoverReceipt(root,req);
+  expect(await reopened.submissions.pending(root)).toBeNull();
+  expect(await readFile(config)).toEqual(damaged);
 });
