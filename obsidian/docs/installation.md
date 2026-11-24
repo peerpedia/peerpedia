@@ -6,7 +6,7 @@ The plugin contains the shared website renderer, theme, fonts and TikZ engine. W
 
 ## Download and install
 
-Download [Peerpedia 0.1.4 for Apple silicon Macs](https://github.com/peerpedia/peerpedia/releases/download/v0.1.4/peerpedia-obsidian-0.1.4-darwin-arm64.zip) and its [SHA-256 checksum](https://github.com/peerpedia/peerpedia/releases/download/v0.1.4/peerpedia-obsidian-0.1.4-darwin-arm64.zip.sha256). With both in the same folder, run `shasum -a 256 -c peerpedia-obsidian-0.1.4-darwin-arm64.zip.sha256`; the result should say `OK`.
+Download [Peerpedia 0.1.3 for Apple silicon Macs](https://github.com/peerpedia/peerpedia/releases/download/0.1.3/peerpedia-obsidian-0.1.3-darwin-arm64.zip) and its [SHA-256 checksum](https://github.com/peerpedia/peerpedia/releases/download/0.1.3/peerpedia-obsidian-0.1.3-darwin-arm64.zip.sha256). With both in the same folder, run `shasum -a 256 -c peerpedia-obsidian-0.1.3-darwin-arm64.zip.sha256`; the result should say `OK`.
 
 1. Extract the archive. The `peerpedia` folder contains exactly `main.js`, `manifest.json` and `styles.css`. To build from source instead, use the commands below.
 2. Open your vault folder. In Finder, press **⌘⇧.** to show hidden folders and locate `.obsidian/plugins/` (or your custom configuration directory).

@@ -66,7 +66,7 @@ class ObsidianGuideTests(SimpleTestCase):
         self.assertEqual(response.status_code, 200)
         body = response.content.decode()
         archive = f"peerpedia-obsidian-{settings.PROJECT_VERSION}-darwin-arm64.zip"
-        release = f"{settings.PROJECT_REPOSITORY_URL}/releases/download/v{settings.PROJECT_VERSION}"
+        release = f"{settings.PROJECT_REPOSITORY_URL}/releases/download/{settings.PROJECT_VERSION}"
         self.assertContains(response, f'href="{release}/{archive}"')
         self.assertContains(response, f'href="{release}/{archive}.sha256"')
         self.assertContains(response, 'aria-current="page">Obsidian guide')

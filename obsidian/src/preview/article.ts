@@ -13,8 +13,8 @@ const ordinary = words("id class title lang dir aria-label aria-hidden role cols
 const geometry = words("d x y dx dy x1 y1 x2 y2 cx cy r rx ry width height viewBox preserveAspectRatio points transform pathLength font-size font-family text-anchor alignment-baseline dominant-baseline stroke-width stroke-linecap stroke-linejoin stroke-miterlimit stroke-dasharray stroke-dashoffset stroke-opacity fill-rule fill-opacity opacity clip-rule offset gradientUnits gradientTransform markerUnits markerWidth markerHeight refX refY orient");
 const paint = words("fill stroke clip-path mask marker-start marker-mid marker-end stop-color");
 const inline = words("height width min-width max-width top bottom left right margin-left margin-right margin-top margin-bottom padding-left padding-right vertical-align font-size font-family font-style font-weight color background-color border-color border-top-width border-bottom-width border-right-width border-left-width border-bottom-style position display text-align line-height transform transform-origin white-space");
-const fragment = /^#[\w:.\-]+$/u;
-const localPaint = /^(?:none|currentColor|transparent|[a-z]+|#[a-f\d]{3,8}|url\(#[\w:.\-]+\)|rgba?\([\d.,%\s]+\))$/i;
+const fragment = /^#[\w:.-]+$/u;
+const localPaint = /^(?:none|currentColor|transparent|[a-z]+|#[a-f\d]{3,8}|url\(#[\w:.-]+\)|rgba?\([\d.,%\s]+\))$/i;
 
 export function articleLink(value: string): string | null {
   if (value.startsWith("#") || /^\?chapter=[\w%-]+(?:#[^\s]*)?$/.test(value)) return value;
@@ -56,11 +56,9 @@ function copyNode(node: Node, parent: Node, doc: Document): void {
   parent.appendChild(target);
 }
 
-export function articleFragment(doc: Document, html: string): DocumentFragment {
-  const template = doc.createElement("template");
-  template.innerHTML = html;
+export function articleFragment(doc: Document, source: DocumentFragment): DocumentFragment {
   const result = doc.createDocumentFragment();
-  for (const child of Array.from(template.content.childNodes)) copyNode(child, result, doc);
+  for (const child of Array.from(source.childNodes)) copyNode(child, result, doc);
   return result;
 }
 

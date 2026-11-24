@@ -30,12 +30,12 @@ export async function packagePlugin(outputDirectory: string): Promise<void> {
     await mkdir(plugin);
     const inputs = join(staging, "build-inputs.json");
     await run("npm", ["run", "build", "--", join(plugin, "main.js"), inputs], { cwd: project });
-    const manifest: PluginManifest = JSON.parse(await readFile(join(project, "manifest.json"), "utf8"));
+    const manifest: PluginManifest = JSON.parse(await readFile(join(project, "../manifest.json"), "utf8"));
     const metadata: { version: string } = JSON.parse(await readFile(join(project, "package.json"), "utf8"));
     if (manifest.id !== "peerpedia" || manifest.version !== metadata.version || !manifest.isDesktopOnly) {
       throw new Error("Obsidian manifest and package metadata do not agree.");
     }
-    await cp(join(project, "manifest.json"), join(plugin, "manifest.json"));
+    await cp(join(project, "../manifest.json"), join(plugin, "manifest.json"));
     await chmod(plugin, 0o755);
     await rename(plugin, output);
     published = true;

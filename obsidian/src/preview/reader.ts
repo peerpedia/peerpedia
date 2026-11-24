@@ -1,3 +1,4 @@
+import { sanitizeHTMLToDom } from "obsidian";
 import { UserFacingError } from "../user-error";
 import type { RenderPage, SourceTarget } from "../../renderer/protocol";
 import { viewportTarget, type ReaderLocation } from "./source-map";
@@ -109,7 +110,7 @@ export class PreviewReader {
 
   private paint(): void {
     if (!this.page || !this.article) return;
-    this.article.replaceChildren(articleFragment(this.article.ownerDocument, this.page.html));
+    this.article.replaceChildren(articleFragment(this.article.ownerDocument, sanitizeHTMLToDom(this.page.html)));
     this.scroll(this.anchor, this.anchorExact);
   }
 }

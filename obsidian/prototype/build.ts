@@ -78,7 +78,7 @@ await writeFile(
     {
       prototype: true,
       inputs,
-  
+
       rendererBytes: Buffer.byteLength(renderer),
     },
     null,

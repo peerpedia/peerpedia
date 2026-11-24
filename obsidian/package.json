@@ -1,6 +1,6 @@
 {
   "name": "peerpedia-obsidian",
-  "version": "0.1.4",
+  "version": "0.1.3",
   "private": true,
   "type": "module",
   "engines": {
@@ -12,7 +12,8 @@
     "typecheck": "tsc --noEmit",
     "check:types": "eslint .",
     "build": "tsx esbuild.config.ts production",
-    "package": "tsx scripts/package-plugin.ts"
+    "package": "tsx scripts/package-plugin.ts",
+    "check:community": "cd .. && obsidian/node_modules/.bin/eslint --config eslint.community.config.mjs obsidian/src obsidian/renderer manifest.json package.json LICENSE"
   },
   "devDependencies": {
     "@codemirror/autocomplete": "6.20.4",
@@ -24,6 +25,7 @@
     "bananamark-codemirror": "0.1.0",
     "esbuild": "0.28.2",
     "eslint": "10.15.0",
+    "eslint-plugin-obsidianmd": "0.6.0",
     "obsidian": "1.14.4",
     "tsx": "4.23.15",
     "typescript": "5.9.3",

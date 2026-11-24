@@ -17,7 +17,7 @@
 {% block guide_body %}
 <section id="install">
   <h2>Download and install</h2>
-  <p><a href="{{ repository_url }}/releases/download/v{{ project_version }}/peerpedia-obsidian-{{ project_version }}-darwin-arm64.zip">Download Peerpedia {{ project_version }} for Obsidian — Mac with Apple silicon</a> · <a href="{{ repository_url }}/releases/download/v{{ project_version }}/peerpedia-obsidian-{{ project_version }}-darwin-arm64.zip.sha256">SHA-256 checksum</a></p>
+  <p><a href="{{ repository_url }}/releases/download/{{ project_version }}/peerpedia-obsidian-{{ project_version }}-darwin-arm64.zip">Download Peerpedia {{ project_version }} for Obsidian — Mac with Apple silicon</a> · <a href="{{ repository_url }}/releases/download/{{ project_version }}/peerpedia-obsidian-{{ project_version }}-darwin-arm64.zip.sha256">SHA-256 checksum</a></p>
   <p>This package is for desktop Macs with an Apple M-series chip. It requires Obsidian 1.15.1 or newer and was tested on macOS 15.6.1. Intel Macs, Windows, Linux and mobile are not supported by this package. It includes the renderer, fonts and diagram tools; no separate Node.js, Python or TeX installation is needed.</p>
   <ol class="help-steps">
     <li>Install <a href="https://obsidian.md/download">Obsidian</a> and open or create the vault where you want to write. A vault is a folder on your computer.</li>
@@ -92,7 +92,7 @@
   <ol class="help-steps">
     <li>Back up your manuscript folders, including hidden binding and recovery files. Disable <strong>Peerpedia</strong> in <strong>Settings → Community plugins</strong>.</li>
     <li>Move the existing <code>.obsidian/plugins/peerpedia/</code> folder to a backup location outside <code>plugins/</code>. Copy the new complete <code>peerpedia</code> folder into its place.</li>
-    <li>If the old plugin folder contains <code>data.json</code>, copy that file into the new plugin folder to retain your writing scope and account settings. Keep the original backup. When upgrading from 0.1.3, reconnect your account once to save the token in Obsidian secret storage. The new plugin does not read or remove the old macOS Keychain entry. If you no longer have the token, create a new one on the website.</li>
+    <li>If the old plugin folder contains <code>data.json</code>, copy that file into the new plugin folder to retain your writing scope and account settings. Keep the original backup. When replacing an older manual package that used macOS Keychain, reconnect your account once to save the token in Obsidian secret storage. The new plugin does not read or remove the old macOS Keychain entry. If you no longer have the token, create a new one on the website.</li>
     <li>Reopen the vault, enable Peerpedia, and open a chapter with <strong>Peerpedia: Open paper preview</strong>. Confirm the version in Community plugins. Manual packages must be updated manually.</li>
   </ol>
   <p>To roll back, disable the plugin and restore the backed-up plugin folder. To remove saved credentials, use <strong>Peerpedia account → Disconnect and remove local credentials</strong> before removing the plugin. Removing the plugin leaves manuscripts in the vault and does not remove anything already published.</p>

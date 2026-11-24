@@ -26,3 +26,7 @@ node_modules/
 
 # OAuth downloads must remain outside the repository.
 client_secret*.json
+
+# Root Obsidian release build outputs.
+/main.js
+/styles.css

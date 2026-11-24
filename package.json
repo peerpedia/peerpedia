@@ -1,0 +1,8 @@
+{
+  "name": "peerpedia-obsidian-release",
+  "version": "0.1.3",
+  "private": true,
+  "scripts": {
+    "build": "node scripts/build-obsidian.mjs"
+  }
+}
