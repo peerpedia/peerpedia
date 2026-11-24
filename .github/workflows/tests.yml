@@ -25,6 +25,9 @@ jobs:
       - run: npm audit --prefix editor --audit-level=high
       - run: npm audit --prefix packages/peerpedia-theme --audit-level=high
   quality:
+    permissions:
+      contents: read
+      actions: read
     if: github.event_name != 'schedule'
     runs-on: ubuntu-latest
     steps:
@@ -62,13 +65,15 @@ jobs:
       - name: Record CLI artifact checksums
         run: sha256sum dist/* > "$RUNNER_TEMP/cli-artifact-sha256"
       - uses: actions/upload-artifact@v7
+        id: cli_artifact
         with:
           name: cli-validation-distributions
           path: dist/
           retention-days: 1
       - uses: actions/download-artifact@v8
         with:
-          name: cli-validation-distributions
+          github-token: ${{ github.token }}
+          artifact-ids: ${{ steps.cli_artifact.outputs.artifact-id }}
           path: ${{ runner.temp }}/artifact-check/dist
       - name: Verify downloaded CLI artifacts
         run: |

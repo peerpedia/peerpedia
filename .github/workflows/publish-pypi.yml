@@ -12,6 +12,8 @@ permissions:
 
 jobs:
   build:
+    outputs:
+      artifact-id: ${{ steps.distributions.outputs.artifact-id }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -54,6 +56,7 @@ jobs:
           /tmp/peerpedia-cli-check/bin/peerpedia --version
           /tmp/peerpedia-cli-check/bin/peerpedia --help
       - uses: actions/upload-artifact@v7
+        id: distributions
         with:
           name: python-distributions
           path: dist/
@@ -66,9 +69,11 @@ jobs:
       url: https://pypi.org/p/peerpedia-cli
     permissions:
       id-token: write
+      actions: read
     steps:
       - uses: actions/download-artifact@v8
         with:
-          name: python-distributions
+          github-token: ${{ github.token }}
+          artifact-ids: ${{ needs.build.outputs.artifact-id }}
           path: dist/
       - uses: pypa/gh-action-pypi-publish@release/v1
