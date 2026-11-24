@@ -8,6 +8,7 @@ import type { EventRef, TAbstractFile, Vault } from "obsidian";
 import { afterEach, expect, test, vi } from "vitest";
 
 import { VaultProjectStore } from "../src/host/vault-store";
+import { projectMembers } from "../src/project/members";
 import { toPublicationDocument, validateProject } from "../src/project/document";
 import type { ProjectEvent } from "../src/project/store";
 import type { ChapterSpec, PaperConfig, ProjectIssue, ProjectSnapshot, SourceFile } from "../src/project/types";
@@ -385,4 +386,14 @@ test("watch reports invalid and missing manifests and observes their restoration
   vault.emit("create", "paper/paper.json");
   await vi.waitFor((): void => expect(listener).toHaveBeenLastCalledWith({ kind: "changed", paths: ["paper.json"] }));
   expect(listener).toHaveBeenCalledTimes(4);
+});
+
+test("manuscript membership and entered roots refuse reserved components before file inspection", async (): Promise<void> => {
+  const paper = projectFixture(), {store} = await vaultFixture(paper);
+  for (const reserved of [".PeerPedia", ".PEERPEDIA-OBSIDIAN", ".Obsidian", ".GIT"]) {
+    const folder = "notes/" + reserved;
+    expect((): readonly string[] => projectMembers({...paper.config, bibliography: folder + "/refs.yaml"})).toThrow(/unsafe project path/i);
+    expect((): readonly string[] => projectMembers({...paper.config, chapters: [{id:"one",title:"One",file:folder + "/one.md"}]})).toThrow(/unsafe project path/i);
+    await expect(store.read(folder + "/absent")).rejects.toThrow(/unsafe project root/i);
+  }
 });

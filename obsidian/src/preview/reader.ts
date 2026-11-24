@@ -1,12 +1,20 @@
+import type { DataAdapter } from "obsidian";
 import { UserFacingError } from "../user-error";
 import type { RenderPage, SourceTarget } from "../../renderer/protocol";
 import { viewportTarget, type ReaderLocation } from "./source-map";
-import { articleFragment, type PreviewTheme } from "./article";
+import { articleFragment, localTheme, type PreviewTheme } from "./article";
 
 const frameDocument = `<!doctype html><html><head><meta charset="utf-8">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'none'; style-src 'unsafe-inline'; font-src app:; base-uri 'none'; form-action 'none'">
 <style>html{background:white}body{margin:0 auto;padding:1.5rem;max-width:48rem}</style>
 </head><body><article class="peerpedia-article peerpedia-theme-tokens"></article></body></html>`;
+
+export async function readTheme(adapter: DataAdapter, dir: string): Promise<{theme:PreviewTheme; css:string}> {
+  const base = dir + "/renderer/theme/";
+  const theme = localTheme(JSON.parse(await adapter.read(base + "assets.json")),
+    (path: string): string => adapter.getResourcePath(base + path));
+  return {theme, css:await adapter.read(base + "style.css")};
+}
 
 function installTheme(doc: Document, theme: PreviewTheme, css: string): void {
   // Obsidian's CSP permits inline styles but denies a link to its local resource host.

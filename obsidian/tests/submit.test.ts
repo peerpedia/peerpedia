@@ -60,3 +60,11 @@ test("append receipts must be the exact successor of the reviewed ordinal", ():v
   expect(verifyReceipt(request,receipt(binding.acceptedBase.hash,head.id,8),head).proposal?.number).toBe(8);
   expect(():unknown=>verifyReceipt(request,receipt(binding.acceptedBase.hash,head.id,999),head)).toThrow();
 });
+
+test("fresh submissions name required local metadata and a blank proposal explanation", (): void => {
+  for (const [field,label] of [["title","title"],["authors","authors"],["abstract","abstract"],["primary_category","primary subject"],["license","license"]]) {
+    const draft = {...project,config:{...project.config,[field]:""}};
+    expect((): unknown => prepareSubmission(draft,null,account,"publish",details)).toThrow(new RegExp(label,"i"));
+  }
+  expect((): unknown => prepareSubmission(project,binding,account,"new-pr",{...details,explanation:"  "})).toThrow(/explanation/i);
+});

@@ -35,13 +35,15 @@ export async function importPaper(target: RemoteTarget, root: string, api: Peerp
   current: () => boolean = (): boolean => true, onCommit?: () => void): Promise<ProjectSnapshot> {
   const live = (): void => { if (!current()) throw new UserFacingError("Import canceled."); };
   live();
-  const working = target.kind === "paper" ? await api.current(target.identifier) : await api.snapshot(target.identifier);
+  const historical = target.kind === "snapshot" ? await api.proposalSnapshot(target.identifier) : null;
+  const working = historical?.snapshot ?? await api.current(target.identifier);
   live();
   const accepted = target.kind === "paper" ? working : await api.current(target.expectedPaperIdentifier ?? working.paperId);
   if (accepted.paperId !== working.paperId || accepted.status !== "accepted") throw new UserFacingError("The version link points to a different paper than the snapshot.");
   const changes = importChanges(working);
   const binding: RemoteBinding = {schemaVersion:1,origin:api.origin,paperId:working.paperId,acceptedBase:accepted,
-    workingBase:working,lastSubmitted:null,activePr:null,checkedAt:new Date().toISOString()};
+    workingBase:working,lastSubmitted:null,activePr:null,
+    ...(historical?.proposal ? {proposalSource:{...historical.proposal,snapshot:working}} : {}),checkedAt:new Date().toISOString()};
   live();
   onCommit?.();
   return store.create(root,changes,binding);

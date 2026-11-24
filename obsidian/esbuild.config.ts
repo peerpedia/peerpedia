@@ -3,7 +3,7 @@ import { writeFile } from "node:fs/promises";
 import { builtinModules, createRequire } from "node:module";
 import process from "node:process";
 
-import { build, type OnResolveResult, type Plugin, type PluginBuild } from "esbuild";
+import { build, type OnLoadResult, type OnResolveResult, type Plugin, type PluginBuild } from "esbuild";
 
 const [, , mode, outputFile = "dist/main.js", inputInventory] = process.argv;
 const production = mode === "production";
@@ -29,6 +29,27 @@ const worker = await build({
   metafile: Boolean(inputInventory),
 });
 
+// Read manuscript titles outside a live editor. Keep the website's parser in its
+// own module: Obsidian's older StreamLanguage requires a viewport for nested TeX.
+const chapterInspection = await build({
+  entryPoints: ["../editor/chapter-title.js"],
+  bundle: true,
+  format: "esm",
+  platform: "browser",
+  target: "es2022",
+  plugins: [bananaMark],
+  write: false,
+  metafile: Boolean(inputInventory),
+});
+
+const standaloneInspection: Plugin = {
+  name: "standalone-chapter-inspection",
+  setup(plugin: PluginBuild): void {
+    plugin.onLoad({filter:/\/editor\/chapter-title\.js$/}, (): OnLoadResult =>
+      ({contents:chapterInspection.outputFiles[0].text, loader:"js"}));
+  },
+};
+
 const plugin = await build({
   entryPoints: ["src/main.ts"],
   outfile: outputFile,
@@ -39,7 +60,7 @@ const plugin = await build({
   target: "es2022",
   sourcemap: production ? false : "inline",
   minify: production,
-  plugins: [bananaMark],
+  plugins: [bananaMark, standaloneInspection],
   define: { __PEERPEDIA_ANCHORED__: JSON.stringify(nativeFiles()), __PEERPEDIA_LANGUAGE_WORKER__: JSON.stringify(worker.outputFiles[0].text) },
   external: [
     "obsidian", "electron", ...builtinModules,
@@ -49,6 +70,6 @@ const plugin = await build({
   ],
 });
 
-if (inputInventory && worker.metafile && plugin.metafile) {
-  await writeFile(inputInventory, JSON.stringify([...Object.keys(worker.metafile.inputs), ...Object.keys(plugin.metafile.inputs)]));
+if (inputInventory && worker.metafile && chapterInspection.metafile && plugin.metafile) {
+  await writeFile(inputInventory, JSON.stringify([...Object.keys(worker.metafile.inputs), ...Object.keys(chapterInspection.metafile.inputs), ...Object.keys(plugin.metafile.inputs)]));
 }

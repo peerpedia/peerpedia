@@ -4,7 +4,7 @@ import { isDeepStrictEqual as equal } from "node:util";
 import type { RenderPage, RenderRequest, RenderResponse } from "../../renderer/protocol";
 import type { VaultProjectStore } from "../host/vault-store";
 import type { ProjectSnapshot } from "../project/types";
-import { PeerpediaApi } from "./api";
+import { PeerpediaApi, proposalReceipt } from "./api";
 import { checkAccount, defaultIntent, prepareSubmission, publication, type AppendHead, type PreparedSubmission, type SubmissionDetails, type SubmissionIntent } from "./submit";
 import type { AccountIdentity, AccountInfo, Category, CredentialStore, LicenseOption, RemoteBinding, Transport, VerifiedSnapshot } from "./types";
 
@@ -31,7 +31,11 @@ export async function checkRemote(binding: RemoteBinding, api: PeerpediaApi, pro
 export async function checkProject(root: string, api: PeerpediaApi, store: CheckStore, displayedDigest?: string): Promise<RemoteCheck> {
   const {binding,digest} = await store.readBindingVersion(root);
   if (!binding || (displayedDigest !== undefined && displayedDigest !== digest)) throw new UserFacingError("The paper binding changed. Reopen the paper.");
-  const observation = await checkRemote(binding,api);
+  if (binding.origin !== api.origin) throw new UserFacingError("The selected site does not match the paper binding.");
+  const saved = binding.lastSubmitted ?? binding.workingBase;
+  let proposalId = binding.activePr?.id ?? binding.proposalSource?.id;
+  if (!proposalId && saved.status !== "accepted") proposalId = (await proposalReceipt(api,saved)).proposal?.id;
+  const observation = await checkRemote(binding,api,proposalId);
   await store.saveBinding(root,{...binding,checkedAt:observation.checkedAt},digest);
   return observation;
 }
@@ -74,9 +78,7 @@ export class SubmissionController {
       const source = binding.workingBase;
       let prId = binding.activePr?.id ?? binding.proposalSource?.id;
       if (intent !== "new-pr" && !prId && source.status !== "accepted") {
-        const exact = await api.proposalSnapshot(source.submissionId);
-        if (exact.snapshot.hash !== source.hash) throw new UserFacingError("The working snapshot differs from the site’s record.");
-        prId = exact.proposal?.id;
+        prId = (await proposalReceipt(api,source)).proposal?.id;
       }
       const check = intent === "new-pr" ? {current:await api.current(binding.paperId),activePr:null} : await checkRemote(binding,api,prId);
       if (check.current.hash !== binding.acceptedBase.hash || (source.hash !== check.current.hash && source.manifest.base_hash !== check.current.hash))
@@ -107,6 +109,7 @@ export class SubmissionController {
   async review(root:string, intent:SubmissionIntent, details:SubmissionDetails, signal:AbortSignal): Promise<SubmissionReview> {
     const context = await this.open(root,intent);
     const project = await this.store.read(root);
+    const request = prepareSubmission(project,context.binding,context.account,intent,details,context.identity.origin);
     const doc = publication(project);
     const codes = [doc.primary_category,...doc.secondary_categories];
     if (new Set(codes).size !== codes.length || !codes.every((code:string):boolean => context.catalog.categories.some((c:Category):boolean => c.id===code)))
@@ -121,7 +124,6 @@ export class SubmissionController {
     if (result.pages.length !== expectedPages.length || !result.pages.every((page:RenderPage,index:number):boolean =>
       page.id === expectedPages[index].id && (expectedPages[index].title === null || page.title === expectedPages[index].title) && typeof page.html === "string"))
       throw new UserFacingError("Rendered pages differ from the manuscript. Review the chapter IDs and headings.");
-    const request = prepareSubmission(project,context.binding,context.account,intent,details,context.identity.origin);
     return {context,project,request,pages:result.pages};
   }
 

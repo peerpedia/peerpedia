@@ -3,7 +3,7 @@ import { isDeepStrictEqual as equal } from "node:util";
 import { toPublicationDocument } from "../project/publication";
 import { parsePaperConfig, projectMembers, projectRevision, sourceDigest, type FileChange, type ProjectStore } from "../project/store";
 import type { ProjectSnapshot, SourceFile } from "../project/types";
-import { HttpStatusError, type PeerpediaApi, type ProposalSnapshot } from "./api";
+import { HttpStatusError, proposalReceipt, type PeerpediaApi, type ProposalSnapshot } from "./api";
 import { checkRemote } from "./controller";
 import { manualMerge, mergeDocuments, plannedResult, type MergeResult } from "./merge";
 import type { ProposalSource, RemoteBinding, RemoteCheck, VerifiedSnapshot } from "./types";
@@ -28,12 +28,6 @@ const sessions = new WeakMap<RemoteCheck,Session>();
 
 function matches(a: VerifiedSnapshot, b: VerifiedSnapshot): boolean {
   return a.hash === b.hash && a.submissionId === b.submissionId && a.paperId === b.paperId;
-}
-
-async function receipt(api: PeerpediaApi, saved: VerifiedSnapshot): Promise<ProposalSnapshot> {
-  const response = await api.proposalSnapshot(saved.submissionId);
-  if (!matches(response.snapshot,saved)) throw new UserFacingError("The proposal snapshot does not match. Compare the versions again.");
-  return response;
 }
 
 function acceptedAncestor(binding: RemoteBinding, target: VerifiedSnapshot): VerifiedSnapshot|null {
@@ -65,7 +59,7 @@ async function proposalAncestor(binding: RemoteBinding, latest: ProposalSnapshot
     }
     if (saved.status === "accepted") continue;
     let old: ProposalSnapshot;
-    try { old = await receipt(api,saved); }
+    try { old = await proposalReceipt(api,saved); }
     catch (error: unknown) { if (error instanceof HttpStatusError && error.status === 404) return null; throw error; }
     if (saved.hash === retained?.snapshot.hash && (old.proposal?.id !== retained.id || old.proposal.number !== retained.number)) return null;
     if ((saved.hash === retained?.snapshot.hash || saved.hash === history?.hash || saved.hash === previousHead?.hash)
@@ -90,7 +84,7 @@ export async function prepareMerge(project: ProjectSnapshot, axis: MergeAxis, st
   let proposalSource = binding.proposalSource;
   let selectedPr = binding.activePr?.id ?? proposalSource?.id;
   if (!selectedPr && saved.status !== "accepted") {
-    const {proposal} = await receipt(api,saved);
+    const {proposal} = await proposalReceipt(api,saved);
     if (proposal) {
       selectedPr = proposal.id;
       proposalSource = {...proposal,snapshot:saved};

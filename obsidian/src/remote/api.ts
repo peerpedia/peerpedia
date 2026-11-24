@@ -47,6 +47,14 @@ export interface ProposalSnapshot {
   proposal: {id:string; number:number} | null;
 }
 
+export async function proposalReceipt(api: PeerpediaApi, saved: VerifiedSnapshot): Promise<ProposalSnapshot> {
+  const response = await api.proposalSnapshot(saved.submissionId);
+  const {snapshot} = response;
+  if (snapshot.hash !== saved.hash || snapshot.submissionId !== saved.submissionId || snapshot.paperId !== saved.paperId)
+    throw new UserFacingError("The proposal snapshot does not match. Compare the versions again.");
+  return response;
+}
+
 export class PeerpediaApi {
   constructor(readonly origin: string, private readonly transport: Transport) { exactOrigin(origin); }
 

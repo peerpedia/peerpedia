@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import { dirname, join } from "node:path";
 import { AnchoredFiles } from "./anchored-files";
 
-import { isRelativePath, pathKey } from "./paths";
+import { isManuscriptPath, pathKey } from "./paths";
 import { RECOVERY_DIR } from "./recovery";
 import { CONFIG_PATH, parsePaperConfig, projectMembers, sourceDigest, type FileChange } from "./store";
 import { ProjectReadError, type ProjectSnapshot, type SourceFile } from "./types";
@@ -26,15 +26,13 @@ export interface WriteHost {
   prepareRename?(fromVaultPath: string): Promise<OpenChapterMove>;
 }
 
-const reserved = new Set([".obsidian", ".git", ".peerpedia", ".peerpedia-obsidian"]);
-
 interface ObservedVersion { path: string; disk: string | null; editors: readonly string[] }
 export class PreconditionConflict extends UserFacingError {
   constructor(message: string, readonly observed?: ObservedVersion) { super(message); }
 }
 
 export function safePath(path: string): void {
-  if (!isRelativePath(path) || path.split("/").some((part: string): boolean => reserved.has(pathKey(part)))) {
+  if (!isManuscriptPath(path)) {
     throw new UserFacingError(`Invalid file path: ${path}`);
   }
 }

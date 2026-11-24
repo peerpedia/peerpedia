@@ -12,6 +12,7 @@ import { newPaper, configChange } from "../src/project/management";
 import { toPublicationDocument } from "../src/project/publication";
 import { RendererClient } from "../src/preview/renderer-client";
 import { PeerpediaApi } from "../src/remote/api";
+import { importPaper } from "../src/remote/import";
 import { checkProject, SubmissionController } from "../src/remote/controller";
 import { DeviceCredentials } from "../src/remote/credentials";
 import { applyMerge, planMergedFiles, prepareMerge, resolveMerge } from "../src/remote/merge";
@@ -130,6 +131,20 @@ async function journey(site: JourneySite, dropResponse: boolean): Promise<void> 
   expect(appended.hash).not.toBe(proposal.hash);
   expect((await manual((): ReturnType<typeof api.proposalSnapshot> => api.proposalSnapshot(appended.submissionId))).proposal)
     .toEqual({id: prId, number: 2});
+  const historical = await manual((): ReturnType<typeof importPaper> => importPaper(
+    {kind:"snapshot",identifier:proposal.submissionId}, "historical", api, store));
+  const version = await store.readBindingVersion(historical.root);
+  expect(version.binding).toMatchObject({workingBase:{hash:proposal.hash},activePr:null,
+    proposalSource:{id:prId,number:1,snapshot:{hash:proposal.hash}}});
+  const observed = await manual((): ReturnType<typeof checkProject> => checkProject(historical.root,api,store));
+  expect(observed.activePr).toMatchObject({id:prId,submissionId:appended.submissionId,hash:appended.hash,status:"pending"});
+  const beforeLegacy = await store.readBindingVersion(historical.root);
+  const legacy = {...beforeLegacy.binding!};
+  delete legacy.proposalSource;
+  await store.saveBinding(historical.root,legacy,beforeLegacy.digest);
+  const legacyCheck = await manual((): ReturnType<typeof checkProject> => checkProject(historical.root,api,store));
+  expect(legacyCheck.activePr).toEqual(observed.activePr);
+  expect(await store.loadBinding(historical.root)).toEqual({...legacy,checkedAt:legacyCheck.checkedAt});
   quiet = calls;
   await site.accept(appended.submissionId);
   await appendFile(proofPath, "\nUnsubmitted after acceptance.\n");
@@ -138,6 +153,8 @@ async function journey(site: JourneySite, dropResponse: boolean): Promise<void> 
   expect(calls).toBe(quiet);
   const check = await manual((): ReturnType<typeof checkProject> => checkProject(root, api, store));
   expect(check).toMatchObject({current: {hash: appended.hash, status: "accepted"}, activePr: {id: prId, status: "accepted"}});
+  const closed = await manual((): ReturnType<typeof checkProject> => checkProject(historical.root,api,store));
+  expect(closed.activePr).toMatchObject({id:prId,status:"accepted",hash:appended.hash});
   const draft = await store.read(root);
   const comparison = await manual((): ReturnType<typeof prepareMerge> => prepareMerge(draft, "accepted", store, api));
   quiet = calls;

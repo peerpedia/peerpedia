@@ -1,4 +1,4 @@
-import { isRelativePath, pathKey } from "./path-identity";
+import { isManuscriptPath, pathKey } from "./path-identity";
 import { ProjectReadError, type PaperConfig } from "./types";
 
 export const CONFIG_PATH = "paper.json";
@@ -21,7 +21,7 @@ export function projectMembers(config: PaperConfig): readonly string[] {
   if (members.length === 1) members.push("paper.md");
   if (config.bibliography) members.push(config.bibliography);
   for (const path of members.slice(1)) {
-    if (!isRelativePath(path)) throw new ProjectReadError(CONFIG_PATH, `Unsafe project path "${path}".`);
+    if (!isManuscriptPath(path)) throw new ProjectReadError(CONFIG_PATH, `Unsafe project path "${path}".`);
     const key = pathKey(path);
     const previous = paths.get(key);
     if (previous !== undefined) {

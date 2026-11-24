@@ -5,7 +5,8 @@ import type { VaultProjectStore } from "../host/vault-store";
 import type { SubmissionController, SubmissionReview, SubmitContext } from "../remote/controller";
 import { frozenPayload, type PreparedSubmission, type SubmissionDetails, type SubmissionIntent } from "../remote/submit";
 import type { Category, LicenseOption, VerifiedSnapshot } from "../remote/types";
-import { articleFragment } from "../preview/article";
+import { PreviewReader, readTheme } from "../preview/reader";
+import type { RenderPage } from "../../renderer/protocol";
 import { errorMessage } from "./conflict-modal";
 import { button } from "./paper-form";
 
@@ -65,7 +66,7 @@ export class SubmitModal extends Modal {
   private readonly abort = new AbortController();
   private details:SubmissionDetails = {explanation:"",aiAssisted:false};
   constructor(app:App, private readonly root:string, private readonly store:VaultProjectStore, private readonly controller:SubmissionController,
-    private readonly updated:()=>Promise<void>) { super(app); this.setTitle("Submit to Peerpedia"); this.contentEl.addClass("peerpedia-paper-form"); }
+    private readonly dir:string, private readonly updated:()=>Promise<void>) { super(app); this.setTitle("Submit to Peerpedia"); this.contentEl.addClass("peerpedia-paper-form"); }
 
   override onOpen(): void { this.run(():Promise<void> => this.openForm()); }
   override onClose(): void { this.abort.abort(); }
@@ -92,7 +93,10 @@ export class SubmitModal extends Modal {
     const el = this.contentEl;
     el.empty();
     el.createEl("p",{text:context.identity.origin+" · "+context.identity.username});
+    const proposal = context.binding?.activePr;
     if (context.changedHead) el.createEl("p",{text:"The open proposal has changed. Compare it before appending, or create an independent proposal."});
+    else if (proposal && proposal.status !== "pending") el.createEl("p",{text:"The linked proposal is " + proposal.status + ". You can create a new proposal."});
+    else if (proposal && proposal.owner !== context.identity.username) el.createEl("p",{text:"The open proposal belongs to " + proposal.owner + ". You can create your own proposal."});
     const mode = el.createEl("label",{text:"Submission type "}).createEl("select");
     if (context.changedHead) {
       const choose = mode.createEl("option",{text:"Choose a submission type",value:""});
@@ -105,7 +109,7 @@ export class SubmitModal extends Modal {
     lookup.createEl("summary",{text:"Available subjects and licenses"});
     lookup.createEl("p",{text:context.catalog.licenses.map((v:LicenseOption):string => v.code+" · "+v.label).join("\n")});
     lookup.createEl("p",{text:context.catalog.categories.map((v:Category):string => v.id+" · "+v.name).join("\n")});
-    const explanation = el.createEl("label",{text:"Explanation "}).createEl("textarea");
+    const explanation = el.createEl("label",{text:context.binding ? "Explanation (required) " : "Explanation "}).createEl("textarea");
     explanation.value = this.details.explanation;
     const ai = el.createEl("label",{text:"AI assisted "}).createEl("input",{type:"checkbox"});
     ai.checked = this.details.aiAssisted;
@@ -121,6 +125,19 @@ export class SubmitModal extends Modal {
     const review = await this.controller.review(this.root,intent,this.details,this.abort.signal);
     if (!this.abort.signal.aborted) this.confirmation(review.request,review);
   }
+  private async manuscript(box:HTMLElement, pages:readonly RenderPage[]): Promise<void> {
+    const unavailable = (): void => { box.createEl("p",{text:"Unable to load local preview styles or fonts.",attr:{role:"alert"}}); };
+    try {
+      const {theme,css} = await readTheme(this.app.vault.adapter,this.dir);
+      if (!box.isConnected || this.abort.signal.aborted) return;
+      const chapters = pages.length > 1 ? box.createEl("select",{attr:{"aria-label":"Manuscript chapter"}}) : null;
+      for (const page of pages) chapters?.createEl("option",{value:page.id,text:page.title});
+      const frame = box.createEl("iframe",{cls:"peerpedia-submission-reader",attr:{title:"Reviewed manuscript"}});
+      const reader = new PreviewReader(frame,theme,css,():void => {},unavailable);
+      reader.show(pages[0]);
+      if (chapters) chapters.onchange = (): void => reader.show(pages[chapters.selectedIndex]);
+    } catch { unavailable(); }
+  }
   private confirmation(request:PreparedSubmission,review?:SubmissionReview,saved:boolean=false): void {
     const box = this.contentEl;
     box.empty();
@@ -131,7 +148,7 @@ export class SubmitModal extends Modal {
       box.createEl("p",{text:request.intent === "publish" ? "Confirming will publish this paper publicly." : "Confirming will create a public proposal snapshot for consideration."});
       const article = box.createEl("details");
       article.createEl("summary",{text:"Rendered manuscript"});
-      for (const page of review.pages) article.createEl("article").appendChild(articleFragment(box.ownerDocument,page.html));
+      void this.manuscript(article,review.pages);
     }
     if (review?.context.binding) {
       const prior = request.intent === "append-pr" ? review.context.proposalHead! : review.context.binding.acceptedBase;

@@ -137,7 +137,7 @@ test("reopening an unreadable manuscript renders the saved request action from i
   const controls:string[]=[];
   const store = {readBindingVersion:vi.fn().mockResolvedValue({pendingSubmission:true}),recovery:vi.fn().mockResolvedValue([]),
     watch:vi.fn(),read:vi.fn().mockRejectedValue(new Error("invalid paper.json"))};
-  const panel = new ProjectPanel({} as WorkspaceLeaf,store as unknown as VaultProjectStore,vi.fn(),vi.fn(),{request:vi.fn()},{} as SubmissionController);
+  const panel = new ProjectPanel({} as WorkspaceLeaf,store as unknown as VaultProjectStore,vi.fn(),vi.fn(),{request:vi.fn()},"plugins/peerpedia",{} as SubmissionController);
   const content = {empty:():void=>{controls.length=0;},addClass:vi.fn(),createDiv:():unknown=>content,
     createEl:(tag:string,options:{text?:string}):object=>{if (tag==="button") controls.push(options.text!); return {};}};
   Object.assign(panel,{contentEl:content});
@@ -156,9 +156,10 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { Vault } from "obsidian";
 import { VaultProjectStore as NativeStore } from "../src/host/vault-store";
-import { account,details,project,root,snapshot } from "./fixtures/publishing";
+import { account,binding as bindingFixture,details,project,root,snapshot } from "./fixtures/publishing";
 import { importChanges } from "../src/remote/import";
 import { prepareSubmission } from "../src/remote/submit";
+import type { ProjectSnapshot, SourceFile } from "../src/project/types";
 import { SubmitModal } from "../src/ui/submit-modal";
 
 test("the pending dialog offers explicit original-request replay when its receipt cannot verify",async ():Promise<void>=>{
@@ -186,4 +187,32 @@ test("the pending dialog offers explicit original-request replay when its receip
     expect(retry).toHaveBeenCalledExactlyOnceWith(root,request);
     modal.onClose();
   } finally { await rm(temporary,{recursive:true,force:true}); }
+});
+
+test("the panel compares publication content with the working version across layouts and missing files", (): void => {
+  const text:string[] = [];
+  const panel = Object.assign(Object.create(ProjectPanel.prototype), {
+    binding:{binding:{...bindingFixture,acceptedBase:{...snapshot,document:{...snapshot.document,title:"Another accepted title"}}},
+      digest:"current",pendingSubmission:true},
+    contentEl:{createDiv:(): object => ({createEl:(_tag:string,options:{text:string}): void => { text.push(options.text); }})},
+  });
+  const local = structuredClone(project);
+  const path = local.config.chapters![0].file;
+  local.config.chapters![0].file = "chapters/local-intro.md";
+  local.config.title = "  " + local.config.title + " ";
+  local.files.find((file:SourceFile):boolean => file.path === path)!.path = local.config.chapters![0].file;
+  local.revision = "different-file-revision";
+  function assertStatus(paper:ProjectSnapshot, expected:string): void {
+    text.length = 0;
+    panel.renderRemote(paper);
+    expect(text).toContain("Local files: " + expected);
+  }
+  assertStatus(local,"Match the working version");
+  for (const field of ["title","authors","abstract","primary_category","license"] as const) {
+    assertStatus({...local,config:{...local.config,[field]:"different"}},"Changed");
+  }
+  assertStatus({...local,config:{...local.config,chapters:[...local.config.chapters!].reverse()}},"Changed");
+  assertStatus({...local,files:local.files.map((file:SourceFile):SourceFile =>
+    file.path === local.config.bibliography ? {...file,text:file.text+"\n"} : file)},"Changed");
+  assertStatus({...local,files:local.files.slice(1)},"Unavailable (source file missing)");
 });

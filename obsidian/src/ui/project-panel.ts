@@ -1,4 +1,5 @@
 import { UserFacingError } from "../user-error";
+import { isDeepStrictEqual } from "node:util";
 import { randomUUID } from "node:crypto";
 import { ItemView, Modal, Notice, type ViewStateResult, type WorkspaceLeaf } from "obsidian";
 import type { TitlePreview } from "../language/title-preview";
@@ -15,7 +16,7 @@ import { ConflictModal, errorMessage, openLocalFile } from "./conflict-modal";
 
 import type { BindingVersion } from "../remote/binding";
 import { checkProject } from "../remote/controller";
-import { importedRevision } from "../remote/import";
+import { publication } from "../remote/submit";
 import { PeerpediaApi } from "../remote/api";
 import type { Category, LicenseOption, RemoteCheck, Transport } from "../remote/types";
 import { MergeView } from "./merge-view";
@@ -44,7 +45,7 @@ export class ProjectPanel extends ItemView {
 
   constructor(leaf: WorkspaceLeaf, readonly store: VaultProjectStore,
     private readonly enableFolder: (root: string) => Promise<void>, private readonly origin: () => string,
-    private readonly transport: Transport, private readonly submissions?: SubmissionController) { super(leaf); }
+    private readonly transport: Transport, private readonly dir: string, private readonly submissions?: SubmissionController) { super(leaf); }
 
   override getViewType(): string { return PROJECT_PANEL; }
   override getDisplayText(): string { return "Paper management"; }
@@ -200,7 +201,7 @@ export class ProjectPanel extends ItemView {
     if (root !== null && this.submissions && !this.bindingError && !this.binding?.pendingMerge && !this.binding?.pendingImport
       && (this.binding?.pendingSubmission || complete)) {
       button(this.contentEl,this.binding?.pendingSubmission ? "Review pending submission" : "Submit to Peerpedia",():void => {
-        new SubmitModal(this.app,root,this.store,this.submissions!,async ():Promise<void> => {
+        new SubmitModal(this.app,root,this.store,this.submissions!,this.dir,async ():Promise<void> => {
           if (this.root === root) await this.selectRoot(root);
         }).open();
       });
@@ -269,7 +270,10 @@ export class ProjectPanel extends ItemView {
     if (!binding || !digest) return;
     const box = this.contentEl.createDiv();
     box.createEl("p",{text:"Bound site: " + binding.origin});
-    box.createEl("p",{text:"Local files: " + (project.revision === importedRevision(binding.workingBase) ? "Match the working version" : "Changed")});
+    const complete = project.files.length === projectMembers(project.config).length;
+    const status = !complete ? "Unavailable (source file missing)"
+      : isDeepStrictEqual(publication(project),binding.workingBase.document) ? "Match the working version" : "Changed";
+    box.createEl("p",{text:"Local files: " + status});
     box.createEl("p",{text:"Last remote check: " + new Date(binding.checkedAt).toLocaleString("en")});
     if (this.observation) {
       box.createEl("p",{text:"Current version at last check: " + (this.observation.current.publicId ?? this.observation.current.hash)});
@@ -292,7 +296,7 @@ export class ProjectPanel extends ItemView {
       button(box,"Compare open proposal",(): void => compare("proposal"));
     if (this.observation && this.observation.current.hash !== binding.acceptedBase.hash)
       box.createEl("p",{text:"The site has an accepted version that has not been merged."});
-    if (this.observation?.activePr?.status === "pending" && this.observation.activePr.hash !== binding.activePr?.hash)
+    if (this.observation?.activePr?.status === "pending" && this.observation.activePr.hash !== (binding.activePr ?? binding.workingBase).hash)
       box.createEl("p",{text:"The linked proposal has a snapshot that has not been merged."});
     button(box,"Check remote version", (): void => {
       if (this.checking) return;

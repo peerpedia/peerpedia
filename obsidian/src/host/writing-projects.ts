@@ -7,7 +7,7 @@ import { MarkdownView, type App, type Editor } from "obsidian";
 
 import { vaultPath } from "../project/path-identity";
 import type { ChapterLanguage, ProjectAnalysis, WritingAnalysis } from "../language/analysis";
-import { isRelativePath, pathKey } from "../project/paths";
+import { isManuscriptPath, pathKey } from "../project/paths";
 import { CONFIG_PATH, projectMembers, projectRevision, sourceDigest, type ProjectEvent } from "../project/store";
 import type { PaperConfig, ProjectSnapshot, SourceFile } from "../project/types";
 import { LanguageWorker } from "./language-worker";
@@ -186,7 +186,7 @@ export class WritingProjects {
 
   rootFor(path: string): string | null {
     if (this.knownRoots.has(path)) return this.knownRoots.get(path) ?? null;
-    if (!isRelativePath(path)) return null;
+    if (!isManuscriptPath(path)) return null;
     let parent = path;
     while (parent) {
       parent = parent.slice(0, Math.max(0, parent.lastIndexOf("/")));

@@ -6,7 +6,7 @@ import { ProjectReadError } from "./types";
 
 import { isRelativePath, pathKey } from "./path-identity";
 
-export { isRelativePath, pathKey } from "./path-identity";
+export { isManuscriptPath, isReservedComponent, isRelativePath, pathKey } from "./path-identity";
 
 export function isMissing(error: unknown): boolean {
   return (error as NodeJS.ErrnoException)?.code === "ENOENT";

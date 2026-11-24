@@ -91,9 +91,15 @@ export function prepareSubmission(project: ProjectSnapshot, binding: RemoteBindi
   const initial = intent === "publish";
   if (initial !== !binding || (intent === "append-pr" && defaultIntent(binding,account.username) !== intent)) throw new UserFacingError("The paper or proposal is unavailable for this submission.");
   const doc = publication(project);
+  for (const [label,value] of [["title",doc.title],["authors",doc.authors],["abstract",doc.abstract],
+    ["primary subject",doc.primary_category],["license",doc.license]]) {
+    if (!value) throw new UserFacingError("Enter the " + label + " in the paper details before submitting.");
+  }
+  const explanation = formText(details.explanation) || (initial ? "Initial publication." : "");
+  if (!explanation) throw new UserFacingError("Enter an explanation for this proposal.");
   if (binding && binding.acceptedBase.document.license && binding.acceptedBase.document.license !== doc.license) throw new UserFacingError("A proposal must use the paper’s existing license.");
   const payloadJson = JSON.stringify({...doc,paper_id:binding?.paperId ?? null,base_hash:binding?.acceptedBase.hash ?? null,
-    explanation:formText(details.explanation) || (initial ? "Initial publication." : ""),ai_assisted:details.aiAssisted,
+    explanation,ai_assisted:details.aiAssisted,
     ...(intent === "append-pr" ? {pull_request_id:binding!.activePr!.id,expected_head:binding!.activePr!.hash} : {})});
   return decodeRequest({id:randomUUID(),origin,username:account.username,intent,sourceRevision:project.revision,payloadJson,
     payloadDigest:sourceDigest(Buffer.from(payloadJson))});

@@ -6,9 +6,8 @@ import type { RenderPage, RenderSuccess } from "../../renderer/protocol";
 import { openBuffers } from "../host/file-events";
 import { openSourceTarget, warnNavigationFailure } from "../host/source-navigation";
 import { withEditorSources } from "../host/writing-projects";
-import { localTheme } from "../preview/article";
 import { PreviewController } from "../preview/controller";
-import { PreviewReader } from "../preview/reader";
+import { PreviewReader, readTheme } from "../preview/reader";
 import { previewRenderer } from "../preview/runtime";
 import { bindSourceButton, chapterPath, locatePreview, pageForSource, previewMember, rawCoordinates, targetPath } from "../preview/source-map";
 import { pathKey } from "../project/path-identity";
@@ -81,11 +80,7 @@ export class PreviewView extends ItemView {
     this.status = this.contentEl.createDiv({attr: {role: "status"}});
     this.position = this.contentEl.createDiv({cls: "peerpedia-preview-position"});
     try {
-      const base = this.dir + "/renderer/theme/";
-      const adapter = this.app.vault.adapter;
-      const theme = localTheme(JSON.parse(await adapter.read(base + "assets.json")),
-        (path: string): string => adapter.getResourcePath(base + path));
-      const css = await adapter.read(base + "style.css");
+      const {theme, css} = await readTheme(this.app.vault.adapter,this.dir);
       if (this.closed) return;
       const frame = this.contentEl.createEl("iframe", {attr: {title: "Paper manuscript"}});
       this.reader = new PreviewReader(frame, theme, css, (value: string): void => this.openLink(value), (): void => {

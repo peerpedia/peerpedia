@@ -5,7 +5,7 @@ import { basename, dirname, join, resolve } from "node:path";
 
 import type { TAbstractFile, Vault } from "obsidian";
 
-import { isMissing, isRelativePath, locatePath, pathKey } from "../project/paths";
+import { isMissing, isManuscriptPath, isReservedComponent, locatePath, pathKey } from "../project/paths";
 import {
   CONFIG_PATH, parsePaperConfig, projectMembers, projectRevision, sourceDigest, type FileChange,
   type ProjectEvent, type ProjectStore, type MergeCommit,
@@ -24,11 +24,9 @@ import { importChanges } from "../remote/import";
 import type { RemoteBinding, VerifiedSnapshot } from "../remote/types";
 
 const WATCH_SETTLE_MS = 30;
-// CLI fetches and plugin recovery records can contain complete copies of a project.
-const PROJECT_STATE_FOLDERS = new Set([".peerpedia", ".peerpedia-obsidian", ".obsidian", ".git"]);
 
 function checkRoot(root: string): void {
-  if (root && !isRelativePath(root)) {
+  if (root && !isManuscriptPath(root)) {
     throw new ProjectReadError(CONFIG_PATH, `Unsafe project root "${root}". Use a path within the vault.`);
   }
 }
@@ -57,7 +55,7 @@ async function rejectNestedProject(base: string, root: string, absolute: string)
       if (folder && isManifest(entry)) {
         throw new ProjectReadError(CONFIG_PATH, `Nested projects are not supported. Found "${join(folder, entry.name)}" inside this project.`);
       }
-      if (entry.isDirectory() && !PROJECT_STATE_FOLDERS.has(pathKey(entry.name))) {
+      if (entry.isDirectory() && !isReservedComponent(entry.name)) {
         folders.push(join(folder, entry.name));
       }
     }
@@ -138,7 +136,6 @@ export class VaultProjectStore implements ProjectStore {
 
   private async directory(root: string): Promise<string> {
     checkRoot(root);
-    if (root) safePath(root);
     const base = await realpath(this.basePath);
     if (!root) return base;
     const dir = await locatePath(base, root, CONFIG_PATH);

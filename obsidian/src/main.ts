@@ -19,6 +19,7 @@ import type { Reference } from "./language/index";
 import { findTarget } from "./language/targets";
 import { resolveScope } from "./project/scope";
 import type { RecoveryNotice } from "./project/recovery";
+import { isManuscriptPath } from "./project/path-identity";
 import { CONFIG_PATH } from "./project/store";
 
 import { SubmissionController } from "./remote/controller";
@@ -90,9 +91,10 @@ export default class PeerpediaPlugin extends Plugin {
     this.registerView(PROJECT_PANEL, (leaf: WorkspaceLeaf): ProjectPanel => new ProjectPanel(leaf, store,
       (root: string): Promise<void> => this.updateWritingScope({
         ...this.writingScope, folders: { ...this.writingScope.folders, [root]: true },
-      }), (): string => this.importOrigin, transport, submissions));
+      }), (): string => this.importOrigin, transport, dir, submissions));
     const paperRoot = async (file: TAbstractFile | null): Promise<string | undefined> => {
-      for (let parent = file?.parent; parent; parent = parent.parent) {
+      if (!file || !isManuscriptPath(file.path)) return undefined;
+      for (let parent = file.parent; parent; parent = parent.parent) {
         const folder = parent.isRoot() ? "" : parent.path;
         if (await adapter.exists(folder ? folder + "/" + CONFIG_PATH : CONFIG_PATH)) return folder;
       }
