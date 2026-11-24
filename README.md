@@ -472,6 +472,13 @@ image, applies migrations, and checks health and immutable history. It does not
 upload a working directory or production secrets. Keep using reviewed migration
 plans for changes that cannot safely be reversed.
 
+Release builds use a dedicated BuildKit container limited to 512 MiB RAM,
+1 GiB combined RAM and swap, and one CPU. Build steps and images run sequentially;
+the builder stops afterward while retaining its cache. This reserves capacity for
+the live site and database on small hosts. A build that exceeds its limit fails
+before migrations or service replacement. Run `sudo sh scripts/build-images.sh`
+from the repository root for the same bounded build outside the release tool.
+
 ## Automatic backup copies on a Mac
 
 The existing daily server timer makes atomic PostgreSQL dumps with checksums.
