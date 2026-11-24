@@ -9,6 +9,7 @@
 #include <limits.h>
 #include <stdio.h>
 #include <string.h>
+#include <sys/file.h>
 #include <sys/stat.h>
 #include <unistd.h>
 
@@ -52,6 +53,22 @@ static napi_value open_entry(napi_env env, napi_callback_info info) {
     if (n != 4 || component(env, a[0], a[1], &p)) return failure(env, EINVAL);
     const int flags = integer(env, a[2]), mode = integer(env, a[3]);
     return result(env, openat(p.fd, p.name, flags | O_NOFOLLOW | O_CLOEXEC | O_NONBLOCK, mode));
+}
+
+// Ownership follows this open directory description; close or process exit
+// releases it without deleting or stealing any on-disk lock.
+static napi_value lock_directory(napi_env env, napi_callback_info info) {
+    size_t n = 1;
+    napi_value a[1];
+    napi_get_cb_info(env, info, &n, a, NULL, NULL);
+    if (n != 1) return failure(env, EINVAL);
+    int fd = integer(env, a[0]);
+    struct stat st;
+    if (fd < 0 || fstat(fd, &st) < 0 || !S_ISDIR(st.st_mode)) return failure(env, EINVAL);
+    if (flock(fd, LOCK_EX | LOCK_NB) == 0) return result(env, 0);
+    if (errno != EWOULDBLOCK) return failure(env, errno);
+    napi_throw_error(env, "EWOULDBLOCK", "另一操作正在保存论文，请稍后重新核对。");
+    return NULL;
 }
 
 static napi_value make_directory(napi_env env, napi_callback_info info) {
@@ -141,6 +158,7 @@ static napi_value list_entries(napi_env env, napi_callback_info info) {
 static napi_value initialize(napi_env env, napi_value exports) {
     const napi_property_descriptor methods[] = {
         {"open", NULL, open_entry, NULL, NULL, NULL, napi_default, NULL},
+        {"lock", NULL, lock_directory, NULL, NULL, NULL, napi_default, NULL},
         {"mkdir", NULL, make_directory, NULL, NULL, NULL, napi_default, NULL},
         {"rmdir", NULL, remove_directory, NULL, NULL, NULL, napi_default, NULL},
         {"rename", NULL, rename_entry, NULL, NULL, NULL, napi_default, NULL},

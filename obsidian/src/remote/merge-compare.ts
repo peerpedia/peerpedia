@@ -5,7 +5,7 @@ import type { ProjectSnapshot, SourceFile } from "../project/types";
 import { HttpStatusError, type PeerpediaApi, type ProposalSnapshot } from "./api";
 import { checkRemote } from "./controller";
 import { manualMerge, mergeDocuments, plannedResult, type MergeResult } from "./merge";
-import type { RemoteBinding, RemoteCheck, VerifiedSnapshot } from "./types";
+import type { ProposalSource, RemoteBinding, RemoteCheck, VerifiedSnapshot } from "./types";
 
 export type MergeAxis = "accepted"|"proposal";
 export interface Comparison {
@@ -20,6 +20,7 @@ interface Session {
   digest: string;
   project: ProjectSnapshot;
   selectedPr?: string;
+  proposalSource?: ProposalSource;
   comparison: Comparison;
 }
 const sessions = new WeakMap<RemoteCheck,Session>();
@@ -48,7 +49,8 @@ function acceptedAncestor(binding: RemoteBinding, target: VerifiedSnapshot): Ver
 async function proposalAncestor(binding: RemoteBinding, latest: ProposalSnapshot, history: VerifiedSnapshot|null, api: PeerpediaApi): Promise<VerifiedSnapshot|null> {
   let best: VerifiedSnapshot|null = null, ordinal = 0;
   const sources = new Map<string,VerifiedSnapshot>();
-  for (const source of [binding.workingBase,binding.lastSubmitted,history]) if (source) sources.set(source.hash,source);
+  const retained = binding.proposalSource?.id === latest.proposal?.id ? binding.proposalSource : undefined;
+  for (const source of [binding.workingBase,binding.lastSubmitted,history,retained?.snapshot]) if (source) sources.set(source.hash,source);
   // When a confirmed head is still bound, earlier submissions cannot be
   // newer common snapshots. Fetch its exact receipt once, even across axes.
   const previousHead = binding.activePr;
@@ -56,12 +58,16 @@ async function proposalAncestor(binding: RemoteBinding, latest: ProposalSnapshot
   if (previousHead && (!confirmed || confirmed.submissionId !== previousHead.submissionId)) return null;
   const candidates = confirmed ? [confirmed] : sources.values();
   for (const saved of candidates) {
-    if (matches(saved,latest.snapshot)) return saved;
+    if (matches(saved,latest.snapshot)) {
+      if (saved.hash === retained?.snapshot.hash && retained.number !== latest.proposal?.number) return null;
+      return saved;
+    }
     if (saved.status === "accepted") continue;
     let old: ProposalSnapshot;
     try { old = await receipt(api,saved); }
     catch (error: unknown) { if (error instanceof HttpStatusError && error.status === 404) return null; throw error; }
-    if ((saved.hash === history?.hash || saved.hash === previousHead?.hash)
+    if (saved.hash === retained?.snapshot.hash && (old.proposal?.id !== retained.id || old.proposal.number !== retained.number)) return null;
+    if ((saved.hash === retained?.snapshot.hash || saved.hash === history?.hash || saved.hash === previousHead?.hash)
       && (!old.proposal || old.proposal.id !== latest.proposal?.id || old.proposal.number >= latest.proposal.number)) return null;
     if (old.proposal && latest.proposal && old.proposal.id === latest.proposal.id && old.proposal.number < latest.proposal.number
       && old.proposal.number > ordinal) {
@@ -80,8 +86,15 @@ export async function prepareMerge(project: ProjectSnapshot, axis: MergeAxis, st
   const {binding,digest} = version;
   if (binding.origin !== api.origin) throw new Error("比较站点与绑定不符。");
   const saved = binding.lastSubmitted ?? binding.workingBase;
-  let selectedPr = binding.activePr?.id;
-  if (!selectedPr && saved.status !== "accepted") selectedPr = (await receipt(api,saved)).proposal?.id;
+  let proposalSource = binding.proposalSource;
+  let selectedPr = binding.activePr?.id ?? proposalSource?.id;
+  if (!selectedPr && saved.status !== "accepted") {
+    const {proposal} = await receipt(api,saved);
+    if (proposal) {
+      selectedPr = proposal.id;
+      proposalSource = {...proposal,snapshot:saved};
+    }
+  }
   const check = await checkRemote(binding,api,selectedPr);
   let target = check.current, base: VerifiedSnapshot|null;
   if (axis === "proposal") {
@@ -97,7 +110,7 @@ export async function prepareMerge(project: ProjectSnapshot, axis: MergeAxis, st
   const local = toPublicationDocument(project);
   const result = base ? mergeDocuments(base.document,local,target.document) : manualMerge(local,target.document);
   const comparison = {axis,base,target,result,check};
-  sessions.set(check,{binding,digest,project,comparison,selectedPr});
+  sessions.set(check,{binding,digest,project,comparison,selectedPr,proposalSource});
   return comparison;
 }
 
@@ -120,7 +133,7 @@ export async function applyMerge(project: ProjectSnapshot, changes: readonly Fil
   const session = sessions.get(check);
   if (!session || session.project.root !== project.root || session.project.revision !== project.revision ||
     plannedResult(project,changes) !== session.comparison.result) throw new Error("请先完成本次比较并确认全部冲突。");
-  const {comparison,binding,digest,selectedPr} = session;
+  const {comparison,binding,digest,selectedPr,proposalSource} = session;
   const version = await store.readBindingVersion?.(project.root);
   if (version?.digest !== digest || version.pendingMerge || (await store.read(project.root)).revision !== project.revision)
     throw new Error("本地论文或绑定已更改，请重新比较。");
@@ -128,7 +141,13 @@ export async function applyMerge(project: ProjectSnapshot, changes: readonly Fil
   if (!matches(check.current,now.current) || !equal(check.activePr,now.activePr)) throw new Error("远程版本已更改，请重新比较。");
   if (!live()) throw new Error("已取消合并。");
   const next = {...binding,workingBase:comparison.target,checkedAt:now.checkedAt};
-  if (comparison.axis === "accepted") next.acceptedBase = now.current;
-  else next.activePr = now.activePr;
+  if (comparison.axis === "accepted") {
+    next.acceptedBase = now.current;
+    if (proposalSource && !binding.activePr && now.activePr?.status === "pending" && now.activePr.id === proposalSource.id)
+      next.proposalSource = proposalSource;
+  } else {
+    next.activePr = now.activePr;
+    delete next.proposalSource;
+  }
   return store.apply(project.root,project.revision,changes,{binding:next,expectedDigest:digest,revision:projectedRevision(project,changes)});
 }

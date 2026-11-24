@@ -275,7 +275,7 @@ export class ProjectPanel extends ItemView {
       }).open();
     };
     button(box,"比较已接受版本",(): void => compare("accepted"));
-    if (binding.activePr || binding.lastSubmitted || binding.workingBase.status !== "accepted" || this.observation?.activePr)
+    if (binding.activePr || binding.proposalSource || binding.lastSubmitted || binding.workingBase.status !== "accepted" || this.observation?.activePr)
       button(box,"比较开放提案",(): void => compare("proposal"));
     if (this.observation && this.observation.current.hash !== binding.acceptedBase.hash)
       box.createEl("p",{text:"站点有尚未合并的已接受版本。"});

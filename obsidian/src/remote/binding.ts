@@ -50,6 +50,11 @@ export function decodeBinding(input: unknown): RemoteBinding {
     acceptedBase:snapshot(row.acceptedBase,row.paperId),workingBase:snapshot(row.workingBase,row.paperId),
     activePr:row.activePr === null ? null : head(row.activePr),
     lastSubmitted:row.lastSubmitted === null ? null : snapshot(row.lastSubmitted,row.paperId)};
+  if (Object.hasOwn(row,"proposalSource")) {
+    const source = object(row.proposalSource);
+    if (!isUuid(source.id) || typeof source.number !== "number" || !Number.isSafeInteger(source.number) || source.number < 1) throw new ProtocolError();
+    binding.proposalSource = {id:source.id,number:source.number,snapshot:snapshot(source.snapshot,row.paperId)};
+  }
   if (binding.acceptedBase.status !== "accepted" || !isDeepStrictEqual(binding,row)) throw new ProtocolError();
   return binding;
 }
@@ -112,6 +117,9 @@ export async function readVersion(tree: AnchoredFiles, root: string): Promise<Bi
 }
 
 export async function writeVersion(tree: AnchoredFiles, root: string, binding: RemoteBinding, expectedDigest: string | null, mergeTransaction?: string): Promise<void> {
+  // This same descriptor already owns the lock during merge finalization.
+  // Its enclosing anchored operation releases ownership when it closes.
+  tree.lockProject(root);
   const dir = join(root,state);
   const {binding:previous,digest,count} = await records(tree,dir);
   const intent = await tree.source(join(dir,"merge-pending.json"));

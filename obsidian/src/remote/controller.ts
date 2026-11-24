@@ -7,7 +7,7 @@ interface CheckStore {
   saveBinding(root: string, binding: RemoteBinding, expectedDigest: string | null): Promise<void>;
 }
 
-export async function checkRemote(binding: RemoteBinding, api: PeerpediaApi, proposalId: string|undefined = binding.activePr?.id): Promise<RemoteCheck> {
+export async function checkRemote(binding: RemoteBinding, api: PeerpediaApi, proposalId: string|undefined = binding.activePr?.id ?? binding.proposalSource?.id): Promise<RemoteCheck> {
   if (api.origin !== binding.origin) throw new Error("所选站点与项目绑定不符。");
   const current = await api.current(binding.paperId);
   const heads = await api.prs(binding.paperId);

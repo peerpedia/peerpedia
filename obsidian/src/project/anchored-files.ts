@@ -14,6 +14,7 @@ import type { SourceFile } from "./types";
 declare const __PEERPEDIA_ANCHORED__: string;
 interface Native {
   open(dir: number, name: string, flags: number, mode: number): number;
+  lock(dir: number): void;
   mkdir(dir: number, name: string): void;
   rmdir(dir: number, name: string): void;
   rename(from: number, name: string, to: number, target: string, flag: number): void;
@@ -136,6 +137,7 @@ export class AnchoredFiles {
     if (!same(this.pin("").identity, expected)) throw new Error("原有库文件夹已被替换。");
   }
   directory(path: string): void { this.pin(path); }
+  lockProject(path: string): void { native().lock(this.pin(path).fd); }
   async directories(path: string): Promise<void> {
     if (path === "." || !path) return;
     const parent = dirname(path);

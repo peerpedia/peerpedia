@@ -1,6 +1,7 @@
 import { isDeepStrictEqual as equal } from "node:util";
 import { inspectChapter } from "../../../editor/chapter-title.js";
 import { toPublicationDocument, type PublicationDocument } from "../project/publication";
+import { pathKey } from "../project/path-identity";
 import { projectMembers, type FileChange } from "../project/store";
 import type { ChapterSpec, ProjectSnapshot, SourceFile } from "../project/types";
 import { mergeBibliography } from "./merge-bibliography";
@@ -106,12 +107,20 @@ function mergeBody(base: PublicationDocument, local: PublicationDocument, remote
     const [b,l,r] = [base,local,remote].map(body);
     return parsedBody(select(b,l,r,(): JsonValue => decide("chapter","单文件与分章正文",b,l,r)));
   }
+  // Member validation treats IDs as case-insensitively unique. Keep the
+  // original spelling in the chapter value and in the displayed order.
+  const spellings = new Map<string,string>();
   const [b,l,r] = [base,local,remote].map((doc: PublicationDocument): Map<string,Chapter> =>
-    new Map(doc.chapters.map((c: Chapter): [string,Chapter] => [c.id,c])));
+    new Map(doc.chapters.map((c: Chapter): [string,Chapter] => {
+      const key = c.id.toLowerCase();
+      if (!spellings.has(key)) spellings.set(key,c.id);
+      return [spellings.get(key)!,c];
+    })));
   const chapters: Chapter[] = [];
   for (const id of chapterOrder([...b.keys()],[...l.keys()],[...r.keys()],decide)) {
     const old = b.get(id) ?? null, left = l.get(id) ?? null, right = r.get(id) ?? null;
-    if (old && left && right) {
+    const differentIds = [old,left,right].some((c: Chapter|null): boolean => !!c && c.id !== id);
+    if (old && left && right && !differentIds) {
       const markdown = text("章节 " + id,old.markdown,left.markdown,right.markdown);
       const derived = [old,left,right].every((c: Chapter): boolean => inspectChapter(c.markdown).title === c.title);
       const title = derived ? inspectChapter(markdown).title : string(select(old.title,left.title,right.title,
@@ -121,7 +130,7 @@ function mergeBody(base: PublicationDocument, local: PublicationDocument, remote
       const selected = select(old,left,right,(): JsonValue => decide("chapter","章节 " + id,old,left,right));
       if (selected !== null) {
         const kept = chapter(selected);
-        if (kept.id !== id) throw new Error("选择的章节 ID 不符。");
+        if (!differentIds && kept.id !== id) throw new Error("选择的章节 ID 不符。");
         chapters.push(kept);
       }
     }
@@ -187,11 +196,16 @@ export function planMergedFiles(project: ProjectSnapshot, merged: PublicationDoc
     if (previous?.text !== afterText) changes.push({path,beforeDigest:previous?.digest ?? null,afterText});
   };
   if (chapters.length || config.chapters) {
+    const occupied = new Set([...files.keys()].map(pathKey));
     config.chapters = chapters.map((item: Chapter): ChapterSpec => {
       if (inspectChapter(item.markdown).title !== item.title) throw new Error("章节标题与正文标题不一致，请核对：" + item.id);
       const prior = project.config.chapters?.find((c: ChapterSpec): boolean => c.id === item.id);
-      const file = prior?.file ?? "chapters/" + item.id + ".md";
-      if (!prior && files.has(file)) throw new Error("新章节路径已由其他文件占用：" + file);
+      let file = prior?.file ?? "chapters/" + item.id + ".md";
+      if (!prior) {
+        let suffix = 2;
+        while (occupied.has(pathKey(file))) file = "chapters/" + item.id + "-" + suffix++ + ".md";
+        occupied.add(pathKey(file));
+      }
       update(file,item.markdown);
       const oldTitle = local.chapters.find((c: Chapter): boolean => c.id === item.id)?.title;
       return {id:item.id,file,title:prior && item.title === oldTitle ? prior.title : item.title};

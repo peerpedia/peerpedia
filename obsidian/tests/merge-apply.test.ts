@@ -1,3 +1,6 @@
+import { fork, type ChildProcess } from "node:child_process";
+import { once } from "node:events";
+import { fileURLToPath } from "node:url";
 import { createHash } from "node:crypto";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -6,10 +9,14 @@ import type { Vault } from "obsidian";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { VaultProjectStore } from "../src/host/vault-store";
 import { AnchoredFiles } from "../src/project/anchored-files";
+import { projectRevision, sourceDigest, type FileChange } from "../src/project/store";
+import type { SourceFile } from "../src/project/types";
+import { toPublicationDocument } from "../src/project/publication";
+import { checkProject } from "../src/remote/controller";
 import { PeerpediaApi } from "../src/remote/api";
 import { importChanges } from "../src/remote/import";
-import { applyMerge, prepareMerge, planMergedFiles, resolveMerge } from "../src/remote/merge";
-import type { RemoteBinding, VerifiedSnapshot } from "../src/remote/types";
+import { applyMerge, mergeDocuments, prepareMerge, planMergedFiles, resolveMerge } from "../src/remote/merge";
+import type { RemoteBinding, RemoteCheck, VerifiedSnapshot } from "../src/remote/types";
 import { verifySnapshot } from "../src/remote/verify";
 import raw1 from "./fixtures/manifests/v1.json";
 import raw3 from "./fixtures/manifests/v3.json";
@@ -220,4 +227,115 @@ test("restart after binding commit verifies its exact successor before closing t
   const reopened = new VaultProjectStore(vault,events);
   await reopened.recoverMerge(root);
   expect(await reopened.readBindingVersion(root)).toMatchObject({pendingMerge:false,digest:first.digest});
+});
+
+declare const __PEERPEDIA_ANCHORED__: string;
+test.each([false,true])("another process cannot recover a live pre-journal writer; kill=%s", async (kill: boolean): Promise<void> => {
+  const project = await store.read(root);
+  const path = "paper.md", body = "user confirmed merged source";
+  const changes: FileChange[] = [{path,beforeDigest:project.files.find((f: SourceFile): boolean => f.path === path)!.digest,afterText:body}];
+  const nextRevision = projectRevision(project.files.map((f: SourceFile):SourceFile => f.path === path ?
+    {...f,text:body,digest:sourceDigest(Buffer.from(body))} : f));
+  const data = join(vault,"worker.json");
+  const next = {...binding,workingBase:current};
+  await writeFile(data,JSON.stringify({vault,root,revision:project.revision,changes,merge:{expectedDigest:(await store.readBindingVersion(root)).digest,binding:next,revision:nextRevision}}));
+  const child: ChildProcess = fork(fileURLToPath(new URL("./fixtures/merge-writer.ts",import.meta.url)),[data],{
+    execArgv:["--import","tsx"],stdio:["ignore","ignore","pipe","ipc"],env:{...process.env,PEERPEDIA_TEST_ANCHORED:__PEERPEDIA_ANCHORED__}});
+  const exited = once(child,"exit");
+  let errors = "";
+  child.stderr!.on("data",(chunk: Buffer): void => { errors += chunk.toString(); });
+  try {
+    const ready = await Promise.race([once(child,"message"),exited]);
+    expect(ready,errors).toEqual(["before-journal",undefined]);
+    expect((await store.readBindingVersion(root)).pendingMerge).toBe(true);
+    await expect(store.recoverMerge(root)).rejects.toThrow(/正在|占用/);
+    expect((await store.readBindingVersion(root)).pendingMerge).toBe(true);
+    if (kill) child.kill("SIGKILL");
+    else child.send("resume");
+    await exited;
+    if (kill) await store.recoverMerge(root);
+    expect(await store.loadBinding(root)).toEqual(kill ? binding : next);
+    expect((await store.read(root)).revision).toBe(kill ? project.revision : nextRevision);
+    expect((await store.readBindingVersion(root)).pendingMerge).toBe(false);
+  } finally { child.kill("SIGKILL"); await exited; }
+});
+
+test("a status-only writer paused just before publication excludes merge and preserves its CAS", async (): Promise<void> => {
+  const project = await store.read(root), comparison = await prepareMerge(project,"accepted",store,api);
+  const changes = planMergedFiles(project,resolveMerge(comparison.result,{}));
+  let pause!: () => void, resume!: () => void;
+  const paused = new Promise<void>((resolve: () => void): void => { pause = resolve; });
+  const resumed = new Promise<void>((resolve: () => void): void => { resume = resolve; });
+  const file = AnchoredFiles.prototype.file;
+  let first = true;
+  let checked: Promise<RemoteCheck>;
+  vi.spyOn(AnchoredFiles.prototype,"file").mockImplementation(async function(this: AnchoredFiles,path: string,body: string,mode?:number): Promise<void> {
+    await file.call(this,path,body,mode);
+    if (first && path.includes("/.binding-")) { first = false; pause(); await resumed; }
+    // On the unfixed writer, allow the paused timestamp to publish after
+    // merge intent acquisition but before the first manuscript replacement.
+    if (path.endsWith("/journal.json")) { resume(); await checked; }
+  });
+  checked = checkProject(root,api,new VaultProjectStore(vault,events));
+  await paused;
+  try {
+    await expect(applyMerge(project,changes,comparison.check,store,api)).rejects.toThrow(/正在|占用/);
+    expect((await store.read(root)).revision).toBe(project.revision);
+    expect((await store.readBindingVersion(root)).pendingMerge).toBe(false);
+  } finally { resume(); await checked; }
+  await expect(applyMerge(project,changes,comparison.check,store,api)).rejects.toThrow(/重新比较/);
+  const fresh = await prepareMerge(project,"accepted",store,api);
+  await applyMerge(project,planMergedFiles(project,resolveMerge(fresh.result,{})),fresh.check,store,api);
+  expect(await store.loadBinding(root)).toMatchObject({workingBase:current});
+});
+
+test("accepted merge retains superseded historical proposal source and leaves newer head outstanding across reopen", async (): Promise<void> => {
+  const parent = verifySnapshot(raw1);
+  const historic = version(310,"old\nshared\nend",parent,"superseded");
+  const accepted = version(311,parent.document.markdown,parent,"accepted");
+  const newer = version(312,"old\nshared\nremote",parent,"pending");
+  const head = {id:"00000000-0000-0000-0000-000000000abc",owner:"writer",submissionId:newer.submissionId,hash:newer.hash,status:"pending" as const};
+  const bookRoot = "historical";
+  const initial = {...binding,acceptedBase:parent,workingBase:historic};
+  const book = await store.create(bookRoot,importChanges(historic),initial);
+  vi.mocked(api.current).mockResolvedValue(accepted);
+  vi.mocked(api.prs).mockResolvedValue([head]);
+  let ordinal = 2;
+  vi.spyOn(api,"proposalSnapshot").mockImplementation(async (id:string):Promise<Awaited<ReturnType<PeerpediaApi["proposalSnapshot"]>>> =>
+    id === historic.submissionId ? {snapshot:historic,proposal:{id:head.id,number:ordinal}} : {snapshot:newer,proposal:{id:head.id,number:4}});
+  const acceptedUpdate = await prepareMerge(book,"accepted",store,api);
+  expect(acceptedUpdate.check.activePr).toEqual(head);
+  expect(await store.loadBinding(bookRoot)).toEqual(initial);
+  await applyMerge(book,planMergedFiles(book,resolveMerge(acceptedUpdate.result,{})),acceptedUpdate.check,store,api);
+  expect(await store.loadBinding(bookRoot)).toMatchObject({workingBase:accepted,acceptedBase:accepted,activePr:null,lastSubmitted:null,proposalSource:{id:head.id,number:2,snapshot:historic}});
+  await writeFile(join(vault,bookRoot,"paper.md"),"my edit\nshared\nend");
+  const project = await store.read(bookRoot);
+  const now = await prepareMerge(project,"proposal",store,api);
+  expect(now.base?.hash).toBe(historic.hash);
+  const reopened = new VaultProjectStore(vault,events);
+  ordinal = 3;
+  expect((await prepareMerge(project,"proposal",reopened,api)).base).toBeNull();
+  ordinal = 2;
+  const again = await prepareMerge(project,"proposal",reopened,api);
+  expect(again.base?.hash).toBe(historic.hash);
+  const merge = resolveMerge(again.result,{});
+  expect(merge.markdown).toBe("my edit\nshared\nremote");
+  await applyMerge(project,planMergedFiles(project,merge),again.check,reopened,api);
+  const completed = await reopened.loadBinding(bookRoot);
+  expect(completed).toMatchObject({acceptedBase:accepted,workingBase:newer,activePr:head,lastSubmitted:null});
+  expect(completed?.proposalSource).toBeUndefined();
+});
+
+test("case-colliding remote addition is applicable without touching the local member's old file", async ():Promise<void> => {
+  const project = await store.create("case-book",importChanges(current));
+  const base = toPublicationDocument(project);
+  const ch = (id:string): {id:string;title:string;markdown:string} => ({id,title:id,markdown:"# "+id+"\n"});
+  const left = ch("Appendix"), right = ch("appendix");
+  const edited = await store.apply(project.root,project.revision,planMergedFiles(project,{...base,chapters:[...base.chapters,left]}));
+  const m = mergeDocuments(base,toPublicationDocument(edited),{...base,chapters:[...base.chapters,right]});
+  expect(m.conflicts).toHaveLength(1);
+  const choice = m.conflicts[0];
+  const done = await store.apply(project.root,edited.revision,planMergedFiles(edited,resolveMerge(m,{[choice.id]:choice.remote})));
+  expect(toPublicationDocument(done).chapters.at(-1)).toEqual(right);
+  expect(await readFile(join(vault,project.root,"chapters/Appendix.md"),"utf8")).toBe(left.markdown);
 });

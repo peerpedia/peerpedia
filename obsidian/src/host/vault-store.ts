@@ -249,6 +249,7 @@ export class VaultProjectStore implements ProjectStore {
 
   async recoverImport(root: string): Promise<void> {
     await this.exclusive(root, (): Promise<ProjectSnapshot> => this.anchored(root, async (tree: AnchoredFiles): Promise<ProjectSnapshot> => {
+      tree.lockProject(root);
       const intent = await readPendingImport(tree,root);
       await rejectNestedProject(this.basePath,root,join(this.basePath,root));
       const changes = importChanges(intent.binding.workingBase);
@@ -295,6 +296,7 @@ export class VaultProjectStore implements ProjectStore {
         }
         await tree.mkdir(root);
         if (initialBinding) {
+          tree.lockProject(root);
           const files = changes.map((change: FileChange): SourceFile => ({
             path:change.path, text:change.afterText!, digest:sourceDigest(Buffer.from(change.afterText!)),
           }));
@@ -314,6 +316,7 @@ export class VaultProjectStore implements ProjectStore {
 
   async recoverMerge(root: string): Promise<void> {
     await this.exclusive(root, (): Promise<ProjectSnapshot> => this.anchored(root, async (tree: AnchoredFiles): Promise<ProjectSnapshot> => {
+      tree.lockProject(root);
       await rejectNestedProject(this.basePath,root,join(this.basePath,root));
       const read = (): Promise<ProjectSnapshot> => this.pinnedSnapshot(tree,root);
       const project = await read();
@@ -347,7 +350,8 @@ export class VaultProjectStore implements ProjectStore {
     move?: { from: string; to: string }, merge?: MergeCommit): Promise<ProjectSnapshot> {
     return this.exclusive(root, async (): Promise<ProjectSnapshot> => {
       return this.anchored(root,async (tree: AnchoredFiles): Promise<ProjectSnapshot> => {
-        tree.directory(root);
+        if (merge) tree.lockProject(root);
+        else tree.directory(root);
         await rejectNestedProject(this.basePath, root, join(this.basePath,root));
         const project = await this.pinnedSnapshot(tree,root);
         try {

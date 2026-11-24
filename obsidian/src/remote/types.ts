@@ -64,6 +64,12 @@ export interface LicenseOption {
   url: string;
 }
 
+export interface ProposalSource {
+  id: string;
+  number: number;
+  snapshot: VerifiedSnapshot;
+}
+
 export interface RemoteBinding {
   schemaVersion: 1;
   origin: string;
@@ -72,6 +78,7 @@ export interface RemoteBinding {
   workingBase: VerifiedSnapshot;
   lastSubmitted: VerifiedSnapshot | null;
   activePr: PrHead | null;
+  proposalSource?: ProposalSource;
   checkedAt: string;
 }
 

@@ -67,3 +67,13 @@ test("uncertain shared YAML edits retain complete sides for explicit review", ()
   expect(review.conflicts[0]).toMatchObject({kind:"bibliography",base:b,local:left,remote:right});
   expect(resolveMerge(review,{[review.conflicts[0].id]:right}).bibliography).toBe(right);
 });
+
+test("separately added case-equivalent IDs require a selectable structural resolution", ():void => {
+  const anchor = page("chapter","old"), left = page("Appendix","mine"), right = page("appendix","theirs");
+  const m = mergeDocuments(book(anchor),book(anchor,left),book(anchor,right));
+  expect(m.conflicts).toHaveLength(1);
+  const c = m.conflicts[0];
+  expect(c).toMatchObject({kind:"chapter",local:left,remote:right});
+  expect(resolveMerge(m,{[c.id]:c.local}).chapters).toEqual([anchor,left]);
+  expect(resolveMerge(m,{[c.id]:c.remote}).chapters).toEqual([anchor,right]);
+});

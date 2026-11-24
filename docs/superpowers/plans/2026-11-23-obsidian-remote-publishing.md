@@ -39,7 +39,7 @@
 - `VerifiedSnapshot {paperId:string; submissionId:string; publicId:string|null; hash:string; status:'pending'|'accepted'|'rejected'|'withdrawn'|'superseded'; document:PublicationDocument; manifest:Readonly<Record<string,JsonValue>>}`。由核验器唯一构造；不把任意网络 JSON 强转为此类型。
 - `AccountInfo {username:string; scopes:readonly string[]; expiresAt:string; agreement:{version:string; accepted:boolean; url:string}}`。
 - `PrHead {id:string; hash:string; submissionId:string; owner:string; status:'pending'|'accepted'|'rejected'|'withdrawn'}`。
-- `RemoteBinding {schemaVersion:1; origin:string; paperId:string; acceptedBase:VerifiedSnapshot; workingBase:VerifiedSnapshot; lastSubmitted:VerifiedSnapshot|null; activePr:PrHead|null; checkedAt:string}`。workingBase 允许指定历史/未接受快照作为本地起点，不能冒充当前接受基准。
+- `RemoteBinding {schemaVersion:1; origin:string; paperId:string; acceptedBase:VerifiedSnapshot; workingBase:VerifiedSnapshot; lastSubmitted:VerifiedSnapshot|null; activePr:PrHead|null; checkedAt:string; proposalSource?:{id:string;number:number;snapshot:VerifiedSnapshot}}`。workingBase 允许指定历史/未接受快照作为本地起点，不能冒充当前接受基准。proposalSource 可保留历史导入后已核验的提案关联与共同快照；它不表示最新提案 head 已被合并。
 - `HttpResponse {status:number; headers:Readonly<Record<string,string>>; body:Uint8Array}`；`Transport.request(origin:string,route:string,method:'GET'|'POST',headers:Readonly<Record<string,string>>,body:Uint8Array|null):Promise<HttpResponse>`。
 - `CredentialStore.read(origin:string,username:string):Promise<string|null>`、`write(origin:string,username:string,token:string):Promise<void>`、`remove(origin:string,username:string):Promise<void>`。
 
