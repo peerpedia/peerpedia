@@ -101,6 +101,7 @@ function writeFailure(error: unknown): string {
 export async function writeTransaction(
   tree: AnchoredFiles, root: string, base: ProjectSnapshot | null, changes: readonly FileChange[], host: WriteHost,
   readResult: () => Promise<ProjectSnapshot>, move?: { from: string; to: string },
+  prepareMerge?: (journal: string) => Promise<string>,
 ): Promise<ProjectSnapshot> {
   const vaultPath = (path: string): string => root ? root + "/" + path : path;
   const manifest = changes.find((change: FileChange): boolean => change.path === CONFIG_PATH);
@@ -160,11 +161,12 @@ export async function writeTransaction(
     checkBuffers(path, current);
   };
   for (const [path, current] of expected) if (!alias(path)) checkBuffers(path, current);
-  if (!files.length) return readResult();
+  if (!files.length && !prepareMerge) return readResult();
 
   const journal = await newJournal(tree, root);
+  const mergeIntent = await prepareMerge?.(journal);
   await tree.file(join(journal, "journal.json"), JSON.stringify({
-    expectedRevision: base?.revision ?? null, move, files,
+    expectedRevision: base?.revision ?? null, move, files, mergeIntent,
     expected: Object.fromEntries([...expected].map(([path, v]: [string, Version]): [string, string | null] => [path, v.digest])),
   }, null, 2));
   await tree.sync(journal);

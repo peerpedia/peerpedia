@@ -17,6 +17,8 @@ import { checkProject } from "../remote/controller";
 import { importedRevision } from "../remote/import";
 import { PeerpediaApi } from "../remote/api";
 import type { RemoteCheck, Transport } from "../remote/types";
+import { MergeView } from "./merge-view";
+import type { MergeAxis } from "../remote/merge-compare";
 import { ImportModal } from "./import-modal";
 
 export const PROJECT_PANEL = "peerpedia-project";
@@ -181,6 +183,14 @@ export class ProjectPanel extends ItemView {
         }).catch((err: unknown): void => { new Notice(errorMessage(err)); });
       });
     }
+    if (this.binding?.pendingMerge && this.root !== null) {
+      const root = this.root;
+      button(this.contentEl,"核对并恢复合并",(): void => {
+        void this.store.recoverMerge(root).then(async (): Promise<void> => {
+          if (this.root === root) await this.selectRoot(root);
+        }).catch((err: unknown): void => { new Notice(errorMessage(err)); });
+      });
+    }
     const project = this.snapshot;
     if (!project) return;
     this.renderRemote(project);
@@ -254,6 +264,23 @@ export class ProjectPanel extends ItemView {
     } else box.createEl("p",{text:"关联提案状态：本次打开后尚未检查"});
     if (this.checkError) box.createEl("p",{text:this.checkError,attr:{role:"alert"}});
     const selection = this.selection;
+    if (this.binding?.pendingMerge) return;
+    const compare = (axis: MergeAxis): void => {
+      new MergeView(this.app,project,axis,this.store,new PeerpediaApi(binding.origin,this.transport),async (observation?: RemoteCheck): Promise<void> => {
+        if (selection !== this.selection) return;
+        await this.selectRoot(project.root);
+        if (this.root !== project.root) return;
+        this.observation = observation;
+        this.render();
+      }).open();
+    };
+    button(box,"比较已接受版本",(): void => compare("accepted"));
+    if (binding.activePr || binding.lastSubmitted || binding.workingBase.status !== "accepted" || this.observation?.activePr)
+      button(box,"比较开放提案",(): void => compare("proposal"));
+    if (this.observation && this.observation.current.hash !== binding.acceptedBase.hash)
+      box.createEl("p",{text:"站点有尚未合并的已接受版本。"});
+    if (this.observation?.activePr?.status === "pending" && this.observation.activePr.hash !== binding.activePr?.hash)
+      box.createEl("p",{text:"关联提案有尚未合并的快照。"});
     button(box,"检查远程版本", (): void => {
       if (this.checking) return;
       this.checking = true;

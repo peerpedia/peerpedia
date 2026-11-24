@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 
-import type { RemoteBinding } from "../remote/types";
+import type { BindingVersion } from "../remote/binding";
+import type { RemoteBinding, VerifiedSnapshot } from "../remote/types";
 import { CONFIG_PATH } from "./members";
 import { ProjectReadError, type ChapterSpec, type PaperConfig, type ProjectSnapshot, type SourceFile } from "./types";
 
@@ -22,11 +23,16 @@ export interface ProjectEvent {
   paths: readonly string[];
 }
 
+export interface MergeCommit { expectedDigest: string; binding: RemoteBinding; revision: string }
+
 export interface ProjectStore {
+  /** Present on bound stores supporting durable merge commits through apply. */
+  readBindingVersion?(root: string): Promise<BindingVersion>;
   read(root: string): Promise<ProjectSnapshot>;
+  readProposalBase?(root: string, proposalId: string, digest: string): Promise<VerifiedSnapshot|null>;
   /** Bound creation resolves only after the verified binding is durably published alongside the source project. */
   create(root: string, changes: readonly FileChange[], initialBinding?: RemoteBinding): Promise<ProjectSnapshot>;
-  apply(root: string, expectedRevision: string, changes: readonly FileChange[]): Promise<ProjectSnapshot>;
+  apply(root: string, expectedRevision: string, changes: readonly FileChange[], merge?: MergeCommit): Promise<ProjectSnapshot>;
   /** Report the initial disk state and subsequent changes with project-relative paths. */
   watch(root: string, listener: (event: ProjectEvent) => void): () => void;
 }

@@ -7,7 +7,7 @@ import type { TAbstractFile, Vault } from "obsidian";
 import { isMissing, isRelativePath, locatePath, pathKey } from "../project/paths";
 import {
   CONFIG_PATH, parsePaperConfig, projectMembers, projectRevision, sourceDigest, type FileChange,
-  type ProjectEvent, type ProjectStore,
+  type ProjectEvent, type ProjectStore, type MergeCommit,
 } from "../project/store";
 import { ProjectReadError, type ChapterSpec, type ProjectSnapshot, type SourceFile } from "../project/types";
 
@@ -16,9 +16,10 @@ import { readSource } from "../project/source-file";
 import { keepConflict, newJournal, PreconditionConflict, safePath, writeTransaction, type WriteHost } from "../project/transaction";
 import { recoverIn, inspectRecovery, type RecoveryFile, type RecoveryNotice } from "../project/recovery";
 
-import { finishImport, prepareImport, readPendingImport, readVersion, writeVersion, type BindingVersion } from "../remote/binding";
+import { finishImport, prepareImport, readPendingImport, readProposalBase, readVersion, writeVersion, type BindingVersion } from "../remote/binding";
+import { finishMerge, stageMerge } from "../remote/merge-journal";
 import { importChanges } from "../remote/import";
-import type { RemoteBinding } from "../remote/types";
+import type { RemoteBinding, VerifiedSnapshot } from "../remote/types";
 
 const WATCH_SETTLE_MS = 30;
 // CLI fetches and plugin recovery records can contain complete copies of a project.
@@ -234,6 +235,10 @@ export class VaultProjectStore implements ProjectStore {
     return this.anchored(root, (tree: AnchoredFiles): Promise<BindingVersion> => readVersion(tree,root));
   }
 
+  async readProposalBase(root: string, proposalId: string, digest: string): Promise<VerifiedSnapshot|null> {
+    return this.anchored(root,(tree: AnchoredFiles): Promise<VerifiedSnapshot|null> => readProposalBase(tree,root,proposalId,digest));
+  }
+
   async loadBinding(root: string): Promise<RemoteBinding | null> {
     return (await this.readBindingVersion(root)).binding;
   }
@@ -307,8 +312,19 @@ export class VaultProjectStore implements ProjectStore {
     });
   }
 
-  apply(root: string, expectedRevision: string, changes: readonly FileChange[]): Promise<ProjectSnapshot> {
-    return this.save(root, expectedRevision, changes);
+  async recoverMerge(root: string): Promise<void> {
+    await this.exclusive(root, (): Promise<ProjectSnapshot> => this.anchored(root, async (tree: AnchoredFiles): Promise<ProjectSnapshot> => {
+      await rejectNestedProject(this.basePath,root,join(this.basePath,root));
+      const read = (): Promise<ProjectSnapshot> => this.pinnedSnapshot(tree,root);
+      const project = await read();
+      const checked = await writeTransaction(tree,root,project,[],this.host,read);
+      await finishMerge(tree,root,checked.revision,true);
+      return checked;
+    }));
+  }
+
+  apply(root: string, expectedRevision: string, changes: readonly FileChange[], merge?: MergeCommit): Promise<ProjectSnapshot> {
+    return this.save(root, expectedRevision, changes, undefined, merge);
   }
 
   renameChapter(project: ProjectSnapshot, id: string, to: string): Promise<ProjectSnapshot> {
@@ -328,7 +344,7 @@ export class VaultProjectStore implements ProjectStore {
   }
 
   private save(root: string, expectedRevision: string, changes: readonly FileChange[],
-    move?: { from: string; to: string }): Promise<ProjectSnapshot> {
+    move?: { from: string; to: string }, merge?: MergeCommit): Promise<ProjectSnapshot> {
     return this.exclusive(root, async (): Promise<ProjectSnapshot> => {
       return this.anchored(root,async (tree: AnchoredFiles): Promise<ProjectSnapshot> => {
         tree.directory(root);
@@ -336,7 +352,15 @@ export class VaultProjectStore implements ProjectStore {
         const project = await this.pinnedSnapshot(tree,root);
         try {
           if (project.revision !== expectedRevision) throw new PreconditionConflict("论文已在其他地方更改，请重新载入后核对。");
-          return await writeTransaction(tree, root, project, changes, this.host, (): Promise<ProjectSnapshot> => this.pinnedSnapshot(tree,root), move);
+          let transaction: string|undefined;
+          const prepare = merge ? async (journal: string): Promise<string> => {
+            const digest = await stageMerge(tree,root,journal,expectedRevision,merge);
+            transaction = basename(journal);
+            return digest;
+          } : undefined;
+          const result = await writeTransaction(tree,root,project,changes,this.host,(): Promise<ProjectSnapshot> => this.pinnedSnapshot(tree,root),move,prepare);
+          if (merge) await finishMerge(tree,root,(await this.pinnedSnapshot(tree,root)).revision,false,transaction);
+          return result;
         } catch (error: unknown) {
           if (error instanceof PreconditionConflict) await keepConflict(tree, project, expectedRevision, changes, this.host, error.observed);
           throw error;

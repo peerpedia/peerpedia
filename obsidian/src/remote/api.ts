@@ -41,6 +41,11 @@ function decodeJson(body: Uint8Array): unknown {
   } catch { throw new ProtocolError(); }
 }
 
+export interface ProposalSnapshot {
+  snapshot: VerifiedSnapshot;
+  proposal: {id:string; number:number} | null;
+}
+
 export class PeerpediaApi {
   constructor(readonly origin: string, private readonly transport: Transport) { exactOrigin(origin); }
 
@@ -67,9 +72,18 @@ export class PeerpediaApi {
   }
 
   async snapshot(id: string): Promise<VerifiedSnapshot> {
-    const result = verifySnapshot(await this.get("submissions/" + identifier(id) + "/"));
+    const {snapshot} = await this.proposalSnapshot(id);
+    return snapshot;
+  }
+
+  async proposalSnapshot(id: string): Promise<ProposalSnapshot> {
+    const row = object(await this.get("submissions/" + identifier(id) + "/"));
+    const result = verifySnapshot(row);
     if ((isUuid(id) ? result.submissionId : result.publicId) !== id) throw new ProtocolError();
-    return result;
+    if (row.pull_request == null) return {snapshot:result,proposal:null};
+    const pr = object(row.pull_request);
+    if (!isUuid(pr.id) || typeof pr.snapshot !== "number" || !Number.isSafeInteger(pr.snapshot) || pr.snapshot < 1) throw new ProtocolError();
+    return {snapshot:result,proposal:{id:pr.id,number:pr.snapshot}};
   }
 
   async prs(paperId: string): Promise<readonly PrHead[]> {

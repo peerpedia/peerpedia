@@ -13,6 +13,7 @@ export interface BindingVersion {
   binding: RemoteBinding | null;
   digest: string | null;
   pendingImport: boolean;
+  pendingMerge?: boolean;
 }
 
 const state = ".peerpedia-obsidian";
@@ -41,7 +42,7 @@ function checkedTime(value: unknown): string {
   return value;
 }
 
-function decodeBinding(input: unknown): RemoteBinding {
+export function decodeBinding(input: unknown): RemoteBinding {
   const row = object(input);
   if (row.schemaVersion !== 1 || !isUuid(row.paperId) || typeof row.origin !== "string") throw new ProtocolError();
   exactOrigin(row.origin);
@@ -69,7 +70,7 @@ interface BindingHistory {
   count: number;
 }
 
-async function records(tree: AnchoredFiles, dir: string): Promise<BindingHistory> {
+async function records(tree: AnchoredFiles, dir: string, visit?: (binding: RemoteBinding) => void): Promise<BindingHistory> {
   let names: string[];
   try { names = tree.list(join(dir,history)); }
   catch (error: unknown) { if (!isMissing(error)) throw error; names = []; }
@@ -81,6 +82,7 @@ async function records(tree: AnchoredFiles, dir: string): Promise<BindingHistory
   const rootRecord = object(JSON.parse(initial.text));
   if (rootRecord.previous !== null) throw new Error("绑定初始版本无效。");
   let binding = decodeBinding(rootRecord.binding);
+  visit?.(binding);
   let digest = initial.digest;
   const expected = new Set(names);
   for (let index = 1; index <= names.length; ++index) {
@@ -95,6 +97,7 @@ async function records(tree: AnchoredFiles, dir: string): Promise<BindingHistory
       const next = decodeBinding(record.binding);
       if (next.origin !== binding.origin || next.paperId !== binding.paperId) throw new Error("论文绑定身份已更改。");
       binding = next;
+      visit?.(binding);
     }
     digest = entry.digest;
   }
@@ -105,12 +108,14 @@ export async function readVersion(tree: AnchoredFiles, root: string): Promise<Bi
   tree.directory(root);
   const dir = join(root,state);
   const {binding,digest} = await records(tree,dir);
-  return {binding,digest,pendingImport:!binding && !!await tree.source(join(dir,pending))};
+  return {binding,digest,pendingMerge:!!await tree.source(join(dir,"merge-pending.json")),pendingImport:!binding && !!await tree.source(join(dir,pending))};
 }
 
-export async function writeVersion(tree: AnchoredFiles, root: string, binding: RemoteBinding, expectedDigest: string | null): Promise<void> {
+export async function writeVersion(tree: AnchoredFiles, root: string, binding: RemoteBinding, expectedDigest: string | null, mergeTransaction?: string): Promise<void> {
   const dir = join(root,state);
   const {binding:previous,digest,count} = await records(tree,dir);
+  const intent = await tree.source(join(dir,"merge-pending.json"));
+  if (intent && (!mergeTransaction || object(JSON.parse(intent.text)).transaction !== mergeTransaction)) throw new Error("请先处理未完成的合并。");
   if (digest !== expectedDigest) throw new Error("本地绑定已更改，请重新检查。");
   if (!previous && await tree.source(join(dir,pending))) throw new Error("请先完成导入绑定。");
   if (!await tree.source(join(root,"paper.json"))) throw new Error("论文缺少 paper.json。");
@@ -160,4 +165,25 @@ export async function finishImport(tree: AnchoredFiles, root: string, revision: 
   tree.rename(join(dir,pending),join(dir,first),"publish");
   await tree.sync(dir);
   if ((await tree.source(join(dir,first)))?.digest !== intent.digest) throw new Error("无法确认导入绑定，请打开论文面板核对。");
+}
+
+export async function isBindingSuccessor(tree: AnchoredFiles, root: string, binding: RemoteBinding, previous: string): Promise<boolean> {
+  const dir = join(root,state);
+  const tip = await records(tree,dir);
+  if (!tip.count || !isDeepStrictEqual(tip.binding,binding)) return false;
+  const entry = await tree.source(join(dir,history,tip.count + ".json"));
+  return !!entry && object(JSON.parse(entry.text)).previous === previous;
+}
+
+// Only full, verified records where the confirmed working snapshot was the
+// bound PR head qualify. Timestamp observations never introduce a candidate.
+export async function readProposalBase(tree: AnchoredFiles, root: string, proposalId: string, digest: string): Promise<VerifiedSnapshot|null> {
+  let candidate: VerifiedSnapshot|null = null;
+  const tip = await records(tree,join(root,state),(binding: RemoteBinding): void => {
+    const {activePr,workingBase} = binding;
+    if (activePr?.id === proposalId && activePr.hash === workingBase.hash && activePr.submissionId === workingBase.submissionId)
+      candidate = workingBase;
+  });
+  if (tip.digest !== digest) throw new Error("本地绑定已更改，请重新比较。");
+  return candidate;
 }
