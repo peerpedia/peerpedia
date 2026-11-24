@@ -1,70 +1,34 @@
-# Peerpedia 本地写作验收
+# Offline authoring acceptance
 
-2026 年 11 月 24 日，在 **macOS 15.6.1、Apple Silicon（arm64）** 上验收 Peerpedia **0.1.0**。宿主为 **Obsidian Desktop 1.15.1**，使用 Electron **43.8.9** 和 Node.js **24.22.1**。安装包的独立渲染器使用官方签名的 **Node.js 22.22.3 darwin-arm64**，携带网站渲染器、TikZ 和 TeX 资源、共享正文主题及本地字体。平台范围和安装步骤见[安装说明](installation.md)。
+The combined personal package, its digest, the tested platform and the remote workflow are recorded in [manual publishing acceptance](remote-acceptance.md). This record covers the local authoring checks and how to repeat them.
 
-## 本地修订包
+## Relocated package in Obsidian
 
-本次验收的压缩包位于 `obsidian/dist/local-authoring-final/peerpedia-0.1.0-darwin-arm64.zip`，SHA-256 为 `3a77a26c9bd55cb9638c36f9bbf2f40b1bd2608d4d1f49dc9249d3b83b07993a`。旧包与修订包的版本号均为 0.1.0，可按此摘要确认所用文件。
+The host probe copies a complete extracted package into a fresh vault under a Unicode path. It opens Obsidian 1.15.1 with its own profile, verifies installed file checksums and renders a two-chapter manuscript from the native source editor. The test uses an offline Chromium context, records HTTP(S) attempts and runs the plugin's renderer child with macOS network access denied. Obsidian itself can attempt an application update during startup.
 
-在修订包的独立临时库，用原生编辑器分别修改空章节和已有正文的章节。在自动保存前从另一个进程改写同一文件，两章都出现了「核对版本」通知。已有正文的一章关闭了写作辅助。退出并重新启动 Obsidian 后，两章的原文、编辑器草稿和外部修改仍可分别读取。普通自动保存、CRLF 正文和项目面板确认修改章名均未新增冲突记录。未列入清单的同目录笔记也未生成记录。
-
-通过面板将带有标签、样式和无编号标记的二级标题改名后，原标签仍可从第二章通过预览链接打开。公式方框和数组竖线都显示实线，数组保留负边距，带编号的 TikZ 图为编号留出一列。项目面板分别显示未知字段名及嵌套项目清单的路径，两个出错目录内的文件内容与打开前一致。
-
-## 搬移后的安装包实测
-
-将发布用 ZIP 解压到含中文和空格的「解包 验收」目录，再整体复制到临时「独立 验收库」。对照包内清单核验文件摘要，并确认 Node.js 可执行。在未登录的独立 Obsidian 配置中首次启用，打开「双章 论文」样本。全程只使用合成稿件和临时测试库。
-
-| 场景 | 观察结果 |
+| Activity | Observed behavior |
 | --- | --- |
-| 首次启用和范围覆盖 | 新安装没有已保存的插件设置，写作辅助默认关闭。保存启用论文文件夹、单独关闭第二章的规则后，设置文件保留两条记录。第二章可继续在原生编辑器输入、保存和更新预览。 |
-| 双章和跨章引用 | 两章分别生成 TikZ 和交换图，KaTeX 和 TikZ 字体实际加载。定理和公式沿全书编号，双向跨章链接及共享书目正常显示。原源码窗格保持同一编辑器。 |
-| 单向定位 | 预览切章和滚动保持源码文件及光标所在位置。点击「定位源码」才打开对应章节。 |
-| 无效语法 | 注入未知数学命令时显示错误并保留上次成功预览，暂时禁用「定位源码」。改回有效源码后恢复。 |
-| 图形超时 | 暂停本次测试中的渲染进程并请求修改后的图形。40 秒后显示超时，保留上次成功的图形和正文。恢复有效稿件后启动新的渲染进程并成功排版。 |
-| 停用、卸载 | 停用后关闭预览窗格，移除插件命令并停止渲染进程。删除测试库中的插件目录后，章节改稿和共享书目仍可从磁盘读取。 |
+| First enable | Writing assistance starts off. Folder rules and individual file overrides persist. A chapter with assistance disabled remains editable and previewable. |
+| Read and edit | KaTeX, TikZ, commutative diagrams, bundled fonts, shared references and cross-chapter numbering work. The preview follows source edits. Scrolling or switching chapters in the preview preserves the source position until the explicit source-location action. |
+| Renderer error or timeout | Invalid math and a deliberately paused renderer keep the last successful preview visible with an error. Source navigation from stale output is disabled. A later valid edit renders successfully. |
+| Disable and remove | Preview panes close, the plugin's commands disappear, and the renderer stops. Source files, edits and bibliography remain readable after uninstalling the test copy. |
+| Conflicting writes | Independent writes to an open chapter before autosave preserve the original, editor draft and external version, including an empty initial chapter and a chapter with assistance disabled. Recovery survives restart. Ordinary saves, unlisted notes and confirmed chapter-title edits do not create spurious conflicts. |
 
-从首次启用插件到改稿、预览及停用，Chromium 测试上下文为离线并拦截 HTTP(S)，记录到 **0 个 HTTP(S) 请求**。实际安装包的渲染进程由测试脚本加上 macOS 网络禁用策略，网络探针返回 `EPERM`。Obsidian 自身启动时尝试检查应用更新，宿主日志记录这些检查连接失败。独立应用配置、仅供测试的 Keychain 替代和网络探针由验收脚本设置。手动安装使用标准 Obsidian 启动方式。
+## Earlier local authoring checks
 
-## 其他已验证的本地场景
+The same host version was also exercised during development with multiple source editors, Live Preview, file and folder rules, multiple cursors, undo, two separate manuscripts and system Pinyin composition. Reference navigation selected exact cross-chapter and bibliography ranges with CRLF and emoji. Bibliography tests covered preserving comments and CRLF, duplicate keys, shared-key renaming and invalid YAML recovery. The format tests checked 64 chapters and the diagnostic for a 65th. The packaged host sample uses two chapters.
 
-| 场景 | 验证与范围 |
-| --- | --- |
-| 中文输入法 | 编辑器适配验收在同版本真实宿主用系统简体拼音验证选词和建议关闭，用 CDP 验证形似定理触发词的组字不触发补全。搬移包复测了中文正文输入与保存。 |
-| 编辑范围 | 前期真实宿主检查过源码模式、Live Preview、文件夹和单文件规则、两份论文间引用候选隔离，以及多光标和撤销。已在搬移包复测默认范围和文件关闭规则。 |
-| 64 章 | [格式回归测试](../tests/project-format.test.ts)接受清单内 64 章，对第 65 章给出诊断并保留原稿。搬移包的宿主样本使用两章。 |
-| 跨章与 YAML 源码 | 前期真实宿主验证引用跳转可准确选中跨章标签和共享 YAML 键，覆盖 CRLF 和 emoji。搬移包复测跨章预览链接、全书编号和源码定位。 |
-| 书目编辑 | 书目功能验收在同版本真实宿主验证挂接已有 YAML、创建条目、禁止重复键、保留 CRLF 与注释、跨章改键和错误恢复。补充回归测试覆盖锚点和别名保护。 |
-| 外部冲突 | 项目管理验收在同版本真实宿主用独立文件句柄制造并发写入，验证冲突可见、保留表单草稿及可读取恢复版本。跨文件修改可能短暂显示中间状态。改名可能重开源码窗格并清空其撤销历史，操作前会提示。 |
-| 渲染进程 | 回归测试覆盖取消、意外退出、超时后重启和过期响应。64 章、正文加书目 1 MiB、32 张图及单图 32 KiB 的限制与项目格式一致。 |
+Chapter-file renames can reopen the source pane and clear its undo history. Multiple files can briefly show intermediate states during a transaction. The plugin checks source revisions and retains recovery copies when an external writer interrupts an edit.
 
-## 复测
+## Repeat the host checks
 
-从仓库根目录运行。打包命令默认使用新的 `obsidian/dist/peerpedia/`，也可在末尾用 `--` 指定其他新目录。
+From the repository root, with the test Python environment containing Playwright, set the application to a dedicated Obsidian test copy and the package to a freshly extracted folder. Both scripts create and remove disposable vaults and profiles.
 
 ```sh
-npm --prefix obsidian test
-npm --prefix obsidian run typecheck
-npm --prefix obsidian run check:types
-npm --prefix obsidian run build
-npm --prefix obsidian run package
+"$TEST_PYTHON" obsidian/scripts/validate-offline-host.py \
+  "$TEST_APP" "$PACKAGE" obsidian/tests/fixtures/render-paper.json "$EVIDENCE/offline"
+"$TEST_PYTHON" obsidian/scripts/validate-native-conflicts.py \
+  "$TEST_APP" "$PACKAGE" obsidian/tests/fixtures/render-paper.json "$EVIDENCE/native"
 ```
 
-搬移测试将完整包移入含中文和空格的目录，清空 `PATH`，禁止网络、checkout 读取和包目录写入，渲染原稿与其中一处修改。若还需复测实际宿主，指定已安装 Playwright 的 Python、独立的 Obsidian 测试应用、完整包目录和记录目录。测试会创建并清理独立配置、库及插件副本。
-
-```sh
-PEERPEDIA_OBSIDIAN_APP="/测试目录/Obsidian.app" \
-PEERPEDIA_PLUGIN_PACKAGE="/解包 验收/peerpedia" \
-PEERPEDIA_ACCEPTANCE_PYTHON="/测试目录/python" \
-PEERPEDIA_ACCEPTANCE_EVIDENCE="/测试目录/验收记录" \
-npm --prefix obsidian test -- tests/offline-journey.test.ts
-```
-
-复测原生编辑冲突和重启恢复时，可对同一个已解压的包运行以下命令。脚本同时验证两章正式排版、章名确认和项目错误说明。
-
-```sh
-/测试目录/python obsidian/scripts/validate-native-conflicts.py \
-  "/测试目录/Obsidian.app" "/解包 验收/peerpedia" \
-  obsidian/tests/fixtures/render-paper.json "/测试目录/验收记录"
-```
-
-本次实测输出包括 `task-8-host-journey.log`、`task-8-obsidian.log` 和 `task-8-relocated-preview.png`。本次交付覆盖本地写作及离线预览，远程导入、合并和发布由后续计划验收。
+The offline probe writes its host log and a rendered-preview screenshot to the evidence folder. The [installation guide](installation.md) and [usage guide](usage.md) describe the corresponding English commands.

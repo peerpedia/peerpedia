@@ -166,4 +166,4 @@
 
 [Obsidian 官方构建样例](https://github.com/obsidianmd/obsidian-sample-plugin/blob/master/esbuild.config.mjs)用于宿主依赖外置；[官方 API](https://github.com/obsidianmd/obsidian-api/blob/master/obsidian.d.ts)用于编辑扩展、建议窗口和 vault；[Node 子进程文档](https://nodejs.org/api/child_process.html)用于 stdio 组件；[Vitest 官方指南](https://vitest.dev/guide/)用于测试运行。
 
-设计中的本地需求均映射到任务 1–8；五类 Review Focus 已有归属测试。界面尺寸、键位细节与打包具体 Node 补丁版本由实测决定；这些不改变已确认的产品范围。本地任务 0–8 已实施。Apple Silicon 离线安装包的宿主、覆盖范围与验证记录见[本地验收](../../../obsidian/docs/local-acceptance.md)。远程交付按[单独计划](2026-11-23-obsidian-remote-publishing.md)继续。
+设计中的本地需求均映射到任务 1–8；五类 Review Focus 已有归属测试。界面尺寸、键位细节与打包具体 Node 补丁版本由实测决定；这些不改变已确认的产品范围。本地任务 0–8 已实施。Apple Silicon 离线安装包的宿主、覆盖范围与验证记录见[本地验收](../../../obsidian/docs/local-acceptance.md)。远程流程见[单独计划](2026-11-23-obsidian-remote-publishing.md)，本地写作与远程发表合并后的个人试用包、摘要及实测记录见[完整验收](../../../obsidian/docs/remote-acceptance.md)。
