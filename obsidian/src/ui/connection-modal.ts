@@ -1,3 +1,4 @@
+import { styleModal } from "./controls";
 import { UserFacingError } from "../user-error";
 import { errorMessage } from "./conflict-modal";
 import { Modal, type App } from "obsidian";
@@ -16,6 +17,7 @@ export class ConnectionModal extends Modal {
     private readonly save: (identity: AccountIdentity | null, cleanup: readonly AccountIdentity[]) => Promise<void>,
     private cleanup: readonly AccountIdentity[] = []) {
     super(app);
+    styleModal(this);
     if (identity) this.cleanup = this.excluding(identity);
   }
 
@@ -49,16 +51,25 @@ export class ConnectionModal extends Modal {
   private render(): void {
     const el = this.contentEl;
     el.empty();
-    this.setTitle("Connect Peerpedia account");
-    const site = el.createEl("label", {text:"Site URL "}).createEl("input", {type:"url"});
+    this.setTitle(this.identity ? "Peerpedia account" : "Connect Peerpedia");
+    const account = this.identity;
+    if(account){
+      const card=el.createDiv({cls:"peerpedia-account-card"});
+      card.createEl("strong",{text:account.username});
+      card.createEl("small",{text:account.origin});
+    }
+    const fields=el.createEl("details",{cls:"peerpedia-account-fields"});
+    fields.open=!this.identity;
+    fields.createEl("summary",{text:this.identity ? "Update connection details" : "Connection details"});
+    const site = fields.createEl("label", {text:"Site URL "}).createEl("input", {type:"url"});
     site.value = this.identity?.origin ?? this.draftOrigin;
     site.disabled = this.busy || this.identity !== null;
-    if (this.identity) el.createEl("p", {text:"Username: " + this.identity.username});
     const tokenLabel = this.identity ? "Access token (leave blank to use the saved token) " : "Access token ";
-    const secret = el.createEl("label", {text:tokenLabel}).createEl("input", {type:"password"});
+    const secret = fields.createEl("label", {text:tokenLabel}).createEl("input", {type:"password"});
     secret.autocomplete = "off";
     secret.disabled = this.busy;
-    const connect = el.createEl("button", {text:this.busy ? "Working…" : "Connect and verify account"});
+    const connect = el.createEl("button", {text:this.busy ? "Working…" : (this.identity ? "Verify connection" : "Connect and verify account")});
+    connect.addClass("mod-cta");
     connect.disabled = this.busy;
     connect.onclick = (): void => {
       const origin = site.value.trim();

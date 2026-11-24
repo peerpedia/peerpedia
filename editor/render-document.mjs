@@ -86,9 +86,14 @@ async function compileChapter(
   const { imageOffset } = sourceInfo(page.markdown);
   if (imageOffset >= 0) {
     const lines = page.markdown.slice(0, imageOffset).split("\n");
-    throw Object.assign(new Error("Images are not supported. Use a TikZ diagram instead."), {
-      file: info.file, line: lines.length, column: lines.at(-1).length + 1,
-    });
+    throw Object.assign(
+      new Error("Images are not supported. Use a TikZ diagram instead."),
+      {
+        file: info.file,
+        line: lines.length,
+        column: lines.at(-1).length + 1,
+      },
+    );
   }
   const result = renderer.renderDocument(resolved, info);
   let diagramCount = 0;

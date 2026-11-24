@@ -8,6 +8,7 @@ import type { Category, LicenseOption, VerifiedSnapshot } from "../remote/types"
 import { PreviewReader, readTheme } from "../preview/reader";
 import type { RenderPage } from "../../renderer/protocol";
 import { errorMessage } from "./conflict-modal";
+import { styleModal } from "./controls";
 import { button } from "./paper-form";
 
 const labels:Record<SubmissionIntent,string> = {publish:"Publish a new paper", "append-pr":"Add a snapshot to the open proposal", "new-pr":"Create a new proposal"};
@@ -24,11 +25,15 @@ function showChapters(box:HTMLElement, chapters:PublicationDocument["chapters"])
 function showRequest(box:HTMLElement, request:PreparedSubmission, proposalHead?:VerifiedSnapshot|null): void {
   const doc = frozenPayload(request);
   box.createEl("h3",{text:doc.title});
+  const metadata=box.createEl("details");
+  metadata.createEl("summary",{text:"Paper details and disclosure"});
   for (const [label,value] of [["Authors",doc.authors],["Abstract",doc.abstract],["Subjects",[doc.primary_category,...doc.secondary_categories].join(", ")],
-    ["License",doc.license],["Explanation",doc.explanation],["AI assistance",doc.ai_assisted ? "Yes" : "No"]]) box.createEl("p",{text:label+" · "+value});
-  showChapters(box,doc.chapters);
-  if (!doc.chapters.length) box.createEl("pre",{text:doc.markdown});
-  if (doc.bibliography) { box.createEl("h4",{text:"Bibliography"}); box.createEl("pre",{text:doc.bibliography}); }
+    ["License",doc.license],["Explanation",doc.explanation],["AI assistance",doc.ai_assisted ? "Yes" : "No"]]) metadata.createEl("p",{text:label+" · "+value});
+  const source=box.createEl("details");
+  source.createEl("summary",{text:"Exact source to submit"});
+  showChapters(source,doc.chapters);
+  if (!doc.chapters.length) source.createEl("pre",{text:doc.markdown});
+  if (doc.bibliography) { source.createEl("h4",{text:"Bibliography"}); source.createEl("pre",{text:doc.bibliography}); }
   box.createEl("p",{text:request.origin+" · "+request.username+" · "+labels[request.intent]});
   if (doc.pull_request_id && doc.expected_head) {
     const proposal = box.createEl("a",{text:"Open proposal on Peerpedia",href:request.origin+"/prs/"+doc.pull_request_id+"/"});
@@ -66,7 +71,7 @@ export class SubmitModal extends Modal {
   private readonly abort = new AbortController();
   private details:SubmissionDetails = {explanation:"",aiAssisted:false};
   constructor(app:App, private readonly root:string, private readonly store:VaultProjectStore, private readonly controller:SubmissionController,
-    private readonly dir:string, private readonly updated:()=>Promise<void>) { super(app); this.setTitle("Submit to Peerpedia"); this.contentEl.addClass("peerpedia-paper-form"); }
+    private readonly dir:string, private readonly updated:()=>Promise<void>) { super(app); this.setTitle("Publish a version"); styleModal(this,true); }
 
   override onOpen(): void { this.run(():Promise<void> => this.openForm()); }
   override onClose(): void { this.abort.abort(); }
@@ -113,10 +118,13 @@ export class SubmitModal extends Modal {
     explanation.value = this.details.explanation;
     const ai = el.createEl("label",{text:"AI assisted "}).createEl("input",{type:"checkbox"});
     ai.checked = this.details.aiAssisted;
-    const preview = button(el,"Preview submission",():void => {
+    const footer = el.createDiv({cls:"peerpedia-form-footer"});
+    button(footer,"Cancel",(): void => this.close()).addClass("peerpedia-quiet");
+    const preview = button(footer,"Review submission",():void => {
       this.details = {explanation:explanation.value,aiAssisted:ai.checked};
       this.run(():Promise<void> => this.preview(mode.value as SubmissionIntent));
     });
+    preview.addClass("mod-cta");
     preview.disabled = !mode.value;
     mode.onchange = ():void => { preview.disabled = !mode.value; };
   }
@@ -147,6 +155,7 @@ export class SubmitModal extends Modal {
     if (review) {
       box.createEl("p",{text:request.intent === "publish" ? "Confirming will publish this paper publicly." : "Confirming will create a public proposal snapshot for consideration."});
       const article = box.createEl("details");
+      article.open = true;
       article.createEl("summary",{text:"Rendered manuscript"});
       void this.manuscript(article,review.pages);
     }
@@ -154,7 +163,8 @@ export class SubmitModal extends Modal {
       const prior = request.intent === "append-pr" ? review.context.proposalHead! : review.context.binding.acceptedBase;
       changes(box,prior.document,frozenPayload(request));
     }
-    button(box,review ? "Confirm submission" : saved ? "Finish from saved receipt" : "Retry saved submission",():void => this.run(async ():Promise<void> => {
+    const footer = box.createDiv({cls:"peerpedia-form-footer"});
+    const confirm = button(footer,review ? "Confirm submission" : saved ? "Finish from saved receipt" : "Retry saved submission",():void => this.run(async ():Promise<void> => {
       box.setText("Checking the submission result…");
       if (review && (await this.store.read(this.root)).revision !== request.sourceRevision) {
         await this.preview(request.intent);
@@ -172,7 +182,8 @@ export class SubmitModal extends Modal {
         if (!this.abort.signal.aborted) box.prepend(box.createEl("p",{text:"The manuscript changed. Review the new preview and confirm again."}));
       } finally { await this.updated(); }
     }));
-    if (review) button(box,"Edit submission details",():void => this.fields(review.context));
+    confirm.addClass("mod-cta");
+    if (review) button(footer,"Edit submission details",():void => this.fields(review.context));
   }
   private result(origin:string,snapshot:VerifiedSnapshot): void {
     const el = this.contentEl;

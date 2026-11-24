@@ -72,3 +72,17 @@ test("resource adaptation accepts only declared local font files and user-activa
   expect(articleLink("?chapter=intro#eq:main")).toBe("?chapter=intro#eq:main");
   for (const link of ["file:///elsewhere", "obsidian://open", "javascript:void(0)", "//example.invalid/x"]) expect(articleLink(link)).toBeNull();
 });
+
+test("switching papers clears the previous preview and cancels its in-flight render", async (): Promise<void> => {
+  const {controller,pending} = harness();
+  const paper = projectFixture();
+  controller.update({...paper,revision:"old"});
+  await vi.advanceTimersByTimeAsync(300);
+  controller.reset();
+  expect(pending[0].signal.aborted).toBe(true);
+  expect(controller.state()).toMatchObject({result:null,currentRevision:"",renderedRevision:null});
+  pending[0].finish({...pending[0].request,pages:[]});
+  await vi.advanceTimersByTimeAsync(0);
+  expect(controller.state().result).toBeNull();
+  await controller.dispose();
+});

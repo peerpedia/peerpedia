@@ -1,6 +1,7 @@
+import type { SyntaxMark } from "../src/language/index";
 import { expect, test } from "vitest";
 
-import { analyzeProject } from "../src/language/analysis";
+import { analyzeProject, analyzeWriting } from "../src/language/analysis";
 import { complete, type Suggestion } from "../src/language/completion";
 import { editFixture, projectFixture } from "./fixtures";
 
@@ -144,4 +145,17 @@ test("the publication image rule also inspects nested link contents", (): void =
   const source = "[![caption](figure.png)](article)";
   const issues = analyzeProject(editFixture(projectFixture(), intro, source)).diagnostics;
   expect(issues).toContainEqual({code:"publication-compatibility", path:intro, from:1, to:23, message:"Use TikZ figures for publication. Image embeds are unsupported."});
+});
+
+test("preserves upstream syntax classes for TeX commands, delimiters, environments and references", (): void => {
+  const source = "😀\r\n::: theorem [Test] {@thm:test}\r\n$\\frac{a}{b}$ and @thm:test\r\n:::\r\n";
+  const chapter = analyzeWriting(editFixture(projectFixture(), intro, source), new Map()).chapters.get(intro)!;
+  const normalized = source.replace(/\r\n/g, "\n");
+  const tokens = chapter.marks.filter((mark: SyntaxMark): boolean => Boolean(mark.classes));
+  expect(tokens).toEqual(expect.arrayContaining([
+    expect.objectContaining({from:normalized.indexOf("\\frac"), to:normalized.indexOf("\\frac") + 5, classes:expect.stringContaining("bm-hl-command")}),
+    expect.objectContaining({classes:expect.stringContaining("bm-hl-environment-name")}),
+    expect.objectContaining({classes:expect.stringContaining("bm-hl-reference")}),
+  ]));
+  expect(tokens.some((mark: SyntaxMark): boolean => normalized.slice(mark.from, mark.to) === "$" && mark.classes!.includes("bm-hl"))).toBe(true);
 });

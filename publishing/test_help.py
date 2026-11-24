@@ -56,3 +56,37 @@ class HelpExampleTests(SimpleTestCase):
         self.assertIn('id="area"', plain.render("main")[0])
         self.assertIn('href="#demo-area"', prefixed.render("main")[0])
         self.assertIn('id="demo-area"', prefixed.render("main")[0])
+
+
+class ObsidianGuideTests(SimpleTestCase):
+    def test_guide_has_release_downloads_and_valid_navigation(self: "ObsidianGuideTests") -> None:
+        from django.conf import settings
+
+        response = self.client.get(reverse("help_obsidian"))
+        self.assertEqual(response.status_code, 200)
+        body = response.content.decode()
+        archive = f"peerpedia-obsidian-{settings.PROJECT_VERSION}-darwin-arm64.zip"
+        release = f"{settings.PROJECT_REPOSITORY_URL}/releases/download/v{settings.PROJECT_VERSION}"
+        self.assertContains(response, f'href="{release}/{archive}"')
+        self.assertContains(response, f'href="{release}/{archive}.sha256"')
+        self.assertContains(response, 'aria-current="page">Obsidian guide')
+        for text in (
+            "Apple silicon",
+            "Peerpedia: Open paper preview",
+            "Outline",
+            "Manuscript",
+            "data.json",
+            "Connect and verify account",
+            "Review submission",
+        ):
+            self.assertContains(response, text)
+        anchors = Anchors()
+        anchors.feed(body)
+        self.assertEqual(len(anchors.ids), len(set(anchors.ids)))
+        self.assertTrue(set(anchors.fragments) <= set(anchors.ids))
+
+    def test_existing_help_and_about_link_to_obsidian(self: "ObsidianGuideTests") -> None:
+        for route in ("help", "help_cli", "about"):
+            response = self.client.get(reverse(route))
+            self.assertEqual(response.status_code, 200)
+            self.assertContains(response, reverse("help_obsidian"))

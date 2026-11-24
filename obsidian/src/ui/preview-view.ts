@@ -13,6 +13,7 @@ import { bindSourceButton, chapterPath, locatePreview, pageForSource, previewMem
 import { pathKey } from "../project/path-identity";
 import { CONFIG_PATH, type ProjectStore } from "../project/store";
 import type { ProjectSnapshot, SourceFile } from "../project/types";
+import { iconButton } from "./controls";
 import { errorMessage } from "./conflict-modal";
 
 export const PREVIEW_VIEW = "peerpedia-paper-preview";
@@ -56,10 +57,21 @@ export class PreviewView extends ItemView {
   override async setState(state: unknown, result: ViewStateResult): Promise<void> {
     await super.setState(state, result);
     const root = (state as {root?: unknown} | null)?.root;
-    if (typeof root !== "string" || root === this.root || this.closed) return;
-    // A preview leaf belongs to one paper. Opening another paper creates a new split.
-    if (this.root !== null) return;
+    if (typeof root === "string") await this.selectRoot(root);
+  }
+
+  async selectRoot(root: string): Promise<void> {
+    if (root === this.root || this.closed) return;
+    this.stop?.();
+    ++this.readId;
     this.root = root;
+    this.disk = this.project = undefined;
+    this.shown = this.page = this.cursor = this.sourceHint = this.coordinates = undefined;
+    this.followed = undefined;
+    this.sourceLeaf = this.pendingSource = undefined;
+    this.reader?.clear();
+    this.chapters?.replaceChildren();
+    this.controller.reset();
     try {
       this.stop = this.store.watch(root, (): void => { void this.reload(root); });
       await this.reload(root);
@@ -68,17 +80,18 @@ export class PreviewView extends ItemView {
 
   override async onOpen(): Promise<void> {
     this.contentEl.addClass("peerpedia-preview");
-    const tools = this.contentEl.createDiv({cls: "peerpedia-actions"});
+    const tools = this.contentEl.createDiv({cls: "peerpedia-preview-toolbar"});
     this.chapters = tools.createEl("select", {attr: {"aria-label": "Preview chapter"}});
     this.chapters.onchange = (): void => {
       const page = this.shown?.pages[this.chapters.selectedIndex];
       if (page) this.show(page);
     };
-    this.sourceButton = tools.createEl("button", {text: "Go to source"});
+    this.sourceButton = iconButton(tools, "Go to source", "file-pen-line", (): void => {});
     this.sourceButton.disabled = true;
     bindSourceButton(this.sourceButton, (): void => { void this.goToSource().catch(warnNavigationFailure); });
-    this.status = this.contentEl.createDiv({attr: {role: "status"}});
-    this.position = this.contentEl.createDiv({cls: "peerpedia-preview-position"});
+    const state = this.contentEl.createDiv({cls: "peerpedia-preview-state"});
+    this.status = state.createDiv({attr: {role: "status"}});
+    this.position = state.createDiv({cls: "peerpedia-preview-position"});
     try {
       const {theme, css} = await readTheme(this.app.vault.adapter,this.dir);
       if (this.closed) return;

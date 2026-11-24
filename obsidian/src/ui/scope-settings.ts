@@ -1,4 +1,4 @@
-import { Notice, PluginSettingTab, type App } from "obsidian";
+import { Notice, PluginSettingTab, Setting, type App, type ToggleComponent, type ExtraButtonComponent } from "obsidian";
 import type PeerpediaPlugin from "../main";
 import { isRelativePath } from "../project/path-identity";
 import { errorMessage } from "./conflict-modal";
@@ -21,10 +21,12 @@ export class ScopeSettings extends PluginSettingTab {
           .then((): void => this.display()).catch((error: unknown): void => { new Notice(errorMessage(error)); });
       };
       for (const [path, enabled] of Object.entries(this.owner.writingScope[kind])) {
-        const row = this.containerEl.createDiv({ cls: "peerpedia-actions" });
-        row.createSpan({ text: path || "Vault root" });
-        row.createEl("button", { text: enabled ? "Enabled" : "Disabled" }).onclick = (): void => change(path, !enabled);
-        row.createEl("button", { text: "Remove rule" }).onclick = (): void => change(path, null);
+        new Setting(this.containerEl).setName(path || "Vault root")
+          .addToggle((toggle: ToggleComponent): void => {
+            toggle.setValue(enabled).setTooltip("Enable BananaMark assistance").onChange((value: boolean): void => change(path,value));
+          }).addExtraButton((remove: ExtraButtonComponent): void => {
+            remove.setIcon("x").setTooltip("Remove rule").onClick((): void => change(path,null));
+          });
       }
       const row = this.containerEl.createDiv({ cls: "peerpedia-actions" });
       const input = row.createEl("input", { type: "text", placeholder: folder ? "Folder path (blank for vault root)" : "Markdown file path" });
@@ -35,8 +37,10 @@ export class ScopeSettings extends PluginSettingTab {
         }
         change(path, enabled);
       };
-      row.createEl("button", { text: "Enable" }).onclick = (): void => add(true);
-      row.createEl("button", { text: "Disable" }).onclick = (): void => add(false);
+      const enabled = row.createEl("select", {attr:{"aria-label":"Rule behavior"}});
+      enabled.createEl("option",{text:"Enable assistance",value:"true"});
+      enabled.createEl("option",{text:"Disable assistance",value:"false"});
+      row.createEl("button", { text: "Add rule" }).onclick = (): void => add(enabled.value==="true");
     }
   }
 }

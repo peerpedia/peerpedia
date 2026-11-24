@@ -6,6 +6,7 @@
   "type": "module",
   "exports": {
     "./style.css": "./dist/style.css",
+    "./syntax.css": "./dist/syntax.css",
     "./tokens.css": "./dist/tokens.css",
     "./assets.json": "./dist/assets.json",
     "./fonts/katex/*": "./dist/fonts/katex/*",

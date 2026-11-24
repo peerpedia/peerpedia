@@ -11,8 +11,8 @@ function visible(view: EditorView, range: SourceRange): boolean {
 
 function chapterMarks(view: EditorView, chapter: ChapterLanguage): Range<Decoration>[] {
   const marks: Range<Decoration>[] = [];
-  for (const { from, to, kind } of chapter.marks) {
-    if (visible(view, { from, to })) marks.push(Decoration.mark({ class: `peerpedia-source-${kind}` }).range(from, to));
+  for (const { from, to, kind, classes } of chapter.marks) {
+    if (visible(view, { from, to })) marks.push(Decoration.mark({ class: classes ? `peerpedia-source-token ${classes}` : `peerpedia-source-${kind}` }).range(from, to));
   }
   return marks;
 }

@@ -35,6 +35,13 @@ export class PreviewController {
     this.changed();
   }
 
+  reset(): void {
+    if (this.disposed) return;
+    this.cancel();
+    this.value = emptyPreview();
+    this.changed();
+  }
+
   unavailable(error: RenderFailure["error"]): void {
     if (this.disposed) return;
     this.cancel();

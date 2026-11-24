@@ -1,7 +1,7 @@
 {
   "id": "peerpedia",
   "name": "Peerpedia",
-  "version": "0.1.0",
+  "version": "0.1.3",
   "minAppVersion": "1.15.1",
   "description": "Write and preview papers offline, and import, compare, or submit them to Peerpedia from Obsidian on Apple Silicon Macs.",
   "author": "Peerpedia",

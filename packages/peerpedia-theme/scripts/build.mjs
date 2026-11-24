@@ -133,6 +133,30 @@ const bananaMarkPresentation = await readStylesheet(
   join(project, "src/bananamark.css"),
 );
 
+// Editor syntax is generated from the same upstream classes and Peerpedia tokens.
+// No article layout or fonts escape into the native editor.
+const syntax = postcss.root();
+for (const sheet of [tokens, bananaMarkSheet, bananaMarkPresentation]) {
+  sheet.walkRules(
+    /** @param {import('postcss').Rule} rule @returns {void} */
+    (rule) => {
+      const tokenRule =
+        sheet === tokens ||
+        (sheet === bananaMarkPresentation &&
+          rule.selector === ".peerpedia-article");
+      if (!tokenRule && !rule.selector.includes(".bm-hl-")) return;
+      const copy = rule.clone();
+      copy.selector = tokenRule
+        ? ".peerpedia-writing"
+        : rule.selector.replaceAll(
+            ":where(.peerpedia-article)",
+            ".peerpedia-writing",
+          );
+      syntax.append(copy);
+    },
+  );
+}
+
 const manifest = {
   stylesheet: "style.css",
   tokens: "tokens.css",
@@ -175,6 +199,7 @@ try {
     ].join("\n") + "\n",
   );
   await writeFile(join(staging, manifest.tokens), siteTokens.toString() + "\n");
+  await writeFile(join(staging, "syntax.css"), syntax.toString() + "\n");
   await writeFile(
     join(staging, "assets.json"),
     JSON.stringify(manifest, null, 2) + "\n",

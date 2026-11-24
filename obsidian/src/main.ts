@@ -2,7 +2,7 @@ import { UserFacingError } from "./user-error";
 import { join } from "node:path";
 import type { Text } from "@codemirror/state";
 import { EditorView, type ViewUpdate } from "@codemirror/view";
-import { editorInfoField, FileSystemAdapter, MarkdownView, Notice, Plugin, type Editor, type MarkdownFileInfo, type TAbstractFile, type WorkspaceLeaf } from "obsidian";
+import { editorInfoField, FileSystemAdapter, TFile, MarkdownView, Notice, Plugin, type Editor, type MarkdownFileInfo, type TAbstractFile, type WorkspaceLeaf, type View } from "obsidian";
 
 import { ensurePublishedFile, ExternalScopeMoves, isStagedMove, moveScope, openBuffers, stageChapter } from "./host/file-events";
 import type { OpenChapterMove } from "./project/transaction";
@@ -20,7 +20,8 @@ import { findTarget } from "./language/targets";
 import { resolveScope } from "./project/scope";
 import type { RecoveryNotice } from "./project/recovery";
 import { isManuscriptPath } from "./project/path-identity";
-import { CONFIG_PATH } from "./project/store";
+import { WorkspaceContext } from "./ui/workspace-context";
+import { projectMembers, CONFIG_PATH } from "./project/store";
 
 import { SubmissionController } from "./remote/controller";
 import { RendererClient } from "./preview/renderer-client";
@@ -91,12 +92,18 @@ export default class PeerpediaPlugin extends Plugin {
     this.registerView(PROJECT_PANEL, (leaf: WorkspaceLeaf): ProjectPanel => new ProjectPanel(leaf, store,
       (root: string): Promise<void> => this.updateWritingScope({
         ...this.writingScope, folders: { ...this.writingScope.folders, [root]: true },
-      }), (): string => this.importOrigin, transport, dir, submissions));
+      }), (): string => this.importOrigin, transport, dir, submissions, {
+        preview:(root: string): Promise<void> => openPaperPreview(root), connect:(): void => connection.open(),
+      }));
     const paperRoot = async (file: TAbstractFile | null): Promise<string | undefined> => {
       if (!file || !isManuscriptPath(file.path)) return undefined;
       for (let parent = file.parent; parent; parent = parent.parent) {
         const folder = parent.isRoot() ? "" : parent.path;
-        if (await adapter.exists(folder ? folder + "/" + CONFIG_PATH : CONFIG_PATH)) return folder;
+        if (await adapter.exists(folder ? folder + "/" + CONFIG_PATH : CONFIG_PATH)) {
+          const project = await store.read(folder);
+          const member = folder ? file.path.slice(folder.length+1) : file.path;
+          return projectMembers(project.config).includes(member) ? folder : undefined;
+        }
       }
       return undefined;
     };
@@ -119,24 +126,37 @@ export default class PeerpediaPlugin extends Plugin {
     this.addCommand({ id: "connect-account", name: "Connect or disconnect a Peerpedia account", callback: (): void => connection.open() });
     this.register((): void => connection.close());
     this.registerView(PREVIEW_VIEW, (leaf: WorkspaceLeaf): PreviewView => new PreviewView(leaf, store, dir));
-    this.addCommand({ id: "preview-paper", name: "Open paper preview", editorCallback: async (_editor: Editor, info: MarkdownView | MarkdownFileInfo): Promise<void> => {
-      if (!(info instanceof MarkdownView)) return;
-      const file = info.file;
-      try {
-        const root = await paperRoot(file);
-        if (info.file !== file || !file) return;
-        if (root === undefined) { new Notice("Open a chapter in a paper folder first."); return; }
-        let leaf = this.app.workspace.getLeavesOfType(PREVIEW_VIEW).find((item: WorkspaceLeaf): boolean =>
-          item.getViewState().state?.root === root);
-        if (!leaf) {
-          leaf = this.app.workspace.createLeafBySplit(info.leaf, "vertical");
-          await leaf.setViewState({ type: PREVIEW_VIEW, state: {root}, active: false });
-        }
-        await this.app.workspace.revealLeaf(leaf);
-        if (leaf.view instanceof PreviewView) leaf.view.editorMoved(info.leaf, info.editor, file.path, true, true, true);
-        this.app.workspace.setActiveLeaf(info.leaf, {focus: true});
-      } catch (error: unknown) { new Notice(errorMessage(error)); }
-    } });
+    const openPaperPreview = async (selectedRoot?: string): Promise<void> => {
+      const root = selectedRoot ?? await paperRoot(this.app.workspace.getActiveFile());
+      if(root===undefined){new Notice("Open a chapter in a paper folder first.");return;}
+      const project=await store.read(root);
+      const members=new Set(projectMembers(project.config).filter((path: string): boolean => /\.md$/i.test(path))
+        .map((path: string): string => root ? root+"/"+path : path));
+      const active=this.app.workspace.getActiveViewOfType(MarkdownView);
+      let source=active?.file&&members.has(active.file.path) ? active : this.app.workspace.getLeavesOfType("markdown")
+        .map((item: WorkspaceLeaf): View => item.view).find((view: View): view is MarkdownView => view instanceof MarkdownView&&Boolean(view.file&&members.has(view.file.path)));
+      if(!source){
+        const path=[...members][0], file=path&&this.app.vault.getAbstractFileByPath(path);
+        if(!(file instanceof TFile))throw new UserFacingError("The manuscript source is missing.");
+        const sourceLeaf=this.app.workspace.getLeaf("tab");
+        await sourceLeaf.openFile(file,{active:true});
+        if(!(sourceLeaf.view instanceof MarkdownView))return;
+        source=sourceLeaf.view;
+      }
+      const file=source.file;
+      if(!file||!members.has(file.path))return;
+      let leaf=this.app.workspace.getLeavesOfType(PREVIEW_VIEW)[0];
+      if(!leaf){
+        leaf=this.app.workspace.createLeafBySplit(source.leaf,"vertical");
+        await leaf.setViewState({type:PREVIEW_VIEW,state:{root},active:false});
+      }else if(leaf.view instanceof PreviewView)await leaf.view.selectRoot(root);
+      await this.app.workspace.revealLeaf(leaf);
+      if(leaf.view instanceof PreviewView)leaf.view.editorMoved(source.leaf,source.editor,file.path,true,true,true);
+      this.app.workspace.setActiveLeaf(source.leaf,{focus:true});
+    };
+    this.addCommand({id:"preview-paper",name:"Open paper preview",callback:(): void => {
+      void openPaperPreview().catch((error: unknown): void => {new Notice(errorMessage(error));});
+    }});
     const notifyPreviews = (info: MarkdownView, changed: boolean, activated: boolean): void => {
       const path = info.file?.path;
       if (!path) return;
@@ -145,9 +165,29 @@ export default class PeerpediaPlugin extends Plugin {
           this.app.workspace.activeLeaf === info.leaf, activated);
       }
     };
+    const context = new WorkspaceContext((path: string): Promise<string | undefined> => paperRoot(this.app.vault.getAbstractFileByPath(path)),
+      async (root: string, path: string): Promise<void> => {
+        const changes: Promise<void>[] = [];
+        for (const leaf of this.app.workspace.getLeavesOfType(PROJECT_PANEL)) {
+          if (leaf.view instanceof ProjectPanel) changes.push(leaf.view.followFile(root,path));
+        }
+        for (const leaf of this.app.workspace.getLeavesOfType(PREVIEW_VIEW)) {
+          if (leaf.view instanceof PreviewView) changes.push(leaf.view.selectRoot(root));
+        }
+        await Promise.all(changes);
+        const active = this.app.workspace.getActiveViewOfType(MarkdownView);
+        if(active?.file?.path===path)notifyPreviews(active,true,true);
+      });
+    this.register((): void => context.cancel());
+    const follow = (file: TAbstractFile | null): void => {
+      if(file)void context.follow(file.path).catch((error: unknown): void => {new Notice(errorMessage(error));});
+      else context.cancel();
+    };
     this.registerEvent(this.app.workspace.on("active-leaf-change", (leaf: WorkspaceLeaf | null): void => {
-      if (leaf?.view instanceof MarkdownView) notifyPreviews(leaf.view, true, true);
+      if (leaf?.view instanceof MarkdownView) {notifyPreviews(leaf.view,true,true);follow(leaf.view.file);}
     }));
+    this.registerEvent(this.app.workspace.on("file-open",follow));
+    this.app.workspace.onLayoutReady((): void => follow(this.app.workspace.getActiveFile()));
     // Host consumers can update TextFileView.data before vault.modify is delivered.
     // Hold the immutable native document and its then-current base until disk acknowledges it.
     const pendingDrafts = new WeakMap<MarkdownView, {path: string; base: string; doc: Text}>();

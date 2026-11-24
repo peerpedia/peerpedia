@@ -86,7 +86,6 @@ export async function packagePlugin(outputDirectory: string): Promise<void> {
     const renderer: RendererProvenance = JSON.parse(await readFile(join(plugin, "renderer/provenance.json"), "utf8"));
     if (renderer.node.platform !== target) throw new Error("The packaged renderer has the wrong platform.");
     await cp(join(project, "manifest.json"), join(plugin, "manifest.json"));
-    await cp(join(project, "styles.css"), join(plugin, "styles.css"));
     await cp(join(project, "../LICENSE"), join(plugin, "LICENSE"));
     await cp(join(project, "docs/installation.md"), join(plugin, "INSTALLATION.md"));
     await cp(join(project, "docs/usage.md"), join(plugin, "USAGE.md"));

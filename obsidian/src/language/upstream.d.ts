@@ -1,4 +1,5 @@
 declare module "bananamark-codemirror" {
+  export const highlightClasses: import("@lezer/highlight").Highlighter;
   type EditorState = import("@codemirror/state").EditorState;
   type Text = import("@codemirror/state").Text;
 

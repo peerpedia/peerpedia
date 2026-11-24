@@ -1,6 +1,7 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { Modal, Notice, type App } from "obsidian";
+import { styleModal } from "./controls";
 import { userErrorMessage } from "../user-error";
 import type { RecoveryNotice } from "../project/recovery";
 import { ProjectReadError } from "../project/types";
@@ -20,6 +21,7 @@ export class ConflictModal extends Modal {
     private readonly reveal: (record: RecoveryNotice) => Promise<void>) { super(app); }
 
   override onOpen(): void {
+    styleModal(this,true);
     this.setTitle("Review file changes");
     this.contentEl.createEl("p", { text: errorMessage(this.error) });
     for (const record of this.records) {

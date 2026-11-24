@@ -8,7 +8,7 @@ import tomllib
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def check():
+def check() -> None:
     version = (ROOT / "VERSION").read_text().strip()
     module = ast.parse((ROOT / "cli/peerpedia_cli/__init__.py").read_text())
     cli_version = next(
@@ -29,10 +29,15 @@ def check():
         "plugins/peerpedia/.codex-plugin/plugin.json",
         "editor/package.json",
         "editor/package-lock.json",
+        "obsidian/manifest.json",
+        "obsidian/package.json",
+        "obsidian/package-lock.json",
     ):
         assert json.loads((ROOT / path).read_text())["version"] == version, path
     lock = json.loads((ROOT / "editor/package-lock.json").read_text())
     assert lock["packages"][""]["version"] == version, "npm lock root package version"
+    obsidian_lock = json.loads((ROOT / "obsidian/package-lock.json").read_text())
+    assert obsidian_lock["packages"][""]["version"] == version, "Obsidian npm lock version"
     for path, heading in (
         ("README.md", f"# Peerpedia {version}"),
         ("cli/README.md", f"# Peerpedia CLI {version}"),

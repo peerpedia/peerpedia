@@ -65,6 +65,12 @@ export class PreviewReader {
     frame.srcdoc = frameDocument;
   }
 
+  clear(): void {
+    this.page = undefined;
+    this.anchor = null;
+    this.article?.replaceChildren();
+  }
+
   show(page: RenderPage): void {
     if (page === this.page) return;
     this.page = page;

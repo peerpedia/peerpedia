@@ -34,6 +34,7 @@ export class WritingEditors {
     const scope = new Compartment();
     const inactive: Extension = [];
     const active: Extension = [
+      EditorView.editorAttributes.of({class: "peerpedia-writing"}),
       sourceDecorations((view: EditorView): { path: string; context: ReturnType<WritingProjects["current"]> } | null => {
         const path = editors.scopedFile(view)?.path;
         return path === undefined ? null : { path, context: projects.current(view) };

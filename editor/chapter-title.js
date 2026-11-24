@@ -8,7 +8,10 @@ const dialect = defineDialect(dialectOptions);
  * @returns {{from:number,to:number}|undefined} */
 export function publicationImage(source, node) {
   if (node.name !== "Image") return undefined;
-  const to = source.startsWith("![[", node.from) && source[node.to] === "]" ? node.to + 1 : node.to;
+  const to =
+    source.startsWith("![[", node.from) && source[node.to] === "]"
+      ? node.to + 1
+      : node.to;
   return { from: node.from, to };
 }
 
@@ -22,7 +25,8 @@ export function inspectChapter(source) {
   tree.iterate({
     /** @param {import("@lezer/common").SyntaxNodeRef} node @returns {void} */
     enter(node) {
-      if (imageOffset < 0) imageOffset = publicationImage(source, node)?.from ?? -1;
+      if (imageOffset < 0)
+        imageOffset = publicationImage(source, node)?.from ?? -1;
       if (node.name === "EnvironmentFence")
         depth += /^\s*:::\s*$/.test(source.slice(node.from, node.to)) ? -1 : 1;
       if (
@@ -42,7 +46,11 @@ export function inspectChapter(source) {
     }
   }
   const title = heading ? headingText(source, heading).slice(0, 250) : "";
-  return { title: title || "Untitled chapter", images: imageOffset >= 0, imageOffset };
+  return {
+    title: title || "Untitled chapter",
+    images: imageOffset >= 0,
+    imageOffset,
+  };
 }
 
 /** @param {string} source @param {import("@lezer/common").SyntaxNode} heading @returns {string} */

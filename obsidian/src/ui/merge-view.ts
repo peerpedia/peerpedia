@@ -8,6 +8,7 @@ import { applyMerge, planMergedFiles, prepareMerge, resolveMerge, type MergeConf
 import type { Comparison, MergeAxis } from "../remote/merge-compare";
 import type { JsonValue, RemoteCheck } from "../remote/types";
 import { errorMessage } from "./conflict-modal";
+import { styleModal } from "./controls";
 import { button } from "./paper-form";
 
 const labels: Record<string,string> = {title:"Title",authors:"Authors",abstract:"Abstract",primary_category:"Primary subject",secondary_categories:"Secondary subjects",
@@ -71,7 +72,7 @@ export class MergeView extends Modal {
     private readonly api: PeerpediaApi, private readonly update: (observation?: RemoteCheck) => Promise<void>) {
     super(app);
     this.setTitle(axis === "accepted" ? "Compare accepted version" : "Compare open proposal");
-    this.contentEl.addClass("peerpedia-paper-form");
+    styleModal(this,true);
   }
   override onClose(): void { ++this.generation; }
   override onOpen(): void {
@@ -95,7 +96,7 @@ export class MergeView extends Modal {
     const resultBox = section(box,"Merge preview");
     const controls = box.createDiv();
     const status = box.createEl("p",{attr:{role:"status"}});
-    const actions = box.createDiv({cls:"peerpedia-actions"});
+    const actions = box.createDiv({cls:"peerpedia-actions peerpedia-form-footer"});
     button(actions,"Cancel",(): void => this.close());
     const confirm = button(actions,"Confirm merge",(): void => {
       confirm.disabled = true;

@@ -1,5 +1,13 @@
 # Release notes
 
+## 0.1.3
+
+- Release the Peerpedia Obsidian plugin for Apple silicon Macs, with a bundled offline renderer and shared website styles.
+- Write in a compact source-and-preview workspace with BananaMark syntax assistance, chapter navigation and shared references.
+- Import papers, compare website changes and explicitly publish frozen versions from Obsidian.
+- Add an integrated Obsidian Help guide covering installation, preview, account tokens, publication, updates and troubleshooting.
+- Synchronize the website, CLI, Codex plugin and Obsidian package at 0.1.3.
+
 ## 0.1.2
 
 - Use the single-column journal layout for paper discovery, abstracts, full-text reading, accounts, uploads and Help. The mobile contents menu folds away while reading.

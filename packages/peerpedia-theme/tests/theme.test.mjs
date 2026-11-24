@@ -165,6 +165,12 @@ async function verifyPackedTheme() {
     });
     assertScoped(sheet, ".peerpedia-article");
 
+    const syntaxPath = require.resolve("@peerpedia/theme/syntax.css");
+    const syntax = await readFile(syntaxPath, "utf8");
+    assertScoped(postcss.parse(syntax), ".peerpedia-writing");
+    assert.match(syntax, /\.bm-hl-command/);
+    assert.match(syntax, /--pp-hl-command: #23514b/);
+    assert.doesNotMatch(syntax, /@font-face|\.bm-env\s*\{/);
     const tokensPath = require.resolve("@peerpedia/theme/tokens.css");
     assertScoped(
       postcss.parse(await readFile(tokensPath, "utf8"), { from: tokensPath }),

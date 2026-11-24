@@ -1,10 +1,10 @@
-# Peerpedia 0.1.2
+# Peerpedia 0.1.3
 
 A small, public research-publishing application built with Django and PostgreSQL. Researchers write or upload Markdown, organize chapters, propose frozen changes, review papers, and preserve their publication history.
 
 [Website](https://peerpedia.dev) · [Usage guide](https://peerpedia.dev/help/) · [Source](https://github.com/peerpedia/peerpedia)
 
-[Download 0.1.2](https://github.com/peerpedia/peerpedia/releases/tag/v0.1.2) · [Install the CLI](cli/README.md) · [Release notes](CHANGELOG.md)
+[Download 0.1.3](https://github.com/peerpedia/peerpedia/releases/tag/v0.1.3) · [Install the CLI](cli/README.md) · [Release notes](CHANGELOG.md)
 
 The software uses the [MIT license](LICENSE). Papers have their own author-selected licenses. Developer information is on the [About page](https://peerpedia.dev/about/).
 
@@ -97,6 +97,14 @@ starts require a CSRF-protected POST, use state and PKCE, and do not retain Goog
 access/refresh tokens. Tests replace only Google's token exchange; no real Google
 credentials are needed in CI. Local testing should use a separate development OAuth
 client and an exact localhost callback, not the production secret.
+
+## Obsidian desktop plugin
+
+[Download and install Peerpedia for Obsidian](https://peerpedia.dev/help/obsidian/).
+The Apple silicon Mac package includes offline BananaMark preview, syntax assistance,
+a compact manuscript sidebar, bibliography tools and explicit website publication.
+Open **Peerpedia: Open paper preview** from Obsidian’s command palette for the full
+website formatting.
 
 ## Codex desktop plugin
 

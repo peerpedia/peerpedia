@@ -7,13 +7,13 @@ import { ConnectionModal } from "../src/ui/connection-modal";
 import type { AccountIdentity, HttpResponse, Transport } from "../src/remote/types";
 import { NodeTransport } from "../src/remote/transport";
 import PeerpediaPlugin from "../src/main";
-import { FileSystemAdapter, MarkdownView } from "obsidian";
+import { FileSystemAdapter, FuzzySuggestModal, MarkdownView } from "obsidian";
 
 vi.mock("electron", (): object => ({shell:{}}));
 vi.mock("obsidian", (): object => {
-  class Host {}
+  class Host { modalEl = {addClass: vi.fn()}; contentEl = {addClass: vi.fn()}; }
   return {Plugin:Host, Modal:Host, ItemView:Host, TextFileView:Host, EditorSuggest:Host,
-    PluginSettingTab:Host, Notice:Host, FileSystemAdapter:class {}, MarkdownView:class {}};
+    PluginSettingTab:Host, Notice:Host, FuzzySuggestModal:class { open(): void {} }, setIcon:vi.fn(), TFile:class {}, FileSystemAdapter:class {}, MarkdownView:class {}};
 });
 
 test("enabling, opening a chapter, editing and its preview command never request an account", async (): Promise<void> => {
@@ -28,7 +28,10 @@ test("enabling, opening a chapter, editing and its preview command never request
   const app = {vault:{configDir:".obsidian", adapter:Object.assign(Object.create(FileSystemAdapter.prototype), {
     getBasePath:():string => tmpdir(), exists:async ():Promise<boolean> => true}), on},
     workspace:{on,getLeavesOfType:():WorkspaceLeaf[] => [], createLeafBySplit:():object => ({setViewState}),
-      revealLeaf:vi.fn(), setActiveLeaf:vi.fn()}};
+      revealLeaf:vi.fn(), setActiveLeaf:vi.fn(), onLayoutReady:vi.fn(), getActiveFile:(): object => view.file,
+      getActiveViewOfType:(): object => view},};
+  Object.assign(app.vault,{getAbstractFileByPath:(): object => view.file});
+  const read = vi.spyOn(NativeStore.prototype,"read").mockResolvedValue({...project,root:"",config:{...project.config,chapters:undefined}});
   const plugin = new PeerpediaPlugin(app as unknown as App, {id:"peerpedia"} as PluginManifest);
   Object.assign(plugin, {app,manifest:{id:"peerpedia"},loadData:async ():Promise<object> => saved,
     saveData:async (data:Record<string,unknown>):Promise<void> => { saved = data; },
@@ -39,8 +42,8 @@ test("enabling, opening a chapter, editing and its preview command never request
     await plugin.onload();
     events.get("active-leaf-change")!({view});
     events.get("editor-change")!({}, {file:view.file});
-    await commands.get("preview-paper")!.editorCallback!({} as Editor, view as MarkdownFileInfo);
-    expect(setViewState).toHaveBeenCalledWith(expect.objectContaining({type:"peerpedia-paper-preview"}));
+    commands.get("preview-paper")!.callback!();
+    await vi.waitFor((): void => {expect(setViewState).toHaveBeenCalledWith(expect.objectContaining({type:"peerpedia-paper-preview"}));});
     expect(request).not.toHaveBeenCalled();
     expect(commands.has("connect-account")).toBe(true);
     const identity = {origin:"https://peerpedia.dev",username:"writer"};
@@ -51,6 +54,7 @@ test("enabling, opening a chapter, editing and its preview command never request
     await plugin.updateConnection(null, []);
     expect(saved).toEqual({writingScope:{folders:{"":true},files:{}}});
   } finally {
+    read.mockRestore();
     request.mockRestore();
     vi.unstubAllGlobals();
   }
@@ -65,12 +69,13 @@ function openModal(identity: AccountIdentity | null, pending: readonly AccountId
   save: (active: AccountIdentity | null, cleanup: readonly AccountIdentity[]) => Promise<void>): (name: string) => TestElement {
   const elements: TestElement[] = [];
   const createEl = (tag:string, options:{text?:string;type?:string}):TestElement => {
-    const element = {tag,...options,value:"",disabled:false,createEl};
+    const element = {tag,...options,value:"",disabled:false,createEl,addClass:vi.fn(),
+      createDiv:(opts: {text?:string;type?:string} = {}): TestElement => createEl("div",opts)};
     elements.push(element);
     return element;
   };
   const modal = new ConnectionModal({} as App,identity,transport,store,save,pending);
-  Object.assign(modal,{setTitle:vi.fn(),contentEl:{empty:():void => { elements.length = 0; },createEl}});
+  Object.assign(modal,{setTitle:vi.fn(),contentEl:{empty:():void => { elements.length = 0; },createEl,createDiv:(opts: {text?:string;type?:string} = {}): TestElement => createEl("div",opts)}});
   modal.onOpen();
   return (name:string):TestElement => {
     const element = elements.find((item:TestElement):boolean => item.type === name || item.text?.includes(name) === true);
@@ -139,16 +144,16 @@ test("reopening an unreadable manuscript renders the saved request action from i
     watch:vi.fn(),read:vi.fn().mockRejectedValue(new Error("invalid paper.json"))};
   const panel = new ProjectPanel({} as WorkspaceLeaf,store as unknown as VaultProjectStore,vi.fn(),vi.fn(),{request:vi.fn()},"plugins/peerpedia",{} as SubmissionController);
   const content = {empty:():void=>{controls.length=0;},addClass:vi.fn(),createDiv:():unknown=>content,
-    createEl:(tag:string,options:{text?:string}):object=>{if (tag==="button") controls.push(options.text!); return {};}};
+    createEl:(tag:string,options:{text?:string}):object=>{if (tag==="button") controls.push(options.text!); return {addClass:vi.fn(),setAttribute:vi.fn()};}};
   Object.assign(panel,{contentEl:content});
   try {
     await panel.selectRoot("paper");
-    expect(controls).toContain("Review pending submission");
-    expect(controls).not.toContain("Submit to Peerpedia");
+    expect(controls).toContain("Resume submission");
+    expect(controls).not.toContain("Publish");
     store.readBindingVersion.mockResolvedValue({pendingSubmission:false});
     await panel.selectRoot("paper");
-    expect(controls).not.toContain("Review pending submission");
-    expect(controls).not.toContain("Submit to Peerpedia");
+    expect(controls).not.toContain("Resume submission");
+    expect(controls).not.toContain("Publish");
   } finally {vi.unstubAllGlobals();}
 });
 
@@ -174,8 +179,9 @@ test("the pending dialog offers explicit original-request replay when its receip
     const content = {empty:():void=>buttons.clear(),setText:vi.fn(),createEl:(tag:string,options:{text?:string}):object=>{
       const node:{onclick?:()=>void} = {};
       if (tag==="button") buttons.set(options.text!,node);
-      return Object.assign(node,{createEl:content.createEl});
+      return Object.assign(node,{createEl:content.createEl,addClass:vi.fn()});
     }};
+    Object.assign(content,{createDiv:(): object => content});
     const retry = vi.fn().mockResolvedValue(snapshot), updated = vi.fn();
     const modal:SubmitModal = Object.assign(Object.create(SubmitModal.prototype),{root,store,controller:{retry},updated,contentEl:content,abort:new AbortController()});
     modal.onOpen();
@@ -204,7 +210,7 @@ test("the panel compares publication content with the working version across lay
   local.revision = "different-file-revision";
   function assertStatus(paper:ProjectSnapshot, expected:string): void {
     text.length = 0;
-    panel.renderRemote(paper);
+    panel.renderRemote(paper,panel.contentEl,(): void => {});
     expect(text).toContain("Local files: " + expected);
   }
   assertStatus(local,"Match the working version");
@@ -215,4 +221,21 @@ test("the panel compares publication content with the working version across lay
   assertStatus({...local,files:local.files.map((file:SourceFile):SourceFile =>
     file.path === local.config.bibliography ? {...file,text:file.text+"\n"} : file)},"Changed");
   assertStatus({...local,files:local.files.slice(1)},"Unavailable (source file missing)");
+});
+
+test("choosing a paper opens its source even while the panel snapshot is being refreshed", async (): Promise<void> => {
+  const open = vi.spyOn(FuzzySuggestModal.prototype,"open");
+  const openChapter = vi.fn();
+  const selected: ProjectSnapshot = {...project,root:"selected-paper"};
+  const panel = Object.assign(Object.create(ProjectPanel.prototype), {
+    app:{}, snapshot:null, store:{read:vi.fn().mockResolvedValue(selected)}, openChapter,
+  }) as {pickPaper: () => void};
+  try {
+    panel.pickPaper();
+    const picker = open.mock.instances[0] as unknown as {onChooseItem: (root: string) => void};
+    picker.onChooseItem(selected.root);
+    await vi.waitFor((): void => {
+      expect(openChapter).toHaveBeenCalledWith(selected,selected.config.chapters?.[0]?.file ?? "paper.md");
+    });
+  } finally { open.mockRestore(); }
 });

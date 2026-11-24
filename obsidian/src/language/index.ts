@@ -7,7 +7,8 @@ import { withNodes } from "bananamark/internal/nodes.mjs";
 import { withSyntax } from "bananamark/internal/switches.mjs";
 import { parseLists } from "bananamark/internal/lists.mjs";
 import { validReferenceName } from "bananamark/internal/scan.mjs";
-import { declaredLabels } from "bananamark-codemirror";
+import { highlightTree } from "@lezer/highlight";
+import { highlightClasses, declaredLabels } from "bananamark-codemirror";
 import { isMap, isNode, isScalar, isSeq, parseDocument, type Node, type YAMLMap } from "yaml";
 
 import { publicationImage } from "../../../editor/chapter-title.js";
@@ -31,7 +32,8 @@ export interface Reference extends Range {
 }
 
 export interface SyntaxMark extends Range {
-  kind: "environment" | "formula" | "reference" | "label";
+  kind: "environment" | "formula" | "reference" | "label" | "syntax";
+  classes?: string;
 }
 
 export const dialect = defineDialect(dialectOptions);
@@ -259,6 +261,9 @@ export function scanChapter(source: string, path: string): {
 
   addLabels(itemLabels(source, path));
   const tree = parseSource(source);
+  highlightTree(tree, highlightClasses, (from: number, to: number, classes: string): void => {
+    marks.push({from, to, kind: "syntax", classes});
+  });
   // Link/caption analysis skips subtrees that can still contain a publish-blocking image.
   if (source.includes("![")) tree.iterate({
     enter(node: SyntaxNodeRef): void {

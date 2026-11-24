@@ -9,6 +9,7 @@ import { configChange } from "../project/management";
 import type { FileChange } from "../project/store";
 import type { ProjectSnapshot, SourceFile } from "../project/types";
 import { errorMessage } from "./conflict-modal";
+import { menuButton, type Action } from "./controls";
 import { button, PaperForm } from "./paper-form";
 
 interface BibliographyPanelContext {
@@ -188,7 +189,7 @@ function sourceForm(context: BibliographyPanelContext, { project, source }: Open
 
 export function renderBibliography(parent: HTMLElement, context: BibliographyPanelContext): void {
   const section = parent.createEl("section", { cls: "peerpedia-bibliography-panel" });
-  section.createEl("h4", { text: "Shared bibliography" });
+  section.createEl("p", { text: "One bibliography, available in every chapter.", cls:"peerpedia-description" });
   const source = bibliographySource(context.project);
   if (!source) {
     const missing = context.project.config.bibliography;
@@ -197,7 +198,7 @@ export function renderBibliography(parent: HTMLElement, context: BibliographyPan
     return;
   }
   const actions = section.createDiv({ cls: "peerpedia-actions" });
-  button(actions, "Open YAML source", (): void => openEditor(context, (snapshot: OpenBibliography): void => sourceForm(context, snapshot)));
+  menuButton(actions,"Bibliography actions",(): readonly Action[] => [{title:"Open YAML source",icon:"file-code",run:(): void => openEditor(context,(snapshot: OpenBibliography): void => sourceForm(context,snapshot))}]);
   let entries: readonly BibliographyEntry[];
   try {
     entries = readEntries(source.text);
@@ -205,22 +206,25 @@ export function renderBibliography(parent: HTMLElement, context: BibliographyPan
     section.createEl("p", { text: errorMessage(error), attr: { role: "alert" } });
     return;
   }
-  button(actions, "Add entry", (): void => openEditor(context, (snapshot: OpenBibliography): void => entryForm(context, snapshot)));
+  button(actions, "Add reference", (): void => openEditor(context, (snapshot: OpenBibliography): void => entryForm(context, snapshot))).addClass("mod-cta");
   if (!entries.length) section.createEl("p", { text: "No entries yet." });
-  const list = section.createEl("ul", { cls: "peerpedia-bibliography-list" });
-  for (const entry of entries) {
-    const row = list.createEl("li");
-    row.createEl("strong", { text: fieldText(entry.fields.title) || fieldText(entry.fields.translatedtitle) || "Untitled entry" });
-    row.createDiv({ text: `@${entry.key}`, cls: "setting-item-description" });
-    const tools = row.createDiv({ cls: "peerpedia-actions" });
-    button(tools, "Edit entry", (): void => openEditor(context, (snapshot: OpenBibliography): void => {
-      entryForm(context, snapshot, bibliographyEntry(snapshot.source, entry.key));
-    }));
-    button(tools, "Rename citation key", (): void => openEditor(context, (snapshot: OpenBibliography): void => {
-      renameForm(context, snapshot, entry.key);
-    }));
-    button(tools, "Delete entry", (): void => openEditor(context, (snapshot: OpenBibliography): void => {
-      deleteForm(context, snapshot, entry.key);
-    }));
+  const search=section.createEl("input",{type:"search",cls:"peerpedia-search",attr:{placeholder:"Search title, author or citation key","aria-label":"Search references"}});
+  const list=section.createEl("ul",{cls:"peerpedia-bibliography-list"});
+  for(const entry of entries){
+    const row=list.createEl("li");
+    const edit=(): void => openEditor(context,(snapshot: OpenBibliography): void => entryForm(context,snapshot,bibliographyEntry(snapshot.source,entry.key)));
+    const link=button(row,"",edit);link.addClass("peerpedia-reference-link");
+    link.createEl("strong",{text:fieldText(entry.fields.title)||fieldText(entry.fields.translatedtitle)||"Untitled entry"});
+    link.createEl("small",{text:[fieldText(entry.fields.author),fieldText(entry.fields.year)].filter(Boolean).join(" · ")});
+    link.createEl("code",{text:"@"+entry.key});
+    menuButton(row,"Reference actions: "+entry.key,(): readonly Action[] => [
+      {title:"Edit reference",icon:"pencil",run:edit},
+      {title:"Rename citation key",icon:"text-cursor-input",run:(): void => openEditor(context,(snapshot: OpenBibliography): void => renameForm(context,snapshot,entry.key))},
+      {title:"Delete reference",icon:"trash-2",run:(): void => openEditor(context,(snapshot: OpenBibliography): void => deleteForm(context,snapshot,entry.key))},
+    ]);
   }
+  search.oninput=(): void => {
+    const query=search.value.toLocaleLowerCase();
+    list.querySelectorAll<HTMLLIElement>("li").forEach((row: HTMLLIElement): void => {row.hidden=!row.textContent?.toLocaleLowerCase().includes(query);});
+  };
 }

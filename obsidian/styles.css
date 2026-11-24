@@ -1,115 +1,117 @@
-/* The compatibility probe uses the host editor's completion styles. */
-
-.peerpedia-source-environment {
-  color: var(--text-accent);
-  font-weight: 600;
-}
-
-.peerpedia-source-formula {
-  color: var(--text-accent);
-}
-
-.peerpedia-source-label {
-  color: var(--text-muted);
-}
-
-.peerpedia-source-reference {
-  text-decoration: underline dotted;
-  text-underline-offset: 0.2em;
-}
-
-.peerpedia-source-error {
-  text-decoration-line: underline;
-  text-decoration-style: wavy;
-  text-decoration-color: var(--text-error);
-}
-
-.peerpedia-source-error-line {
-  box-shadow: inset 2px 0 var(--text-error);
-}
-
-.peerpedia-bibliography-view {
-  display: flex;
-  flex-direction: column;
-}
-
-.peerpedia-bibliography-text {
-  flex: 1;
-  width: 100%;
-  min-height: 10rem;
-  resize: none;
-  font-family: var(--font-monospace);
-  line-height: 1.5;
-  white-space: pre;
-  tab-size: 2;
-}
-
+/* Plugin chrome follows the native workspace; article and syntax rules come from @peerpedia/theme. */
 .peerpedia-project-panel,
-.peerpedia-paper-form {
-  padding: var(--size-4-3);
-}
-
-.peerpedia-actions {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--size-4-1);
-  margin-block: var(--size-4-2);
-}
-
-.peerpedia-project-panel li {
-  padding-block: var(--size-4-2);
-}
-
-.peerpedia-paper-form label {
-  display: grid;
-  gap: var(--size-4-1);
-  margin-block-end: var(--size-4-3);
-}
-
-.peerpedia-paper-form textarea {
-  min-height: 5em;
-}
-
-.peerpedia-paper-form pre {
-  max-height: 12em;
-  overflow: auto;
-  white-space: pre-wrap;
-}
-
-.peerpedia-bibliography-editor {
-  min-height: min(50vh, 28rem);
-  resize: vertical;
-}
-
-.peerpedia-citation-impact {
-  max-height: 14rem;
-  overflow: auto;
-}
-
-.peerpedia-preview {
-  display: flex;
-  flex-direction: column;
-  gap: var(--size-4-1);
-  padding: var(--size-4-2);
-}
-
-.peerpedia-preview iframe {
-  flex: 1;
-  min-height: 0;
-  width: 100%;
-  border: 0;
-}
-
-.peerpedia-preview-position,
-.peerpedia-preview [role="status"] {
-  color: var(--text-muted);
+.peerpedia-preview,
+.peerpedia-modal {
+  --peerpedia-accent: #365e48;
+  --peerpedia-soft: color-mix(in srgb, var(--peerpedia-accent) 10%, var(--background-primary));
+  --peerpedia-line: var(--background-modifier-border);
+  --peerpedia-muted: var(--text-muted);
+  color: var(--text-normal);
+  font-family: var(--font-interface);
   font-size: var(--font-ui-small);
 }
-
-.peerpedia-submission-reader {
-  display: block;
-  width: 100%;
-  height: min(60vh, 32rem);
-  border: 0;
+.theme-dark .peerpedia-project-panel,
+.theme-dark .peerpedia-preview,
+.theme-dark .peerpedia-modal { --peerpedia-accent: #9abca5; }
+.peerpedia-project-panel { display:flex; flex-direction:column; padding:16px 12px; gap:0; overflow:auto; }
+.peerpedia-paper-header { display:flex; gap:6px; align-items:flex-start; padding:0 2px 16px; }
+.peerpedia-project-panel .peerpedia-paper-switch {
+  flex:1; min-width:0; padding:0; height:auto; box-shadow:none; background:transparent;
+  font-size:var(--font-ui-small); font-weight:600; text-align:left; white-space:normal; line-height:1.5;
+}
+.peerpedia-project-panel .peerpedia-paper-switch:hover { color:var(--peerpedia-accent); }
+.peerpedia-icon-button { width:28px; height:28px; min-width:28px; padding:5px; flex-shrink:0; box-shadow:none; border:0; color:var(--text-muted); background:transparent; }
+.peerpedia-icon-button svg { width:16px; height:16px; }
+.peerpedia-icon-button:hover { background:var(--background-modifier-hover); color:var(--text-normal); }
+.peerpedia-writing-actions { display:flex; align-items:center; justify-content:space-between; gap:8px; padding:0 2px 20px; }
+.peerpedia-button { font-size:var(--font-ui-small); border-radius:var(--radius-s); }
+.peerpedia-project-panel .mod-cta,.peerpedia-modal .mod-cta {
+  background:var(--peerpedia-accent); color:var(--background-primary); box-shadow:none;
+}
+.peerpedia-project-panel .mod-cta:hover,.peerpedia-modal .mod-cta:hover { filter:brightness(.93); }
+.peerpedia-project-panel .peerpedia-quiet,.peerpedia-modal .peerpedia-quiet { background:transparent; box-shadow:none; color:var(--text-muted); }
+.peerpedia-quiet:hover { color:var(--peerpedia-accent); background:var(--background-modifier-hover); }
+.peerpedia-outline-heading { display:flex; align-items:center; justify-content:space-between; padding:8px 6px 12px; border-top:1px solid var(--peerpedia-line); }
+.peerpedia-outline-heading>span { text-transform:uppercase; letter-spacing:1.4px; font-size:10px; color:var(--text-muted); font-weight:500; }
+.peerpedia-project-panel .peerpedia-chapter-list { list-style:none; padding:0; margin:0; }
+.peerpedia-chapter-row { display:flex; align-items:center; border-radius:var(--radius-s); margin-bottom:3px; padding:0; min-height:36px; }
+.peerpedia-chapter-row.is-active { background:var(--peerpedia-soft); }
+.peerpedia-chapter-row:hover { background:var(--background-modifier-hover); }
+.peerpedia-project-panel .peerpedia-chapter-link {
+  min-width:0; flex:1; height:auto; display:flex; align-items:baseline; justify-content:flex-start; gap:10px; background:transparent;
+  box-shadow:none; text-align:left; padding:9px 6px; font-size:var(--font-ui-smaller); font-weight:400; line-height:1.45;
+}
+.peerpedia-chapter-number { font-size:10px; color:var(--text-faint); font-variant-numeric:tabular-nums; flex-shrink:0; }
+.peerpedia-chapter-title { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.peerpedia-chapter-row.is-active .peerpedia-chapter-title { color:var(--peerpedia-accent); font-weight:550; }
+.peerpedia-chapter-row>.peerpedia-icon-button { opacity:0; }
+.peerpedia-chapter-row:hover>.peerpedia-icon-button,.peerpedia-chapter-row:focus-within>.peerpedia-icon-button { opacity:1; }
+.peerpedia-outline-links { display:flex; flex-direction:column; align-items:stretch; gap:6px; border-top:1px solid var(--peerpedia-line); padding:16px 0; margin-top:18px; }
+.peerpedia-outline-links>button { justify-content:flex-start; text-align:left; padding-inline:8px; }
+.peerpedia-paper-status { margin-top:auto; padding:18px 8px 0; border-top:1px solid var(--peerpedia-line); color:var(--text-muted); font-size:var(--font-ui-smaller); line-height:1.7; }
+.peerpedia-status-dot { width:5px; height:5px; display:inline-block; border-radius:50%; background:var(--peerpedia-accent); margin-right:7px; vertical-align:middle; }
+.peerpedia-project-panel .peerpedia-text-button { display:block; padding:8px 0 0; font-size:11px; color:var(--text-faint); background:transparent; box-shadow:none; text-align:left; height:auto; }
+.peerpedia-project-panel .peerpedia-text-button:hover { color:var(--peerpedia-accent); }
+.peerpedia-empty,.peerpedia-description { color:var(--text-muted); font-size:var(--font-ui-small); line-height:1.6; }
+.peerpedia-attention { background:var(--background-secondary); border:1px solid var(--peerpedia-line); border-radius:var(--radius-s); padding:10px; margin:8px 0; font-size:var(--font-ui-smaller); line-height:1.6; }
+.peerpedia-attention button { margin-top:8px; }
+.peerpedia-actions { display:flex; align-items:center; flex-wrap:wrap; gap:8px; margin:12px 0; }
+.peerpedia-modal { width:min(520px,92vw); padding:28px; border-radius:12px; }
+.peerpedia-modal-wide { width:min(820px,92vw); }
+.peerpedia-modal .modal-title { font-size:22px; line-height:1.35; font-weight:600; letter-spacing:-.4px; }
+.peerpedia-paper-form { padding:4px 0 0; line-height:1.6; }
+.peerpedia-paper-form p { font-size:var(--font-ui-small); overflow-wrap:anywhere; }
+.peerpedia-paper-form p:empty { display:none; }
+.peerpedia-paper-form label { display:grid; gap:7px; margin-block:16px; font-size:var(--font-ui-small); font-weight:500; }
+.peerpedia-paper-form input:not([type=checkbox]),.peerpedia-paper-form select,.peerpedia-paper-form textarea { width:100%; font-weight:400; font-size:var(--font-ui-small); }
+.peerpedia-paper-form input:not([type=checkbox]),.peerpedia-paper-form select { min-height:34px; }
+.peerpedia-paper-form label:has(input[type=checkbox]) { display:flex; flex-direction:row-reverse; align-items:center; justify-content:flex-end; gap:9px; }
+.peerpedia-paper-form textarea { min-height:6em; padding:10px; resize:vertical; }
+.peerpedia-paper-form pre { font-family:var(--font-monospace); font-size:var(--font-ui-smaller); background:var(--background-secondary); border-radius:var(--radius-s); padding:12px; max-height:18rem; overflow:auto; white-space:pre-wrap; }
+.peerpedia-paper-form details { border-top:1px solid var(--peerpedia-line); padding:13px 0; }
+.peerpedia-paper-form details>summary { cursor:pointer; color:var(--text-muted); font-size:var(--font-ui-small); }
+.peerpedia-paper-form details[open]>summary { color:var(--text-normal); margin-bottom:12px; }
+.peerpedia-paper-form details details { padding:9px 0; }
+.peerpedia-form-footer { display:flex; gap:8px; justify-content:flex-end; flex-wrap:wrap; border-top:1px solid var(--peerpedia-line); margin-top:24px; padding:16px 0 0; }
+.peerpedia-form-footer .mod-cta { order:1; }
+.peerpedia-modal .peerpedia-form-footer { position:sticky; bottom:0; background:var(--modal-background,var(--background-primary)); padding-bottom:4px; z-index:1; }
+.peerpedia-paper-form [role=alert]:not(:empty) { padding:10px 12px; border-left:2px solid var(--text-error); background:var(--background-secondary); color:var(--text-normal); }
+.peerpedia-account-card { display:grid; gap:5px; padding:18px; background:var(--background-secondary); border-radius:var(--radius-m); margin:10px 0 20px; }
+.peerpedia-account-card strong { font-size:16px; }
+.peerpedia-account-card small { color:var(--text-muted); }
+.peerpedia-account-fields { margin-bottom:12px; }
+.peerpedia-paper-form>button { margin:8px 8px 4px 0; }
+.peerpedia-bibliography-panel .peerpedia-actions { justify-content:flex-end; }
+.peerpedia-search { margin:8px 0 18px; }
+.peerpedia-bibliography-list { list-style:none; margin:0; padding:0; }
+.peerpedia-bibliography-list>li { display:flex; align-items:center; border-bottom:1px solid var(--peerpedia-line); padding:14px 0; gap:12px; }
+.peerpedia-bibliography-list>li[hidden] { display:none; }
+.peerpedia-bibliography-list .peerpedia-reference-link { display:flex; flex-direction:column; align-items:flex-start; flex:1; height:auto; padding:0; text-align:left; white-space:normal; gap:6px; box-shadow:none; background:transparent; line-height:1.5; }
+.peerpedia-reference-link strong { font-weight:550; }
+.peerpedia-reference-link small { font-size:var(--font-ui-smaller); color:var(--text-muted); }
+.peerpedia-reference-link code { font-size:11px; color:var(--peerpedia-accent); background:transparent; }
+.peerpedia-bibliography-view { display:flex; flex-direction:column; }
+.peerpedia-bibliography-text { flex:1; width:100%; min-height:10rem; resize:none; font-family:var(--font-monospace); line-height:1.5; white-space:pre; tab-size:2; }
+.peerpedia-paper-form .peerpedia-bibliography-editor { min-height:min(50vh,28rem); resize:vertical; }
+.peerpedia-citation-impact { max-height:14rem; overflow:auto; }
+.peerpedia-merge-conflict { padding:14px; margin:16px 0; border:1px solid var(--peerpedia-line); border-radius:var(--radius-s); }
+.peerpedia-merge-conflict>button { margin:4px 8px 4px 0; }
+.peerpedia-preview { display:flex; flex-direction:column; padding:0; overflow:hidden; }
+.peerpedia-preview-toolbar { display:flex; align-items:center; gap:8px; min-height:44px; padding:8px 12px; border-bottom:1px solid var(--peerpedia-line); }
+.peerpedia-preview-toolbar select { flex:1; min-width:0; max-width:100%; box-shadow:none; border:0; background:transparent; font-size:var(--font-ui-small); }
+.peerpedia-preview-state { display:flex; gap:8px; justify-content:space-between; padding:7px 14px; min-height:28px; font-size:10px; line-height:1.5; color:var(--text-muted); }
+.peerpedia-preview-position:empty { display:none; }
+.peerpedia-preview iframe { flex:1; min-height:0; width:100%; border:0; background:white; }
+.peerpedia-submission-reader { display:block; width:100%; height:min(48vh,28rem); border:1px solid var(--peerpedia-line); margin-top:10px; border-radius:var(--radius-s); }
+/* Neutralize the host's single-color math fallback only inside enabled source editors. */
+.peerpedia-writing .cm-math,.peerpedia-writing .peerpedia-source-formula { color:var(--text-normal); font-style:normal; }
+.peerpedia-writing .cm-content { font-family:var(--font-monospace); }
+.peerpedia-writing .peerpedia-source-token .cm-math { color:inherit; font-style:inherit; }
+.peerpedia-source-reference { text-underline-offset:.2em; }
+.peerpedia-source-error { text-decoration-line:underline; text-decoration-style:wavy; text-decoration-color:var(--text-error); }
+.peerpedia-source-error-line { box-shadow:inset 2px 0 var(--text-error); }
+.theme-dark .peerpedia-writing {
+  --pp-bm-faint:var(--text-faint); --pp-hl-command:var(--color-cyan); --pp-hl-command-mark:var(--color-green);
+  --pp-hl-reference:var(--color-purple); --pp-hl-structure:var(--color-yellow); --pp-hl-string:var(--text-muted);
+  --pp-accent:var(--color-green);
 }

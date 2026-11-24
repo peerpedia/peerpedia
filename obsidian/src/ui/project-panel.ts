@@ -1,9 +1,10 @@
 import { UserFacingError } from "../user-error";
 import { isDeepStrictEqual } from "node:util";
 import { randomUUID } from "node:crypto";
-import { ItemView, Modal, Notice, type ViewStateResult, type WorkspaceLeaf } from "obsidian";
+import { FuzzySuggestModal, MarkdownView, TFile, ItemView, Modal, Notice, type ViewStateResult, type WorkspaceLeaf } from "obsidian";
 import type { TitlePreview } from "../language/title-preview";
 import { renderBibliography } from "./bibliography-panel";
+import { actionMenu, iconButton, menuButton, styleModal, type Action } from "./controls";
 import { button, PaperForm } from "./paper-form";
 import { LanguageWorker } from "../host/language-worker";
 import { openBuffers } from "../host/file-events";
@@ -29,6 +30,7 @@ export const PROJECT_PANEL = "peerpedia-project";
 
 export class ProjectPanel extends ItemView {
   private root: string | null = null;
+  private activePath?: string;
   private snapshot: ProjectSnapshot | null = null;
   private stop?: () => void;
   private readId = 0;
@@ -45,10 +47,11 @@ export class ProjectPanel extends ItemView {
 
   constructor(leaf: WorkspaceLeaf, readonly store: VaultProjectStore,
     private readonly enableFolder: (root: string) => Promise<void>, private readonly origin: () => string,
-    private readonly transport: Transport, private readonly dir: string, private readonly submissions?: SubmissionController) { super(leaf); }
+    private readonly transport: Transport, private readonly dir: string, private readonly submissions?: SubmissionController,
+    private readonly workspaceActions?: {preview: (root: string) => Promise<void>; connect: () => void}) { super(leaf); }
 
   override getViewType(): string { return PROJECT_PANEL; }
-  override getDisplayText(): string { return "Paper management"; }
+  override getDisplayText(): string { return "Manuscript"; }
   override getIcon(): string { return "book-open"; }
   override getState(): Record<string, unknown> { return { root: this.root }; }
   override async setState(state: unknown, result: ViewStateResult): Promise<void> {
@@ -111,7 +114,7 @@ export class ProjectPanel extends ItemView {
   async revealRecovery(root: string, record: RecoveryNotice): Promise<void> {
     const form = new Modal(this.app);
     form.setTitle("Recovery files");
-    form.contentEl.addClass("peerpedia-paper-form");
+    styleModal(form,true);
     form.contentEl.createEl("p", { text: record.message });
     try {
       const files = await this.store.recoveryFiles(root, record.transactionId);
@@ -148,114 +151,201 @@ export class ProjectPanel extends ItemView {
     }
   }
 
-  private render(error?: unknown): void {
-    this.contentEl.empty();
-    this.contentEl.addClass("peerpedia-project-panel");
-    const actions = this.contentEl.createDiv({ cls: "peerpedia-actions" });
-    button(actions, "Open paper", (): void => {
-      const form = new PaperForm(this.app, "Open paper");
-      const folder = form.field("Folder in the vault (blank for vault root)", this.root ?? "");
-      form.submit("Open", async (): Promise<void> => { await this.selectRoot(folder.value.trim()); });
-      form.open();
+  async followFile(root: string, path: string): Promise<void> {
+    this.activePath = path;
+    if (this.root !== root) await this.selectRoot(root);
+    else this.markActiveChapter();
+  }
+
+  private markActiveChapter(): void {
+    this.contentEl.querySelectorAll<HTMLElement>("[data-chapter-path]").forEach((row: HTMLElement): void => {
+      const active = row.dataset.chapterPath === this.activePath;
+      row.toggleClass("is-active", active);
+      row.querySelector("button")?.setAttribute("aria-current", active ? "page" : "false");
     });
-    button(actions, "Create paper", (): void => this.createForm());
-    button(actions, "Import from Peerpedia", (): void => this.importForm());
-    if (this.root !== null) this.contentEl.createEl("p", { text: this.root || "Vault root", cls: "setting-item-description" });
-    if (error && this.root !== null) {
-      const root = this.root;
-      this.contentEl.createEl("p", { text: errorMessage(error), attr: { role: "alert" } });
-      button(this.contentEl, "Open paper.json", (): void => {
-        void this.store.localPath(root, CONFIG_PATH).then((path: string): Promise<void> => openLocalFile(path, false))
+  }
+
+  private openChapter(project: ProjectSnapshot, path: string): void {
+    const full = project.root ? project.root + "/" + path : path;
+    const file = this.app.vault.getAbstractFileByPath(full);
+    if (!(file instanceof TFile)) { new Notice("The chapter source is missing."); return; }
+    const leaves = this.app.workspace.getLeavesOfType("markdown");
+    const leaf = leaves.find((item: WorkspaceLeaf): boolean => item.view instanceof MarkdownView && item.view.file?.path === full)
+      ?? leaves.find((item: WorkspaceLeaf): boolean => item.view instanceof MarkdownView && item.view.file?.path === this.activePath)
+      ?? this.app.workspace.getLeaf("tab");
+    this.activePath = full;
+    this.markActiveChapter();
+    void leaf.openFile(file, {active: true}).catch((error: unknown): void => { new Notice(errorMessage(error)); });
+  }
+
+  private pickPaper(): void {
+    const panel = this;
+    new class extends FuzzySuggestModal<string> {
+      getItems(): string[] {
+        return panel.app.vault.getFiles().filter((file: TFile): boolean => file.name === CONFIG_PATH)
+          .map((file: TFile): string => file.parent?.isRoot() ? "" : file.parent?.path ?? "");
+      }
+      getItemText(root: string): string { return root || "Vault root"; }
+      onChooseItem(root: string): void {
+        void panel.store.read(root).then((project: ProjectSnapshot): void => {
+          // Opening the source drives the same context update as native file navigation.
+          panel.openChapter(project, project.config.chapters?.[0]?.file ?? "paper.md");
+        }).catch((error: unknown): void => { new Notice(errorMessage(error)); });
+      }
+    }(this.app).open();
+  }
+
+  private render(error?: unknown): void {
+    const el = this.contentEl;
+    el.empty();
+    el.addClass("peerpedia-project-panel");
+    const project = this.snapshot;
+    const header = el.createDiv({cls: "peerpedia-paper-header"});
+    const heading = button(header, project?.config.title || "Peerpedia", (): void => this.pickPaper());
+    heading.addClass("peerpedia-paper-switch");
+    heading.setAttribute("title", "Switch paper");
+    menuButton(header, "Paper actions", (): readonly Action[] => [
+      {title:"Switch paper",icon:"folder-open",run:(): void => this.pickPaper()},
+      {title:"Create paper",icon:"plus",run:(): void => this.createForm()},
+      {title:"Import from Peerpedia",icon:"download",run:(): void => this.importForm()},
+      ...(project ? [{title:"Paper details",icon:"settings-2",run:(): void => this.metadataForm(project)}] : []),
+      ...(this.workspaceActions ? [{title:"Peerpedia account",icon:"user-round",run:this.workspaceActions.connect}] : []),
+    ]);
+    const root = this.root;
+    if (error && root !== null) {
+      const notice = el.createDiv({cls:"peerpedia-attention",text:errorMessage(error),attr:{role:"alert"}});
+      button(notice, "Open paper.json", (): void => {
+        void this.store.localPath(root, CONFIG_PATH).then((path: string): Promise<void> => openLocalFile(path,false))
           .catch((err: unknown): void => { new Notice(errorMessage(err)); });
       });
     }
-    for (const record of this.records) {
-      const root = this.root!;
-      const item = this.contentEl.createDiv();
-      item.createEl("p", { text: record.message });
-      item.createEl("small", { text: record.paths.join(", ") });
-      button(item, "View recovery files", (): void => {
-        void this.revealRecovery(root, record).catch((err: unknown): void => { new Notice(errorMessage(err)); });
-      });
+    if (this.records.length) {
+      const recovery = el.createEl("details",{cls:"peerpedia-attention"});
+      recovery.createEl("summary",{text:`File recovery · ${this.records.length} ${this.records.length === 1 ? "record" : "records"}`});
+      for (const record of this.records) {
+        recovery.createEl("p",{text:record.message});
+        button(recovery,"Review saved versions",(): void => {
+          void this.revealRecovery(root!,record).catch((err: unknown): void => { new Notice(errorMessage(err)); });
+        });
+      }
     }
-    if (this.bindingError) this.contentEl.createEl("p",{text:this.bindingError,attr:{role:"alert"}});
-    if (this.binding?.pendingImport && this.root !== null) {
-      const root = this.root;
-      button(this.contentEl,"Finish import binding", (): void => {
-        void this.store.recoverImport(root).then(async (): Promise<void> => {
-          if (this.root === root) await this.selectRoot(root);
-        }).catch((err: unknown): void => { new Notice(errorMessage(err)); });
-      });
-    }
-    if (this.binding?.pendingMerge && this.root !== null) {
-      const root = this.root;
-      button(this.contentEl,"Review and recover merge",(): void => {
-        void this.store.recoverMerge(root).then(async (): Promise<void> => {
-          if (this.root === root) await this.selectRoot(root);
-        }).catch((err: unknown): void => { new Notice(errorMessage(err)); });
-      });
-    }
-    const project = this.snapshot;
-    const root = this.root;
-    const complete = project && project.files.length === projectMembers(project.config).length;
-    if (root !== null && this.submissions && !this.bindingError && !this.binding?.pendingMerge && !this.binding?.pendingImport
-      && (this.binding?.pendingSubmission || complete)) {
-      button(this.contentEl,this.binding?.pendingSubmission ? "Review pending submission" : "Submit to Peerpedia",():void => {
-        new SubmitModal(this.app,root,this.store,this.submissions!,this.dir,async ():Promise<void> => {
-          if (this.root === root) await this.selectRoot(root);
+    if (this.bindingError) el.createDiv({cls:"peerpedia-attention",text:this.bindingError,attr:{role:"alert"}});
+    if (this.binding?.pendingImport && root !== null) button(el,"Finish interrupted import",(): void => {
+      void this.store.recoverImport(root).then(async (): Promise<void> => { if(this.root===root)await this.selectRoot(root); })
+        .catch((err: unknown): void => { new Notice(errorMessage(err)); });
+    });
+    if (this.binding?.pendingMerge && root !== null) button(el,"Recover interrupted merge",(): void => {
+      void this.store.recoverMerge(root).then(async (): Promise<void> => { if(this.root===root)await this.selectRoot(root); })
+        .catch((err: unknown): void => { new Notice(errorMessage(err)); });
+    });
+    if (this.binding?.pendingSubmission && root !== null && this.submissions && !this.bindingError && !this.binding.pendingMerge && !this.binding.pendingImport) {
+      button(el,"Resume submission",(): void => {
+        new SubmitModal(this.app,root,this.store,this.submissions!,this.dir,async (): Promise<void> => {
+          if(this.root===root)await this.selectRoot(root);
         }).open();
-      });
+      }).addClass("mod-cta");
     }
-    if (!project) return;
-    this.renderRemote(project);
-    this.contentEl.createEl("h3", { text: project.config.title || "Untitled paper" });
-    button(this.contentEl, "Edit paper details", (): void => this.metadataForm(project));
-    this.contentEl.createEl("h4", { text: "Manuscript" });
+    if (!project) {
+      if (!error) el.createEl("p",{cls:"peerpedia-empty",text:root===null ? "Open a manuscript to start writing." : "Opening paper…"});
+      if (root===null) {
+        button(el,"Open paper",(): void => this.pickPaper()).addClass("mod-cta");
+        button(el,"Create paper",(): void => this.createForm());
+        button(el,"Import from Peerpedia",(): void => this.importForm());
+      }
+      return;
+    }
+    const tools = el.createDiv({cls:"peerpedia-writing-actions"});
+    if(this.workspaceActions) button(tools,"Open preview",(): void => {
+      void this.workspaceActions!.preview(project.root).catch((err: unknown): void => {new Notice(errorMessage(err));});
+    }).addClass("peerpedia-quiet");
+    const complete = project.files.length === projectMembers(project.config).length;
+    if (this.submissions && !this.bindingError && !this.binding?.pendingMerge && !this.binding?.pendingImport
+      && !this.binding?.pendingSubmission && complete) {
+      button(tools,this.binding?.pendingSubmission ? "Resume submission" : "Publish",(): void => {
+        new SubmitModal(this.app,project.root,this.store,this.submissions!,this.dir,async ():Promise<void> => {
+          if(this.root===project.root)await this.selectRoot(project.root);
+        }).open();
+      }).addClass("mod-cta");
+    }
+    const section = el.createDiv({cls:"peerpedia-outline-heading"});
+    section.createSpan({text:"Manuscript"});
+    iconButton(section,"Add chapter","plus",(): void => this.addForm(project));
+    const list = el.createEl("ol",{cls:"peerpedia-chapter-list",attr:{"aria-label":"Manuscript chapters"}});
     const chapters = project.config.chapters ?? [];
-    if (!chapters.length) this.contentEl.createEl("p", { text: "paper.md" });
-    const list = this.contentEl.createEl("ol");
-    chapters.forEach((chapter: ChapterSpec, index: number): void => {
-      const row = list.createEl("li");
-      row.draggable = true;
+    const entries: readonly ChapterSpec[] = chapters.length ? chapters : [{id:"main",file:"paper.md",title:"Manuscript"}];
+    entries.forEach((chapter: ChapterSpec,index: number): void => {
+      const row = list.createEl("li",{cls:"peerpedia-chapter-row"});
+      row.dataset.chapterPath = project.root ? project.root + "/" + chapter.file : chapter.file;
+      row.draggable = chapters.length > 1;
       row.ondragstart = (event: DragEvent): void => {
-        event.dataTransfer?.setData("application/x-peerpedia-chapter", JSON.stringify([project.revision, chapter.id]));
+        event.dataTransfer?.setData("application/x-peerpedia-chapter",JSON.stringify([project.revision,chapter.id]));
       };
       row.ondragover = (event: DragEvent): void => event.preventDefault();
       row.ondrop = (event: DragEvent): void => {
         event.preventDefault();
         const data = event.dataTransfer?.getData("application/x-peerpedia-chapter");
-        if (!data) return;
+        if(!data)return;
         try {
-          const [revision, id]: [string, string] = JSON.parse(data);
-          if (revision !== project.revision) throw new UserFacingError("The paper changed while dragging. Reorder the chapters again.");
-          this.move(project, id, index);
-        } catch (err: unknown) { new Notice(errorMessage(err)); }
+          const [revision,id]: [string,string] = JSON.parse(data);
+          if(revision!==project.revision)throw new UserFacingError("The paper changed while dragging. Reorder the chapters again.");
+          this.move(project,id,index);
+        } catch(err: unknown){new Notice(errorMessage(err));}
       };
-      const file = project.files.find((f: SourceFile): boolean => f.path === chapter.file);
-      const heading = row.createEl("strong", { text: file ? chapter.title || chapter.file : "Source file missing" });
-      if (file) {
-        let cached = this.titles.get(file.path);
-        if (!cached || cached.digest !== file.digest) {
-          cached = { digest: file.digest, title: this.languageWorker.run("title", file.text) };
-          this.titles.set(file.path, cached);
-        }
-        void cached.title.then((title: string): void => {
-          if (heading.isConnected && this.snapshot === project) heading.setText(title);
-        }).catch((): void => {});
+      const file = project.files.find((item: SourceFile): boolean => item.path===chapter.file);
+      const link = button(row,"",(): void => this.openChapter(project,chapter.file));
+      link.addClass("peerpedia-chapter-link");
+      link.disabled = !file;
+      link.setAttribute("title",chapter.file);
+      link.createSpan({cls:"peerpedia-chapter-number",text:String(index+1).padStart(2,"0")});
+      const label = link.createSpan({cls:"peerpedia-chapter-title",text:file ? chapter.title || chapter.file : "Source file missing"});
+      if(file){
+        let cached=this.titles.get(file.path);
+        if(!cached||cached.digest!==file.digest){cached={digest:file.digest,title:this.languageWorker.run("title",file.text)};this.titles.set(file.path,cached);}
+        void cached.title.then((title: string): void => {if(label.isConnected&&this.snapshot===project)label.setText(title);}).catch((): void => {});
       }
-      row.createDiv({ text: chapter.file, cls: "setting-item-description" });
-      const tools = row.createDiv({ cls: "peerpedia-actions" });
-      button(tools, "Move up", (): void => this.move(project, chapter.id, index - 1)).disabled = index === 0;
-      button(tools, "Move down", (): void => this.move(project, chapter.id, index + 1)).disabled = index === chapters.length - 1;
-      button(tools, "Rename chapter", (): void => this.titleForm(project, chapter)).disabled = !file;
-      button(tools, "Rename file", (): void => this.renameForm(project, chapter)).disabled = !file;
-      button(tools, "Remove from paper", (): void => this.removeForm(project, chapter));
+      if(chapters.length){
+        const actions = (): readonly Action[] => [
+          {title:"Rename chapter",icon:"pencil",disabled:!file,run:(): void => this.titleForm(project,chapter)},
+          {title:"Move up",icon:"arrow-up",disabled:index===0,run:(): void => this.move(project,chapter.id,index-1)},
+          {title:"Move down",icon:"arrow-down",disabled:index===chapters.length-1,run:(): void => this.move(project,chapter.id,index+1)},
+          {title:"Rename file",icon:"file-pen-line",disabled:!file,run:(): void => this.renameForm(project,chapter)},
+          {title:"Remove from paper",icon:"minus",run:(): void => this.removeForm(project,chapter)},
+        ];
+        menuButton(row,"Chapter actions: "+(chapter.title||chapter.file),actions);
+        row.oncontextmenu=(event: MouseEvent): void => {event.preventDefault();actionMenu(event,actions());};
+      }
     });
-    button(this.contentEl, "Add chapter", (): void => this.addForm(project));
-    renderBibliography(this.contentEl, {
-      app: this.app, store: this.store, worker: this.languageWorker, project,
-      save: (snapshot: ProjectSnapshot, changes: readonly FileChange[]): Promise<void> => this.save(snapshot, changes),
-    });
+    this.markActiveChapter();
+    const library = el.createDiv({cls:"peerpedia-outline-links"});
+    button(library,"References",(): void => {
+      const form=new Modal(this.app);form.setTitle("References");styleModal(form,true);
+      renderBibliography(form.contentEl,{
+        app:this.app,store:this.store,worker:this.languageWorker,project,
+        save:async (snapshot: ProjectSnapshot,changes: readonly FileChange[]): Promise<void> => {
+          await this.save(snapshot,changes);form.close();
+        },
+      });
+      form.open();
+    }).addClass("peerpedia-quiet");
+    button(library,"Paper details",(): void => this.metadataForm(project)).addClass("peerpedia-quiet");
+    const state = el.createDiv({cls:"peerpedia-paper-status"});
+    state.createSpan({cls:"peerpedia-status-dot"});
+    const binding = this.binding?.binding;
+    state.createSpan({text:!complete ? "Source file missing" : !binding ? "Local paper" :
+      isDeepStrictEqual(publication(project),binding.workingBase.document) ? "Matches downloaded version" : "Local changes"});
+    if(binding) button(state,"Versions and remote changes",(): void => this.remoteForm(project)).addClass("peerpedia-text-button");
+  }
+
+  private remoteForm(project: ProjectSnapshot): void {
+    const form = new Modal(this.app);
+    form.setTitle("Versions and remote changes");
+    styleModal(form);
+    const refresh = (): void => {
+      if(this.root!==project.root){form.close();return;}
+      form.contentEl.empty();
+      this.renderRemote(project,form.contentEl,refresh);
+    };
+    refresh();form.open();
   }
 
   importForm(): void {
@@ -265,10 +355,10 @@ export class ProjectPanel extends ItemView {
     }).open();
   }
 
-  private renderRemote(project: ProjectSnapshot): void {
+  private renderRemote(project: ProjectSnapshot, parent: HTMLElement, refresh: () => void): void {
     const binding = this.binding?.binding, digest = this.binding?.digest;
     if (!binding || !digest) return;
-    const box = this.contentEl.createDiv();
+    const box = parent.createDiv();
     box.createEl("p",{text:"Bound site: " + binding.origin});
     const complete = project.files.length === projectMembers(project.config).length;
     const status = !complete ? "Unavailable (source file missing)"
@@ -302,7 +392,7 @@ export class ProjectPanel extends ItemView {
       if (this.checking) return;
       this.checking = true;
       this.checkError = undefined;
-      this.render();
+      refresh();
       void checkProject(project.root,new PeerpediaApi(binding.origin,this.transport),this.store,digest)
         .then(async (result: RemoteCheck): Promise<void> => {
           const version = await this.store.readBindingVersion(project.root);
@@ -310,7 +400,7 @@ export class ProjectPanel extends ItemView {
           this.binding = version;
           this.observation = result;
         }).catch((err: unknown): void => { if (selection === this.selection) this.checkError = errorMessage(err); })
-        .finally((): void => { if (selection === this.selection) { this.checking = false; this.render(); } });
+        .finally((): void => { if (selection === this.selection) { this.checking = false; this.render(); refresh(); } });
     }).disabled = this.checking;
   }
 

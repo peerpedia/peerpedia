@@ -1,5 +1,7 @@
 import { nativeFiles } from "./scripts/native-files";
-import { writeFile } from "node:fs/promises";
+import { dirname, join } from "node:path";
+import { execFileSync } from "node:child_process";
+import { readFile, writeFile } from "node:fs/promises";
 import { builtinModules, createRequire } from "node:module";
 import process from "node:process";
 
@@ -73,3 +75,8 @@ const plugin = await build({
 if (inputInventory && worker.metafile && chapterInspection.metafile && plugin.metafile) {
   await writeFile(inputInventory, JSON.stringify([...Object.keys(worker.metafile.inputs), ...Object.keys(chapterInspection.metafile.inputs), ...Object.keys(plugin.metafile.inputs)]));
 }
+
+// Build once from the website-owned theme; ship only the scoped editor rules here.
+execFileSync(process.execPath, ["../packages/peerpedia-theme/scripts/build.mjs"]);
+await writeFile(join(dirname(outputFile), "styles.css"),
+  await readFile("styles.css", "utf8") + "\n" + await readFile("../packages/peerpedia-theme/dist/syntax.css", "utf8"));
