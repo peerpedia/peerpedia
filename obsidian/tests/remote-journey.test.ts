@@ -1,43 +1,43 @@
-import { execFile } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { appendFile, mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { fileURLToPath } from "node:url";
-import { promisify } from "node:util";
 import type { Vault } from "obsidian";
 import { afterAll, beforeAll, expect, test } from "vitest";
 import { VaultProjectStore } from "../src/host/vault-store";
 import { newPaper, configChange } from "../src/project/management";
 import { toPublicationDocument } from "../src/project/publication";
-import { RendererClient } from "../src/preview/renderer-client";
+import { renderRequest } from "../renderer/render-request";
+import { renderDocument } from "../../packages/peerpedia-renderer/node.mjs";
+import type { RenderService } from "../src/preview/browser-renderer-client";
+import type { RenderRequest, RenderResponse } from "../renderer/protocol";
 import { PeerpediaApi } from "../src/remote/api";
 import { importPaper } from "../src/remote/import";
 import { checkProject, SubmissionController } from "../src/remote/controller";
-import { DeviceCredentials } from "../src/remote/credentials";
+import { HostCredentials } from "../src/remote/host-credentials";
+import { Secrets } from "./fixtures/secrets";
 import { applyMerge, planMergedFiles, prepareMerge, resolveMerge } from "../src/remote/merge";
 import type { SubmissionIntent } from "../src/remote/submit";
 import { NodeTransport } from "../src/remote/transport";
 import type { AccountIdentity, HttpResponse, Transport, VerifiedSnapshot } from "../src/remote/types";
 import { startDjangoServer, startFixtureServer, type JourneySite } from "./fixtures/test-server";
 
-const obsidian = fileURLToPath(new URL("..", import.meta.url));
-const run = promisify(execFile);
 let work: string;
-let renderer: RendererClient;
+// Protocol integration exercises the production handler; browser lifecycle and
+// offline engine delivery are verified separately in the real-host journeys.
+const renderer: RenderService = {
+  render(request: RenderRequest, _signal: AbortSignal): Promise<RenderResponse> {
+    return renderRequest(request, renderDocument);
+  },
+};
 const mac = process.platform === "darwin" && process.arch === "arm64";
 const django = process.env.PEERPEDIA_TEST_DJANGO === "1";
 
 beforeAll(async (): Promise<void> => {
   if (!mac) return;
   work = await mkdtemp(join(tmpdir(), "peerpedia-journey-"));
-  const runtime = join(work, "renderer");
-  await run(process.execPath, [join(obsidian, "node_modules/tsx/dist/cli.mjs"),
-    join(obsidian, "scripts/package-renderer.ts"), runtime]);
-  renderer = new RendererClient({runtimePath: runtime, cachePath: join(work, "diagram-cache")});
 }, 120_000);
 afterAll(async (): Promise<void> => {
-  await renderer?.dispose();
   if (work) await rm(work, {recursive: true, force: true});
 });
 
@@ -46,7 +46,7 @@ async function journey(site: JourneySite, dropResponse: boolean): Promise<void> 
   const root = "论文 📝";
   const events = {} as Pick<Vault, "on" | "offref">;
   let store = new VaultProjectStore(vault, events);
-  const credentials = new DeviceCredentials(join(work, "missing-keychain-helper"));
+  const credentials = new HostCredentials(new Secrets(), {}, async (): Promise<void> => {});
   const identity = {origin: site.origin, username: site.username};
   await credentials.write(site.origin, site.username, site.token);
   const wire = new NodeTransport(site.origin);

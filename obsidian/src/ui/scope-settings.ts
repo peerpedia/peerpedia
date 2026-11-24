@@ -8,11 +8,11 @@ export class ScopeSettings extends PluginSettingTab {
 
   override display(): void {
     this.containerEl.empty();
-    this.containerEl.createEl("h3", { text: "BananaMark writing assistance" });
+    new Setting(this.containerEl).setName("BananaMark writing assistance").setHeading();
     this.containerEl.createEl("p", { text: "Off by default. Subfolder rules override parent folders. File rules take priority." });
     for (const kind of ["folders", "files"] as const) {
       const folder = kind === "folders";
-      this.containerEl.createEl("h4", { text: folder ? "Folder rules" : "File rules" });
+      new Setting(this.containerEl).setName(folder ? "Folder rules" : "File rules").setHeading();
       const change = (path: string, enabled: boolean | null): void => {
         const scope = this.owner.writingScope;
         const rules = { ...scope[kind], [path]: enabled ?? false };

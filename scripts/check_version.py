@@ -29,15 +29,26 @@ def check() -> None:
         "plugins/peerpedia/.codex-plugin/plugin.json",
         "editor/package.json",
         "editor/package-lock.json",
-        "obsidian/manifest.json",
-        "obsidian/package.json",
-        "obsidian/package-lock.json",
     ):
         assert json.loads((ROOT / path).read_text())["version"] == version, path
     lock = json.loads((ROOT / "editor/package-lock.json").read_text())
     assert lock["packages"][""]["version"] == version, "npm lock root package version"
-    obsidian_lock = json.loads((ROOT / "obsidian/package-lock.json").read_text())
-    assert obsidian_lock["packages"][""]["version"] == version, "Obsidian npm lock version"
+    plugin = json.loads((ROOT / "manifest.json").read_text())
+    plugin_version = plugin["version"]
+    assert plugin_version == version, "Obsidian version differs from VERSION"
+    for path in (
+        "package.json",
+        "package-lock.json",
+        "obsidian/package.json",
+        "obsidian/package-lock.json",
+    ):
+        metadata = json.loads((ROOT / path).read_text())
+        assert metadata["version"] == plugin_version, path
+        if "packages" in metadata:
+            assert metadata["packages"][""]["version"] == plugin_version, path
+    versions = json.loads((ROOT / "versions.json").read_text())
+    assert versions[plugin_version] == plugin["minAppVersion"], "Obsidian version compatibility"
+
     for path, heading in (
         ("README.md", f"# Peerpedia {version}"),
         ("cli/README.md", f"# Peerpedia CLI {version}"),

@@ -34,18 +34,12 @@ npm --prefix obsidian run build
 
 ## 离线预览渲染组件
 
-Apple Silicon 版随包携带 Node.js 22.22.3、网站的 BananaMark 渲染器、TikZ 的 WebAssembly 和 TeX 资产，以及 `@peerpedia/theme` 的样式、KaTeX 和 BaKoMa 字体。开稿和预览使用随包的组件，无需安装 Node.js、Python 或 TeX。独立进程为插件内置的论文预览提供排版。
+插件安装包只有 `main.js`、`manifest.json` 和 `styles.css`。共享渲染器、TikZ 的 WebAssembly/TeX 资源，以及共享主题和字体在构建时嵌入。运行时使用浏览器 Worker，不携带 Node 可执行文件，不启动外部渲染进程，也不写旧版磁盘图表缓存。
 
-构建阶段从锁文件安装依赖，从 Node.js 官方站点下载运行时并验证固定的 SHA-256。构建产物在 `obsidian/dist/renderer/`。保持该目录结构即可搬移组件。预览界面可从其中的 `theme/style.css` 和 `theme/assets.json` 读取样式及资源清单。返回的 TikZ 字体地址相对于 `theme/`，章节链接保留网站渲染器生成的查询参数与锚点。`provenance.json` 记录源码提交、源文件校验和、运行时校验和以及实际安装的依赖版本。
+渲染调度由插件统一管理。单次请求从提交起最多等待 40 秒；取消或超时只终止对应工作，排队的其他请求可以继续；闲置 30 秒后释放渲染 Worker，停用插件时清理队列。样式、高亮及字体继续来自网站共用的包。
 
 ```sh
-npm --prefix obsidian ci
-npm --prefix obsidian run package:renderer
-npm --prefix obsidian test -- tests/renderer-runtime.test.ts
+npm --prefix obsidian test -- tests/render-request.test.ts tests/browser-renderer.test.ts
 ```
 
-Obsidian 通过独立进程异步渲染，单次请求从提交起最多等待 40 秒。取消或超时时会停止该请求占用的进程，后续请求启动新进程。TikZ 缓存写入 `~/Library/Caches/Peerpedia/Obsidian/tikz/`。
-
-冷缓存测试将完整组件复制到另一个临时目录，清空 `PATH`，并通过 macOS 策略禁止联网、读取源码工作区和写入组件目录。两章样本的 KaTeX、TikZ、交换图、跨章引用和共享书目均成功渲染。在隔离的 Obsidian 1.15.1 中单独禁止渲染子进程联网，验证了相同样本、两种本地字体实际加载以及渲染进程退出。
-
-完整安装包的搬移与宿主验收见[本地验收](local-acceptance.md)。
+源码定位、渲染结果和诊断由请求处理测试验证；真正的离线资源加载和宿主卸载由三文件包的实机测试验证。复现完整构建及隔离宿主验收见[安装说明](installation.md)。当前浏览器渲染基准见 [基准说明](../bench/README.md)。

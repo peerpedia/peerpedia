@@ -75,7 +75,6 @@ export function withEditorSources(disk: ProjectSnapshot, read: (path: string) =>
 
 export class WritingProjects {
   private readonly store: VaultProjectStore;
-  private readonly worker = new LanguageWorker();
   private readonly roots = new Map<string, ProjectEntry>();
   private readonly editors = new Map<EditorView, string>();
   private readonly knownRoots = new Map<string, string | null>();
@@ -92,6 +91,7 @@ export class WritingProjects {
     private readonly app: App,
     private readonly base: string,
     private readonly changed: () => void,
+    private readonly worker: LanguageWorker,
   ) {
     this.store = new VaultProjectStore(base, app.vault);
   }
@@ -174,7 +174,6 @@ export class WritingProjects {
   dispose(): void {
     this.disposed = true;
     clearTimeout(this.timer);
-    this.worker.dispose();
     for (const entry of this.roots.values()) entry.stop();
     this.roots.clear();
     this.editors.clear();

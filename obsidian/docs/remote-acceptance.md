@@ -1,5 +1,8 @@
 # Manual publishing acceptance
 
+> Historical record of the earlier personal package. The current three-file candidate uses browser Workers and Obsidian SecretStorage; the old Node renderer and Swift credential helper have been removed from source. Current reproduction steps are in [installation](installation.md), and current results are in [the migration report](../../docs/superpowers/plans/2026-11-25-obsidian-community-migration-results.md).
+
+
 The Peerpedia 0.1.0 personal package was tested on November 24, 2026 with macOS 15.6.1 on Apple Silicon, Obsidian Desktop 1.15.1, Electron 43.8.9 and host Node.js 24.22.1. The package includes Node.js 22.22.3 for offline rendering. The trial covers Obsidian desktop source-mode authoring on this Mac.
 
 ## Installable artifact

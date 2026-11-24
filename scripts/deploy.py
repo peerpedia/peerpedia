@@ -4,6 +4,10 @@ Run from a trusted checkout with GitHub CLI authentication and existing SSH acce
 No production credentials are stored in GitHub Actions.
 """
 
+from collections.abc import Callable
+from typing import Any
+from operator import itemgetter
+
 import argparse
 import hashlib
 import json
@@ -14,7 +18,7 @@ import subprocess
 import tempfile
 
 REPOSITORY = "peerpedia/peerpedia"
-REQUIRED_JOBS = {"test", "browser", "quality", "security"}
+REQUIRED_JOBS = {"test", "browser", "quality", "security", "obsidian"}
 ROOT = Path(__file__).resolve().parent.parent
 BACKUP_PATH_FILTER = (
     r"sed -n -e 's/^Backup written to \([^ ]*\.dump\).*$/\1/p' -e t -e '/^backups\/.*\.dump$/p'"
@@ -29,7 +33,7 @@ def github(path):
     return json.loads(run("gh", "api", f"repos/{REPOSITORY}/{path}"))
 
 
-def verified_release(sha, read=github):
+def verified_release(sha: str, read: Callable[[str], dict[str, Any]] = github) -> str:
     if not re.fullmatch(r"[0-9a-f]{40}", sha):
         raise ValueError("Use the full, forty-character commit SHA.")
     branch = read("branches/main")
@@ -40,13 +44,13 @@ def verified_release(sha, read=github):
     )["workflow_runs"]
     if not runs:
         raise ValueError("No main push test run exists for this exact commit.")
-    latest = max(runs, key=lambda item: item["id"])
+    latest = max(runs, key=itemgetter("id"))
     if latest["status"] != "completed" or latest["conclusion"] != "success":
         raise ValueError("The latest main push workflow has not passed. Nothing was deployed.")
     jobs = read(f"actions/runs/{latest['id']}/jobs?per_page=100")["jobs"]
     successful = {job["name"] for job in jobs if job["conclusion"] == "success"}
     if not REQUIRED_JOBS <= successful:
-        raise ValueError("Backend, browser, quality, and security gates must all pass.")
+        raise ValueError("Backend, browser, quality, security, and Obsidian gates must all pass.")
     return latest["html_url"]
 
 

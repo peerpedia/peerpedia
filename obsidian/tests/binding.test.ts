@@ -7,7 +7,7 @@ import { VaultProjectStore } from "../src/host/vault-store";
 import { newPaper } from "../src/project/management";
 import type { RemoteBinding } from "../src/remote/types";
 import { verifySnapshot } from "../src/remote/verify";
-import raw from "./fixtures/manifests/v4.json";
+import raw from "../../tests/fixtures/publication-protocol/v4.json";
 
 let vault: string;
 let store: VaultProjectStore;

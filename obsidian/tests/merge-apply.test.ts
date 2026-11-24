@@ -18,9 +18,9 @@ import { importChanges } from "../src/remote/import";
 import { applyMerge, mergeDocuments, prepareMerge, planMergedFiles, resolveMerge } from "../src/remote/merge";
 import type { RemoteBinding, RemoteCheck, VerifiedSnapshot } from "../src/remote/types";
 import { verifySnapshot } from "../src/remote/verify";
-import raw1 from "./fixtures/manifests/v1.json";
-import raw3 from "./fixtures/manifests/v3.json";
-import raw4 from "./fixtures/manifests/v4.json";
+import raw1 from "../../tests/fixtures/publication-protocol/v1.json";
+import raw3 from "../../tests/fixtures/publication-protocol/v3.json";
+import raw4 from "../../tests/fixtures/publication-protocol/v4.json";
 
 const prior = verifySnapshot(raw3), current = verifySnapshot(raw4);
 const origin = "https://fixture.invalid", root = "manuscript";

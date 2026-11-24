@@ -5,7 +5,7 @@ import { projectMembers } from "../project/members";
 import type { FileChange } from "../project/store";
 import type { ProjectSnapshot, SourceFile } from "../project/types";
 import {
-  entryCitationKeys, readEntries, renameEntry, rewriteBibliographyProse, type BibliographyEntry, type BibliographyProse,
+  readEntries, renameEntry, rewriteBibliographyProse, type BibliographyEntry, type BibliographyProse,
 } from "./document";
 
 interface CitationReference extends Reference {
@@ -123,10 +123,9 @@ function normalizedProse(value: string): { text: string; sourceOffset: (offset: 
 }
 
 function proseUses(
-  source: string, offset: number, keys: ReadonlySet<string>, references: CitationReference[], newKey?: string, exclude?: string,
+  source: string, offset: number, keys: ReadonlySet<string>, references: CitationReference[], newKey: string,
 ): string {
   return rewriteBibliographyProse(source, (field: BibliographyProse): string => {
-    if (field.entry === exclude) return field.value;
     const normalized = normalizedProse(field.value);
     const edits: Edit[] = [];
     for (const use of inlineReferences(normalized.text)) {
@@ -137,21 +136,19 @@ function proseUses(
         key: use.key, from: field.from + offset, to: field.to + offset,
         entry: field.entry, field: field.field, version: field.version,
       });
-      if (newKey !== undefined) {
-        const { from, to } = referenceKeyRange(normalized.text, use);
-        edits.push({ from: normalized.sourceOffset(from), to: normalized.sourceOffset(to), text: newKey });
-      }
+      const { from, to } = referenceKeyRange(normalized.text, use);
+      edits.push({ from: normalized.sourceOffset(from), to: normalized.sourceOffset(to), text: newKey });
     }
     return applyEdits(field.value, edits);
   });
 }
 
-function searchChapters(chapters: ChapterScan[], keys: ReadonlySet<string>, newKey?: string): CitationRename {
+function searchChapters(chapters: ChapterScan[], keys: ReadonlySet<string>, newKey: string): CitationRename {
   const changes: FileChange[] = [];
   const references: CitationUse[] = [];
   for (const { file, references: chapterRefs, bibliographies } of chapters) {
     const matches: CitationReference[] = chapterRefs.filter((item: Reference): boolean => keys.has(item.key));
-    const edits = newKey === undefined ? [] : matches.map((item: Reference): Edit =>
+    const edits = matches.map((item: Reference): Edit =>
       ({ ...referenceKeyRange(file.text, item), text: newKey }));
     for (const { from, to } of bibliographies) {
       const yaml = file.text.slice(from, to);
@@ -164,32 +161,11 @@ function searchChapters(chapters: ChapterScan[], keys: ReadonlySet<string>, newK
   return { changes, references };
 }
 
-export function citationImpact(project: ProjectSnapshot, key: string): readonly CitationUse[] {
-  const file = bibliography(project);
-  const keys = new Set(entryCitationKeys(entry(file, key)).map((name: string): string => name.normalize("NFC")));
-  const { chapters } = scanChapters(project);
-  const { references } = searchChapters(chapters, keys);
-  const shared: CitationReference[] = [];
-  proseUses(file.text, 0, keys, shared, undefined, key);
-  return [...references, ...locateUses(file, shared)];
-}
-
 function checkedKey(key: string): string {
   const normalized = key.normalize("NFC");
   // Leading "-" is an operator in bare/braced citations.
   if (!isValidLabel(normalized) || normalized.startsWith("-")) throw new UserFacingError("Enter a valid citation key.");
   return normalized;
-}
-
-export function validateNewCitationKey(project: ProjectSnapshot, key: string): void {
-  const normalized = checkedKey(key);
-  const file = bibliography(project);
-  readEntries(file.text);
-  const { labels } = scanChapters(project);
-  labels.push(...scanBibliography(file.text, file.path).labels);
-  if (labels.some((item: LabelTarget): boolean => item.key === normalized)) {
-    throw new UserFacingError(`Citation key "${key}" already exists.`);
-  }
 }
 
 export function previewCitationRename(project: ProjectSnapshot, from: string, to: string): CitationRename {

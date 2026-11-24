@@ -1,3 +1,4 @@
+import { LanguageWorker } from "../src/host/language-worker";
 import { EditorState } from "@codemirror/state";
 import type { EditorView } from "@codemirror/view";
 import type { App } from "obsidian";
@@ -34,7 +35,7 @@ test("one completed chapter analysis belongs to both views of its current docume
 
   // Neither buffer has a paper.json; the view state supplies each standalone document.
   const app = { vault: {}, workspace: { getLeavesOfType: (): [] => [] } } as unknown as App;
-  const projects = new WritingProjects(app, "/nonexistent-peerpedia-vault", (): void => {});
+  const projects = new WritingProjects(app, "/nonexistent-peerpedia-vault", (): void => {}, new LanguageWorker());
   try {
     projects.attach(left, path);
     projects.attach(right, path);

@@ -1,14 +1,13 @@
-import { pruneDiagramCache } from "./tikz-cache";
-import { stdin, stdout } from "node:process";
-import { createInterface } from "node:readline";
-
 import { BananamarkError, defineDialect, type SyntaxNodeRef } from "bananamark";
 
 import type { PublicationDocument } from "../src/project/document";
 import { UserFacingError } from "../src/user-error";
 import { failure, isRecord, type RenderFailure, type RenderPage, type RenderRequest, type RenderResponse, type SourceTarget } from "./protocol";
-import { dialectOptions } from "./site/dialect.js";
-import { renderDocument, type SiteHeading, type SiteTarget } from "./site/render-document.mjs";
+import { dialectOptions } from "../../editor/dialect.js";
+import type { DocumentInput, RenderedDocument } from "../../packages/peerpedia-renderer/core.mjs";
+
+type SiteHeading = RenderedDocument["pages"][number]["headings"][number];
+type SiteTarget = RenderedDocument["targets"][number];
 
 const MAX_MARKDOWN_BYTES = 1024 * 1024;
 const MAX_CHAPTERS = 64;
@@ -191,7 +190,7 @@ function normalizeError(request: RenderRequest, error: unknown, last?: Chapter):
   return result;
 }
 
-async function render(request: RenderRequest): Promise<RenderResponse> {
+export async function renderRequest(request: RenderRequest, renderDocument: (input: DocumentInput) => Promise<RenderedDocument>): Promise<RenderResponse> {
   let last: Chapter | undefined;
   try {
     const chapters = parseChapters(request.document);
@@ -213,34 +212,5 @@ async function render(request: RenderRequest): Promise<RenderResponse> {
     };
   } catch (error: unknown) {
     return normalizeError(request, error, last);
-  } finally {
-    const cache = process.env.BANANAMARK_CACHE;
-    if (cache) await pruneDiagramCache(cache).catch((error: unknown): void => {
-      process.stderr.write(`TikZ cache cleanup: ${String(error)}\n`);
-    });
   }
-}
-
-async function respond(line: string): Promise<RenderResponse> {
-  let value: unknown;
-  try {
-    value = JSON.parse(line);
-  } catch {
-    return failure({ id: "", revision: "" }, "Invalid render request JSON.");
-  }
-  if (!isRecord(value) || typeof value.id !== "string" || typeof value.revision !== "string") {
-    return failure({ id: "", revision: "" }, "A render request requires an ID and revision.");
-  }
-  return render(value as unknown as RenderRequest);
-}
-
-const lines = createInterface({ input: stdin, crlfDelay: Infinity });
-for await (const line of lines) {
-  const result = await respond(line);
-  await new Promise<void>((resolveWrite: () => void, rejectWrite: (error: Error) => void): void => {
-    stdout.write(JSON.stringify(result) + "\n", (error?: Error | null): void => {
-      if (error) rejectWrite(error);
-      else resolveWrite();
-    });
-  });
 }

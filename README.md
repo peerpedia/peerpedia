@@ -8,6 +8,18 @@ A small, public research-publishing application built with Django and PostgreSQL
 
 The software uses the [MIT license](LICENSE). Papers have their own author-selected licenses. Developer information is on the [About page](https://peerpedia.dev/about/).
 
+## Peerpedia for Obsidian
+
+Write research papers locally with BananaMark completion, syntax highlighting, shared references and a website-matched preview. Import public papers, compare remote changes and explicitly submit a reviewed version to Peerpedia. The plugin source is in [`obsidian/`](obsidian/); it uses the same [`renderer`](packages/peerpedia-renderer/) and [`theme`](packages/peerpedia-theme/) as the website. The root `manifest.json` describes the Obsidian plugin; the website, CLI and plugin use the same release version.
+
+**Platform:** Apple silicon Macs with Obsidian Desktop 1.15.1 or newer. Other platforms and mobile are not supported. The official directory application is being prepared; do not assume it is listed yet. Read the [installation and upgrade guide](obsidian/docs/installation.md) and [usage guide](obsidian/docs/usage.md).
+
+**Account and network use:** writing, syntax assistance and preview work offline without an account. Import, remote checks and publication contact only the Peerpedia site you explicitly connect to, normally `https://peerpedia.dev`. Publishing requires an account and access token; tokens use Obsidian secret storage. The plugin does not send client-side telemetry. The server processes requests under its [privacy policy](https://peerpedia.dev/privacy/). No payment is required by this plugin.
+
+**Files and native code:** manuscript edits stay inside the selected vault. For safe file transactions, the plugin embeds a small native macOS component built from [`anchored.c`](obsidian/native/anchored.c). It writes this component to a newly created system temporary directory outside the vault, loads it, then removes that directory. It does not download, install or update dependencies at runtime. The component protects against replaced directories and late writes to old file handles. Its source and build process are public; official acceptance of this component has not been confirmed.
+
+**License and build:** MIT for Peerpedia code; third-party notices, including renderer and font licenses, are included in the packaged `styles.css`. On an Apple silicon Mac with Xcode Command Line Tools and Node.js 22.13+ (22.x) or 24+, run `npm run build` from the repository root. This installs locked build dependencies and produces `main.js`, `manifest.json` and `styles.css`. See [build details](obsidian/docs/installation.md#build). Submit problems through [GitHub issues](https://github.com/peerpedia/peerpedia/issues).
+
 ## What is implemented
 
 - Public paper list with title, authors, average rating, search, arXiv subject filtering, and latest-acceptance/rating sorting.
@@ -33,6 +45,8 @@ Use Python 3.12–3.14 and Node 22 or newer. Python 3.13 is used by the producti
 python3 -m venv .venv
 .venv/bin/python -m pip install -r requirements.lock
 npm ci --prefix packages/peerpedia-theme
+npm ci --prefix packages/peerpedia-renderer
+npm run prepare:browser --prefix packages/peerpedia-renderer
 npm ci --prefix editor
 npm run build --prefix editor
 .venv/bin/python manage.py migrate
@@ -318,7 +332,7 @@ For optional local PostgreSQL testing on a supported Python 3.12 platform, witho
 
 ```sh
 python3.12 -m venv .test-tools
-.test-tools/bin/python -m pip install pgserver==0.1.4
+.test-tools/bin/python -m pip install pgserver==0.1.3
 .test-tools/bin/python scripts/test_postgres.py
 ```
 
@@ -428,7 +442,9 @@ API no longer publish or accept passage discussions.
 
 Install development-only checks with `pip install -r requirements-dev.txt` and
 `npm ci --ignore-scripts --prefix packages/peerpedia-theme` and
-`npm ci --ignore-scripts --prefix editor`. Run:
+`npm ci --ignore-scripts --prefix editor`. Install the shared renderer with
+`npm ci --ignore-scripts --prefix packages/peerpedia-renderer` and apply its explicit
+browser compatibility patches with `npm run prepare:browser --prefix packages/peerpedia-renderer`. Run:
 
 ```sh
 python -m ruff check accounts publishing config cli/peerpedia_cli cli_tests browser_tests scripts
@@ -438,10 +454,10 @@ editor/node_modules/.bin/prettier --check 'editor/*.js' 'editor/*.mjs' 'static/*
 python -m unittest discover -s scripts -p 'test_*_unit.py'
 ```
 
-Full CI runs `test`, `browser`, `quality`, and `security` on pushes, pull requests,
+Full CI runs `test`, `browser`, `quality`, `security`, and `obsidian` on pushes, pull requests,
 and manual runs. The daily scheduled run checks Python and npm dependency security
 only, and appears in GitHub Actions as **Daily security scan**. It does not push
-commits or deploy the website. Deployment still requires all four jobs to pass
+commits or deploy the website. Deployment still requires all five jobs to pass
 on the exact main commit.
 
 CI also checks that `requirements.lock` satisfies `requirements.txt`. Update both

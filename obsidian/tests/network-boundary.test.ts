@@ -1,8 +1,10 @@
+import { LanguageWorker } from "../src/host/language-worker";
 import { tmpdir } from "node:os";
 import type { App, Command, Editor, MarkdownFileInfo, PluginManifest, WorkspaceLeaf } from "obsidian";
 import { expect, test, vi } from "vitest";
 
-import { DeviceCredentials } from "../src/remote/credentials";
+import { HostCredentials } from "../src/remote/host-credentials";
+import { Secrets } from "./fixtures/secrets";
 import { ConnectionModal } from "../src/ui/connection-modal";
 import type { AccountIdentity, HttpResponse, Transport } from "../src/remote/types";
 import { NodeTransport } from "../src/remote/transport";
@@ -65,7 +67,7 @@ interface TestElement {
   createEl: (tag: string, options: {text?:string; type?:string}) => TestElement;
 }
 
-function openModal(identity: AccountIdentity | null, pending: readonly AccountIdentity[], store: DeviceCredentials, transport: Transport,
+function openModal(identity: AccountIdentity | null, pending: readonly AccountIdentity[], store: HostCredentials, transport: Transport,
   save: (active: AccountIdentity | null, cleanup: readonly AccountIdentity[]) => Promise<void>): (name: string) => TestElement {
   const elements: TestElement[] = [];
   const createEl = (tag:string, options:{text?:string;type?:string}):TestElement => {
@@ -84,7 +86,7 @@ function openModal(identity: AccountIdentity | null, pending: readonly AccountId
   };
 }
 
-test("a failed native disconnect frees the modal for a new account and preserves targeted retry across restart", async (): Promise<void> => {
+test("a failed host-secret disconnect frees the modal for a new account and preserves targeted retry across restart", async (): Promise<void> => {
   const first = {origin:"https://one.invalid",username:"first"};
   const second = {origin:"https://two.invalid",username:"second"};
   let state: {active:AccountIdentity|null; cleanup:readonly AccountIdentity[]} = {active:null,cleanup:[]};
@@ -93,19 +95,21 @@ test("a failed native disconnect frees the modal for a new account and preserves
     username:origin === first.origin ? first.username : second.username,scopes:["propose"],expires_at:"2030-01-01T00:00:00Z",
     agreement:{url:"/agreements/",accepted:false,version:"v1"},
   }))}))};
-  const store = new DeviceCredentials("/nonexistent-peerpedia-helper");
+  const secrets = new Secrets();
+  const store = new HostCredentials(secrets, {}, async (): Promise<void> => {});
   const remove = vi.spyOn(store,"remove");
   let control = openModal(null,[],store,transport,save);
   control("url").value = first.origin;
   control("password").value = "temporary-one";
   control("Connect and verify account").onclick!();
-  await vi.waitFor(():void => { expect(control("The token is available for this session only").tag).toBe("p"); });
+  await vi.waitFor(():void => { expect(control("The token is stored in Obsidian secret storage").tag).toBe("p"); });
+  secrets.unavailable = true;
   control("Disconnect and remove").onclick!();
   await vi.waitFor(():void => { expect(state).toEqual({active:null,cleanup:[first]}); });
   await expect(store.read(first.origin,first.username)).rejects.toThrow();
   control = openModal(state.active,state.cleanup,store,transport,save);
   expect(control("url").disabled).toBe(false);
-  expect(control("Keychain removal pending").text).toContain(first.username);
+  expect(control("Saved token removal pending").text).toContain(first.username);
   control("url").value = second.origin;
   control("password").value = "temporary-two";
   control("Connect and verify account").onclick!();
@@ -119,7 +123,8 @@ test("a failed native disconnect frees the modal for a new account and preserves
 });
 
 test("the modal shows the settings failure without claiming a verified or stored first credential", async ():Promise<void> => {
-  const store = new DeviceCredentials("/nonexistent-peerpedia-helper");
+  const secrets = new Secrets();
+  const store = new HostCredentials(secrets, {}, async (): Promise<void> => {});
   const write = vi.spyOn(store,"write");
   const transport:Transport = {request:vi.fn(async ():Promise<HttpResponse> => ({status:200,headers:{},body:Buffer.from(JSON.stringify({
     username:"first",scopes:["propose"],expires_at:"2030-01-01T00:00:00Z",agreement:{url:"/a/",accepted:false,version:"1"},
@@ -142,7 +147,7 @@ test("reopening an unreadable manuscript renders the saved request action from i
   const controls:string[]=[];
   const store = {readBindingVersion:vi.fn().mockResolvedValue({pendingSubmission:true}),recovery:vi.fn().mockResolvedValue([]),
     watch:vi.fn(),read:vi.fn().mockRejectedValue(new Error("invalid paper.json"))};
-  const panel = new ProjectPanel({} as WorkspaceLeaf,store as unknown as VaultProjectStore,vi.fn(),vi.fn(),{request:vi.fn()},"plugins/peerpedia",{} as SubmissionController);
+  const panel = new ProjectPanel({} as WorkspaceLeaf,store as unknown as VaultProjectStore,vi.fn(),vi.fn(),{request:vi.fn()},new LanguageWorker(),{} as SubmissionController);
   const content = {empty:():void=>{controls.length=0;},addClass:vi.fn(),createDiv:():unknown=>content,
     createEl:(tag:string,options:{text?:string}):object=>{if (tag==="button") controls.push(options.text!); return {addClass:vi.fn(),setAttribute:vi.fn()};}};
   Object.assign(panel,{contentEl:content});
@@ -167,6 +172,7 @@ import { prepareSubmission } from "../src/remote/submit";
 import type { ProjectSnapshot, SourceFile } from "../src/project/types";
 import { SubmitModal } from "../src/ui/submit-modal";
 
+// Real fsync-backed fixture creation can exceed the default timeout on loaded hosts.
 test("the pending dialog offers explicit original-request replay when its receipt cannot verify",async ():Promise<void>=>{
   const temporary = await mkdtemp(join(tmpdir(),"peerpedia-repair-ui-"));
   try {
@@ -193,7 +199,7 @@ test("the pending dialog offers explicit original-request replay when its receip
     expect(retry).toHaveBeenCalledExactlyOnceWith(root,request);
     modal.onClose();
   } finally { await rm(temporary,{recursive:true,force:true}); }
-});
+}, 20_000);
 
 test("the panel compares publication content with the working version across layouts and missing files", (): void => {
   const text:string[] = [];

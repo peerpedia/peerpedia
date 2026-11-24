@@ -71,7 +71,7 @@ export class SubmitModal extends Modal {
   private readonly abort = new AbortController();
   private details:SubmissionDetails = {explanation:"",aiAssisted:false};
   constructor(app:App, private readonly root:string, private readonly store:VaultProjectStore, private readonly controller:SubmissionController,
-    private readonly dir:string, private readonly updated:()=>Promise<void>) { super(app); this.setTitle("Publish a version"); styleModal(this,true); }
+    private readonly updated:()=>Promise<void>) { super(app); this.setTitle("Publish a version"); styleModal(this,true); }
 
   override onOpen(): void { this.run(():Promise<void> => this.openForm()); }
   override onClose(): void { this.abort.abort(); }
@@ -136,7 +136,7 @@ export class SubmitModal extends Modal {
   private async manuscript(box:HTMLElement, pages:readonly RenderPage[]): Promise<void> {
     const unavailable = (): void => { box.createEl("p",{text:"Unable to load local preview styles or fonts.",attr:{role:"alert"}}); };
     try {
-      const {theme,css} = await readTheme(this.app.vault.adapter,this.dir);
+      const {theme,css} = readTheme();
       if (!box.isConnected || this.abort.signal.aborted) return;
       const chapters = pages.length > 1 ? box.createEl("select",{attr:{"aria-label":"Manuscript chapter"}}) : null;
       for (const page of pages) chapters?.createEl("option",{value:page.id,text:page.title});

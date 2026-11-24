@@ -6,8 +6,11 @@ paper you are editing. BananaMark source colors use the shared website syntax th
 
 - Click a chapter title to open it. Drag to reorder; use its `…` menu or right-click
   for rename, file rename and removal. Removing membership keeps the source file.
-- **References** opens the shared bibliography in a dedicated dialog. Search entries,
-  click one to edit, and use its menu for citation-key renames or deletion.
+- **References** opens the shared bibliography in a dedicated dialog. Search entries
+  and use **Edit YAML source** to add, edit or remove references. Saving checks YAML
+  structure; preview checks citation and publication rules. Use the **Rename citation
+  key** button beside an entry to find and update its citations across the paper.
+  Direct YAML edits do not automatically rewrite citations.
 - The paper title switches papers. Its `…` menu contains creation, import, details
   and the Peerpedia account connection.
 - **Publish** reviews a new paper or public proposal using the existing publishing
@@ -39,7 +42,7 @@ Continue editing the same local files after import or publication. **Manage pape
 ## Connect and submit
 
 1. On the Peerpedia website, accept the publishing agreement and create a token with the permission you need. Initial publication requires permission to publish new papers. Proposals require proposal permission.
-2. Run **Connect or disconnect a Peerpedia account**, enter the site's HTTPS origin and token, and select **Connect and verify account**. Check the account, scope, expiry and agreement status. The plugin uses macOS Keychain. If Keychain is unavailable, the token lasts for this session. Reconnect after restarting. The token is kept outside your vault.
+2. Run **Connect or disconnect a Peerpedia account**, enter the site's HTTPS origin and token, and select **Connect and verify account**. Check the account, scope, expiry and agreement status. The plugin uses Obsidian secret storage for this vault; its own settings contain only a secret reference. If secret storage is unavailable, the token lasts for this session. Reconnect after restarting. When upgrading from an older Keychain-based installation, re-enter your token once; the old Keychain entry is not automatically read or removed.
 3. In **Manage paper**, choose **Publish**. Consult **Available subjects and licenses** if you need the site's current codes. Set manuscript metadata in **Paper details**. Revisions retain the existing paper license.
 4. Choose the submission type and state your explanation and whether AI assisted you. **Publish a new paper** makes a public accepted paper. **Create a new proposal** submits a public revision for the corresponding author to consider. For your linked, open proposal, **Add a snapshot to the open proposal** is the default. You can choose a separate proposal.
 5. Select **Review submission** and inspect the destination, account, metadata, license, explanation, AI choice, chapter sources, rendered manuscript and any changes. **Confirm submission** sends the reviewed version. If the manuscript changes, review and confirm the refreshed preview. The result links to the public snapshot.

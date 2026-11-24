@@ -117,7 +117,7 @@ export async function startFixtureServer(): Promise<FixtureServer> {
 
 // The private pipe controls the test owner's website decision. All plugin traffic goes through the actual WSGI API.
 export async function startDjangoServer(): Promise<JourneySite> {
-  const python = process.env.PEERPEDIA_PG_PYTHON ?? "python3";
+  const python = process.env.PEERPEDIA_PG_PYTHON ?? process.env.PEERPEDIA_TEST_PYTHON ?? "python3";
   const script = fileURLToPath(new URL("./django-server.py", import.meta.url));
   const child = spawn(python, ["-u", script], {stdio: ["pipe", "pipe", "inherit"],
     env: {PATH: process.env.PATH, PEERPEDIA_TEST_PYTHON: process.env.PEERPEDIA_TEST_PYTHON, PYTHONDONTWRITEBYTECODE: "1"}});

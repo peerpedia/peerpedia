@@ -7,7 +7,6 @@ import { emptyPreview, type PreviewState } from "./state";
 export interface PreviewRenderer {
   convert(project: ProjectSnapshot, signal: AbortSignal): Promise<PublicationDocument>;
   render(request: RenderRequest, signal: AbortSignal): Promise<RenderResponse>;
-  dispose(): Promise<void>;
 }
 
 export class PreviewController {
@@ -75,9 +74,8 @@ export class PreviewController {
     this.active = undefined;
   }
 
-  async dispose(): Promise<void> {
+  dispose(): void {
     this.disposed = true;
     this.cancel();
-    await this.renderer.dispose();
   }
 }

@@ -1,0 +1,14 @@
+{
+  "name": "peerpedia-community-prototype",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "../node_modules/.bin/tsx build.ts",
+    "typecheck": "../node_modules/.bin/tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "@noble/hashes": "2.4.0",
+    "buffer": "6.0.3",
+    "linkedom": "0.18.15"
+  }
+}

@@ -8,5 +8,5 @@
     "noEmit": true,
     "types": ["node"]
   },
-  "include": ["src/**/*.ts", "renderer/**/*.ts", "scripts/**/*.ts", "tests/**/*.ts", "esbuild.config.ts", "vitest.config.ts"]
+  "include": ["bench/**/*.ts", "src/**/*.ts", "renderer/**/*.ts", "scripts/**/*.ts", "tests/**/*.ts", "esbuild.config.ts", "vitest.config.ts"]
 }

@@ -11,9 +11,9 @@ import { PeerpediaApi } from "../src/remote/api";
 import { checkProject, checkRemote } from "../src/remote/controller";
 import { importPaper } from "../src/remote/import";
 import type { HttpResponse, RemoteBinding, RemoteTarget } from "../src/remote/types";
-import old from "./fixtures/manifests/v1.json";
-import earlier from "./fixtures/manifests/v3.json";
-import current from "./fixtures/manifests/v4.json";
+import old from "../../tests/fixtures/publication-protocol/v1.json";
+import earlier from "../../tests/fixtures/publication-protocol/v3.json";
+import current from "../../tests/fixtures/publication-protocol/v4.json";
 
 let vault: string;
 let store: VaultProjectStore;

@@ -1,5 +1,5 @@
 import { UserFacingError } from "../user-error";
-import { CST, isAlias, isMap, isScalar, isSeq, parseDocument, stringify, visit, type Document, type Pair, type ParsedNode, type Scalar, type YAMLMap } from "yaml";
+import { CST, isMap, isScalar, isSeq, parseDocument, stringify, visit, type Document, type Pair, type ParsedNode, type Scalar, type YAMLMap } from "yaml";
 
 export interface BibliographyEntry {
   key: string;
@@ -22,7 +22,7 @@ function stringKeys(node: unknown): node is Mapping {
     isScalar(pair.key) && typeof pair.key.value === "string");
 }
 
-function parse(source: string): BibliographyDocument {
+export function parseBibliography(source: string): BibliographyDocument {
   const doc = parseDocument(source, { keepSourceTokens: true });
   const issue = doc.errors[0] ?? doc.warnings[0];
   if (issue) throw new UserFacingError(`Unable to read bibliography YAML: ${issue.message.split("\n")[0]}`);
@@ -47,18 +47,7 @@ function parse(source: string): BibliographyDocument {
 }
 
 export function readEntries(source: string): readonly BibliographyEntry[] {
-  return parse(source).entries;
-}
-
-export function entryCitationKeys(entry: BibliographyEntry): string[] {
-  const keys = [entry.key];
-  const { versions } = entry.fields;
-  if (Array.isArray(versions)) {
-    for (const version of versions) {
-      if (version && typeof version === "object" && typeof version.key === "string") keys.push(version.key);
-    }
-  }
-  return keys;
+  return parseBibliography(source).entries;
 }
 
 function lineEnding(source: string): string {
@@ -149,136 +138,13 @@ function replaceValue(source: string, doc: Document.Parsed, node: ParsedNode, va
   return replace(source, from, to, text + trailing);
 }
 
-function appendPairs(source: string, parsed: BibliographyDocument, mapping: Mapping | undefined, fields: Fields): string {
-  const token = mapping?.srcToken;
-  if (token?.type === "flow-collection") {
-    const close = token.end.find((item: CST.SourceToken): boolean => item.type === "flow-map-end")!;
-    const last = mapping!.items.at(-1)?.value;
-    const trailingComma = token.items.at(-1)?.start.some((item: CST.SourceToken): boolean => item.type === "comma") &&
-      token.items.at(-1)?.key === undefined;
-    const additions = renderValue(parsed.doc, fields).slice(2, -2);
-    const withFields = replace(source, close.offset, close.offset, additions);
-    return last && !trailingComma ? replace(withFields, last.range[1], last.range[1], ", ") : withFields;
-  }
-  const indent = token?.type === "block-map" ? " ".repeat(token.indent) : "";
-  const offset = mapping?.range[2] ?? (parsed.doc.directives.docEnd ? parsed.doc.range[1] : source.length);
-  const newline = lineEnding(source);
-  const before = source.slice(0, offset);
-  const prefix = before && !before.endsWith("\n") && before !== "\uFEFF" ? newline : "";
-  const generated = stringify(fields, { schema: parsed.doc.schema, lineWidth: 0 })
-    .trimEnd().split("\n").map((line: string): string => line ? indent + line : "").join(newline);
-  return before + prefix + generated + newline + source.slice(offset);
-}
-
-export function patchEntry(source: string, key: string, patch: Fields): string {
-  let updated = source;
-  for (const [name, value] of Object.entries(patch)) {
-    const parsed = parse(updated);
-    const pair = entryPair(parsed.pairs, key);
-    const entry = pair.value!;
-    const field = entry.items.find((item: Pair<StringKey, ParsedNode | null>): boolean => item.key.value === name);
-    const current = field?.value;
-    if (isScalar(current) && Object.is(current.value, value)) continue;
-    assertIndependentEdit(`Field "${name}"`, [parsed.mapping, entry], current ?? undefined);
-    if (current) {
-      updated = replaceValue(updated, parsed.doc, current, value);
-    } else if (!field) {
-      updated = appendPairs(updated, parsed, entry, { [name]: value });
-    } else {
-      throw new UserFacingError(`The form cannot change field "${name}". Edit the YAML source file.`);
-    }
-  }
-  entryPair(parse(updated).pairs, key);
-  return updated;
-}
-
-export function addEntry(source: string, key: string, fields: Fields): string {
-  const parsed = parse(source);
-  if (parsed.entries.some((entry: BibliographyEntry): boolean =>
-    entryCitationKeys(entry).some((name: string): boolean => name.normalize("NFC") === key.normalize("NFC")))) {
-    throw new UserFacingError(`Citation key "${key}" already exists.`);
-  }
-  const updated = appendPairs(source, parsed, parsed.mapping, { [key]: fields });
-  entryPair(parse(updated).pairs, key);
-  return updated;
-}
-
-function trailingDocumentComment(token: CST.Token | undefined, indent: number): CST.SourceToken | undefined {
-  if (token?.type !== "block-map" && token?.type !== "block-seq") return undefined;
-  let comment: CST.SourceToken | undefined;
-  // YAML may attach outdented trivia to the final nested block. Only walk
-  // the trailing items, where no field of the removed entry follows it.
-  for (let index = token.items.length - 1; index >= 0; index--) {
-    const item = token.items[index];
-    if (item.key || item.value || item.sep ||
-        item.start.some((part: CST.SourceToken): boolean => part.type === "seq-item-ind")) {
-      return trailingDocumentComment(item.value, indent) ?? comment;
-    }
-    const outside = item.start.find((part: CST.SourceToken): boolean => part.type === "comment" && part.indent <= indent);
-    comment = outside ?? comment;
-  }
-  return comment;
-}
-
-export function removeEntry(source: string, key: string): string {
-  const parsed = parse(source);
-  const pair = entryPair(parsed.pairs, key);
-  const start = pair.srcToken?.start.find((token: CST.SourceToken): boolean =>
-    token.type === "explicit-key-ind" || token.type === "anchor" || token.type === "tag");
-  let from = start?.offset ?? pair.key.range[0];
-  let to = pair.value!.range[2];
-  let updated: string;
-  if (parsed.mapping?.srcToken?.type === "flow-collection") {
-    const items = parsed.mapping.srcToken.items;
-    const index = items.findIndex((item: CST.CollectionItem): boolean => item === pair.srcToken);
-    const comma = items[index]?.start.find((token: CST.SourceToken): boolean => token.type === "comma");
-    const nextComma = items[index + 1]?.start.find((token: CST.SourceToken): boolean => token.type === "comma");
-    updated = replace(source, from, to, "");
-    if (comma) updated = replace(updated, comma.offset, comma.offset + 1, "");
-    else if (nextComma) {
-      const offset = nextComma.offset - (to - from);
-      updated = replace(updated, offset, offset + 1, "");
-    }
-  } else {
-    const lineStart = source.lastIndexOf("\n", from - 1) + 1;
-    // A document marker or BOM can be on the same line as the key.
-    if (/^[ \t]*$/.test(source.slice(lineStart, from))) from = lineStart;
-    const root = parsed.mapping?.srcToken;
-    const comment = root?.type === "block-map" ? trailingDocumentComment(pair.value!.srcToken, root.indent) : undefined;
-    if (comment) to = comment.offset;
-    const followingLine = source.lastIndexOf("\n", to - 1) + 1;
-    if (/^[ \t]*$/.test(source.slice(followingLine, to))) to = followingLine;
-    updated = replace(source, from, to, "");
-  }
-  // Aliases bind to the nearest preceding anchor of that name. A reparse alone
-  // cannot detect a surviving alias silently falling back to an earlier definition.
-  const anchors = new Set<unknown>();
-  if (isAnchored(pair.key)) anchors.add(pair.key);
-  visit(pair.value, (_key: unknown, node: unknown): void => { if (isAnchored(node)) anchors.add(node); });
-  if (anchors.size) {
-    for (const survivor of parsed.pairs) {
-      if (survivor === pair) continue;
-      for (const field of survivor.value!.items) {
-        if (!field.value) continue;
-        visit(field.value, (_key: unknown, node: unknown): void => {
-          if (isAlias(node) && anchors.has(node.resolve(parsed.doc))) {
-            throw sharedDataError(`Field "${field.key.value}" in entry "${survivor.key.value}"`);
-          }
-        });
-      }
-    }
-  }
-  parse(updated);
-  return updated;
-}
-
 export function renameEntry(source: string, from: string, to: string): string {
-  const parsed = parse(source);
+  const parsed = parseBibliography(source);
   const { key } = entryPair(parsed.pairs, from);
   assertIndependentEdit(`Citation key "${from}"`, [parsed.mapping], key);
   const replacement = renderValue(parsed.doc, to, key);
   const updated = replace(source, key.range[0], key.range[1], replacement);
-  entryPair(parse(updated).pairs, to);
+  entryPair(parseBibliography(updated).pairs, to);
   return updated;
 }
 
@@ -293,7 +159,7 @@ export interface BibliographyProse {
 
 /** BananaMark renders Markdown in these two fields, including on versions. */
 export function rewriteBibliographyProse(source: string, update: (field: BibliographyProse) => string): string {
-  const parsed = parse(source);
+  const parsed = parseBibliography(source);
   const edits: { node: ParsedNode; value: string }[] = [];
   const inspect = (
     nodes: unknown, fields: Fields, key: StringKey, owners: readonly unknown[], version?: number,
@@ -329,6 +195,6 @@ export function rewriteBibliographyProse(source: string, update: (field: Bibliog
   edits.sort((left: { node: ParsedNode }, right: { node: ParsedNode }): number => right.node.range[0] - left.node.range[0]);
   let result = source;
   for (const { node, value } of edits) result = replaceValue(result, parsed.doc, node, value);
-  if (edits.length) parse(result);
+  if (edits.length) parseBibliography(result);
   return result;
 }

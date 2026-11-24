@@ -3,7 +3,7 @@ import { projectRevision, sourceDigest, type FileChange, parsePaperConfig } from
 import type { SourceFile, ProjectSnapshot } from "../../src/project/types";
 import { verifySnapshot } from "../../src/remote/verify";
 import type { AccountInfo, RemoteBinding } from "../../src/remote/types";
-import raw from "./manifests/v4.json";
+import raw from "../../../tests/fixtures/publication-protocol/v4.json";
 export const origin = "https://custom.invalid", root = "book";
 export const details = {explanation:"历史版本",aiAssisted:false};
 export const snapshot = verifySnapshot(raw);

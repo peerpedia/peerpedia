@@ -1,7 +1,5 @@
-import { execFile, spawnSync } from "node:child_process";
-import { createHash } from "node:crypto";
-import { access, cp, lstat, mkdir, mkdtemp, readFile, readdir, realpath, rename, rm, stat, writeFile } from "node:fs/promises";
-import { constants } from "node:fs";
+import { execFile } from "node:child_process";
+import { cp, mkdir, mkdtemp, readFile, readdir, rename, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -10,8 +8,6 @@ import { promisify } from "node:util";
 import { afterEach, expect, test } from "vitest";
 
 import { packagePlugin } from "../scripts/package-plugin";
-import type { RenderRequest, RenderResponse } from "../renderer/protocol";
-import type { PublicationDocument } from "../src/project/document";
 
 const run = promisify(execFile);
 const project = fileURLToPath(new URL("..", import.meta.url));
@@ -20,13 +16,6 @@ const temporary: string[] = [];
 const appleSilicon = process.platform === "darwin" && process.arch === "arm64";
 const hostApp = process.env.PEERPEDIA_OBSIDIAN_APP;
 const finalPackage = process.env.PEERPEDIA_PLUGIN_PACKAGE;
-
-interface PackageManifest {
-  plugin: { id: string; version: string; minAppVersion: string };
-  platform: string;
-  node: string;
-  sha256: Record<string, string>;
-}
 
 async function workspace(): Promise<string> {
   const path = await mkdtemp(join(tmpdir(), "peerpedia-offline-"));
@@ -48,7 +37,7 @@ test.skipIf(!appleSilicon)("preserves an existing package destination, including
   expect(await readFile(join(path, "data.json"), "utf8")).toBe("Existing installation");
 });
 
-test.skipIf(!appleSilicon)("relocates a verified package and renders original and edited chapters offline", async (): Promise<void> => {
+test.skipIf(!appleSilicon)("relocates exactly the three community installation assets", async (): Promise<void> => {
   const work = await workspace();
   const original = join(work, "package");
   if (finalPackage) await cp(resolve(finalPackage), original, { recursive: true });
@@ -56,59 +45,12 @@ test.skipIf(!appleSilicon)("relocates a verified package and renders original an
   const plugin = join(work, "离线 验收", "peerpedia");
   await mkdir(join(work, "离线 验收"));
   await rename(original, plugin);
-  const manifest: PackageManifest = JSON.parse(await readFile(join(plugin, "package-manifest.json"), "utf8"));
-  expect(manifest).toMatchObject({
-    plugin: { id: "peerpedia", version: expect.any(String), minAppVersion: "1.15.1" },
-    platform: "darwin-arm64",
-    node: "v22.22.3",
-  });
-  for (const name of [
-    "manifest.json", "main.js", "native/keychain", "styles.css", "LICENSE", "INSTALLATION.md", "USAGE.md", "licenses/bananamark-codemirror/LICENSE",
-    "renderer/bin/node", "renderer/NODE-LICENSE.txt", "renderer/renderer.mjs", "renderer/theme/assets.json",
-    "renderer/theme/licenses/katex-OFL-1.1.txt", "renderer/theme/tikz/LICENCE",
-  ]) {
-    expect(manifest.sha256[name], name).toMatch(/^[a-f0-9]{64}$/);
-  }
-  for (const [name, sha256] of Object.entries(manifest.sha256)) {
-    const path = join(plugin, name);
-    expect((await lstat(path)).isFile(), name).toBe(true);
-    expect(createHash("sha256").update(await readFile(path)).digest("hex"), name).toBe(sha256);
-  }
+  expect((await readdir(plugin)).sort()).toEqual(["main.js", "manifest.json", "styles.css"]);
+  const manifest = JSON.parse(await readFile(join(plugin,"manifest.json"),"utf8"));
+  expect(manifest).toMatchObject({id:"peerpedia",minAppVersion:"1.15.1",isDesktopOnly:true});
   expect((await stat(plugin)).mode & 0o777).toBe(0o755);
-  const node = join(plugin, "renderer/bin/node");
-  await access(node, constants.X_OK);
-  await access(join(plugin, "native/keychain"), constants.X_OK);
-  const checkout = JSON.stringify(resolve(project, ".."));
-  const projectRoot = JSON.stringify(await realpath(plugin));
-  const policy = `(version 1)(allow default)(deny network*)(deny file-read* (subpath ${checkout}))
-    (deny file-write* (subpath ${projectRoot}))`;
-  const document: PublicationDocument = JSON.parse(await readFile(fixture, "utf8"));
-  const edit = "可搬移包中的离线改稿。";
-  const editedChapters = document.chapters!.map((chapter: NonNullable<PublicationDocument["chapters"]>[number], index: number): typeof chapter =>
-    index === 1 ? { ...chapter, markdown: chapter.markdown + "\n\n" + edit } : chapter);
-  const requests: RenderRequest[] = [
-    { id: "open", revision: "before", document },
-    { id: "edit", revision: "after", document: { ...document, markdown: document.markdown + "\n\n" + edit, chapters: editedChapters } },
-  ];
-  const { stdout, stderr, status, error } = spawnSync("/usr/bin/sandbox-exec", [
-    "-p", policy, node, join(plugin, "renderer/renderer.mjs"),
-  ], {
-    input: requests.map((request: RenderRequest): string => JSON.stringify(request)).join("\n") + "\n",
-    encoding: "utf8",
-    cwd: work,
-    env: { PATH: "", BANANAMARK_CACHE: join(work, "cache") },
-    timeout: 45_000,
-  });
-  if (error) throw error;
-  expect(status, stderr).toBe(0);
-  expect(stderr).toBe("");
-  const [opened, edited] = stdout.trim().split("\n").map((line: string): RenderResponse => JSON.parse(line));
-  expect(opened).toMatchObject({ id: "open", revision: "before", pages: [{ id: "intro" }, { id: "proof" }] });
-  expect(edited).toMatchObject({ id: "edit", revision: "after", pages: [{ id: "intro" }, { id: "proof" }] });
-  if ("error" in opened || "error" in edited) throw new Error(stdout);
-  expect(opened.pages[0].html).toContain("<svg");
-  expect(edited.pages[1].html).toContain("<svg");
-  expect(edited.pages[1].html).toContain(edit);
+  expect((await stat(join(plugin,"main.js"))).size).toBeGreaterThan(1000);
+
 }, 120_000);
 
 test.skipIf(!appleSilicon || !hostApp || !finalPackage)(

@@ -32,7 +32,6 @@ interface NativeEditorSuggest {
 }
 
 export class BananaMarkSuggest extends EditorSuggest<Choice> {
-  private readonly worker = new LanguageWorker();
   private pending: Query | undefined;
   private manual: Pick<Query, "view" | "doc" | "offset"> | undefined;
   private queue: Promise<unknown> = Promise.resolve();
@@ -43,6 +42,7 @@ export class BananaMarkSuggest extends EditorSuggest<Choice> {
     app: App,
     private readonly viewFor: (editor: Editor, path: string) => EditorView | undefined,
     private readonly projects: WritingProjects,
+    private readonly worker: LanguageWorker,
   ) {
     super(app);
     this.limit = 30;
@@ -141,7 +141,6 @@ export class BananaMarkSuggest extends EditorSuggest<Choice> {
 
   dispose(): void {
     this.close();
-    this.worker.dispose();
   }
 
   private isExplicit(view: EditorView, offset: number): boolean {

@@ -14,7 +14,7 @@ import { account, details, origin, project, root, snapshot } from "./fixtures/pu
 import { readFile, readdir } from "node:fs/promises";
 import { vi } from "vitest";
 import { AnchoredFiles } from "../src/project/anchored-files";
-import original from "./fixtures/manifests/v4.json";
+import original from "../../tests/fixtures/publication-protocol/v4.json";
 import { binding, receipt, rehash } from "./fixtures/publishing";
 import { SubmissionController } from "../src/remote/controller";
 import type { RenderPage as RenderResponsePage, RenderRequest, RenderResponse } from "../renderer/protocol";

@@ -1,4 +1,7 @@
 import { nativeFiles } from "./scripts/native-files";
+import { buildBrowserRenderer } from "../packages/peerpedia-renderer/build-browser";
+import { embeddedTheme } from "../packages/peerpedia-theme/scripts/embedded.mjs";
+import { bundleNotices } from "./scripts/bundle-notices";
 import { dirname, join } from "node:path";
 import { execFileSync } from "node:child_process";
 import { readFile, writeFile } from "node:fs/promises";
@@ -10,6 +13,9 @@ import { build, type OnLoadResult, type OnResolveResult, type Plugin, type Plugi
 const [, , mode, outputFile = "dist/main.js", inputInventory] = process.argv;
 const production = mode === "production";
 const require = createRequire(import.meta.url);
+const preview = await buildBrowserRenderer(join(process.cwd(), "renderer/browser.ts"));
+execFileSync(process.execPath, ["../packages/peerpedia-theme/scripts/build.mjs"]);
+const theme = await embeddedTheme("../packages/peerpedia-theme/dist");
 
 const bananaMark: Plugin = {
   name: "bundled-bananamark",
@@ -28,7 +34,7 @@ const worker = await build({
   minify: production,
   plugins: [bananaMark],
   write: false,
-  metafile: Boolean(inputInventory),
+  metafile: true,
 });
 
 // Read manuscript titles outside a live editor. Keep the website's parser in its
@@ -41,7 +47,7 @@ const chapterInspection = await build({
   target: "es2022",
   plugins: [bananaMark],
   write: false,
-  metafile: Boolean(inputInventory),
+  metafile: true,
 });
 
 const standaloneInspection: Plugin = {
@@ -55,7 +61,7 @@ const standaloneInspection: Plugin = {
 const plugin = await build({
   entryPoints: ["src/main.ts"],
   outfile: outputFile,
-  metafile: Boolean(inputInventory),
+  metafile: true,
   bundle: true,
   format: "cjs",
   platform: "node",
@@ -63,7 +69,8 @@ const plugin = await build({
   sourcemap: production ? false : "inline",
   minify: production,
   plugins: [bananaMark, standaloneInspection],
-  define: { __PEERPEDIA_ANCHORED__: JSON.stringify(nativeFiles()), __PEERPEDIA_LANGUAGE_WORKER__: JSON.stringify(worker.outputFiles[0].text) },
+  define: { __PEERPEDIA_ANCHORED__: JSON.stringify(nativeFiles()), __PEERPEDIA_LANGUAGE_WORKER__: JSON.stringify(worker.outputFiles[0].text),
+    __PEERPEDIA_RENDERER_WORKER__:JSON.stringify(preview.source), __PEERPEDIA_THEME__:JSON.stringify(theme) },
   external: [
     "obsidian", "electron", ...builtinModules,
     "@codemirror/autocomplete", "@codemirror/collab", "@codemirror/commands", "@codemirror/language",
@@ -77,6 +84,8 @@ if (inputInventory && worker.metafile && chapterInspection.metafile && plugin.me
 }
 
 // Build once from the website-owned theme; ship only the scoped editor rules here.
-execFileSync(process.execPath, ["../packages/peerpedia-theme/scripts/build.mjs"]);
 await writeFile(join(dirname(outputFile), "styles.css"),
-  await readFile("styles.css", "utf8") + "\n" + await readFile("../packages/peerpedia-theme/dist/syntax.css", "utf8"));
+  await readFile("styles.css", "utf8") + "\n" + await readFile("../packages/peerpedia-theme/dist/syntax.css", "utf8") +
+  await bundleNotices([...Object.keys(worker.metafile!.inputs),...Object.keys(chapterInspection.metafile!.inputs),
+    ...Object.keys(plugin.metafile!.inputs),...Object.keys(preview.inputs).map((path:string):string=>join("..",path))],
+    "../packages/peerpedia-theme/dist"));
