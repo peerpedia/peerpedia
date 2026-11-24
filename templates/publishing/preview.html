@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% load static %}
 {% block title %}Preview {% if paper %}proposal{% else %}paper{% endif %} · Peerpedia{% endblock %}
-{% block head %}<link rel="stylesheet" href="{% static 'reader.css' %}">{% include "includes/math.html" %}{% endblock %}
+{% block head %}{% include "includes/math.html" %}{% endblock %}
 {% block content %}
 <div class="author-preview">
   <header class="page-heading">
@@ -21,7 +21,7 @@
   {% endif %}
   <details class="render-preview disclosure" {% if not paper %}open{% endif %}>
     <summary>Rendered document</summary>
-    <div class="markdown-body">{{ body }}</div>
+    <div class="markdown-body peerpedia-article">{{ body }}</div>
   </details>
   <section class="publish-confirm">
     <h2>License and permissions</h2>

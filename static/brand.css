@@ -1,7 +1,6 @@
-:root { --serif: Palatino, "Palatino Linotype", "Book Antiqua", "TeX Gyre Pagella", "Songti SC", serif; }
 a.wordmark {
   display:inline-flex; align-items:center; gap:.18em; min-height:44px;
-  font:italic 400 2rem/1 var(--serif); letter-spacing:-.035em;
+  font:italic 400 2rem/1 var(--pp-serif); letter-spacing:-.035em;
   color:var(--ink,var(--body-fg)); text-decoration:none; white-space:nowrap;
 }
 .wordmark img { width:.56em; height:.6em; }

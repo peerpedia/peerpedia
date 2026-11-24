@@ -670,6 +670,57 @@ class BrowserJourneys(StaticLiveServerTestCase):
         result = self.page.locator("#example-table .help-sample-result").bounding_box()
         self.assertGreaterEqual(result["y"], source["y"] + source["height"])
 
+    def test_bibliography_version_spacing_matches_each_surface(self: "BrowserJourneys") -> None:
+        examples = Path(__file__).resolve().parents[1] / "publishing/data/help_examples"
+        citation = (examples / "citation_details.md").read_text(encoding="utf-8")
+        bibliography = (examples / "bibliography.yaml").read_text(encoding="utf-8")
+        source = citation + "\n\n```bibliography\n" + bibliography + "```\n"
+        paper = self.fixture_paper(source)
+        self.login()
+        self.page.goto(self.live_server_url + "/publish/")
+        self.upload(source)
+        expect(self.page.get_by_role("heading", name="Preview paper")).to_be_visible()
+
+        folder = Path(os.environ["PEERPEDIA_BROWSER_ARTIFACTS"]) / self._testMethodName
+        folder.mkdir(parents=True, exist_ok=True)
+        measurements: dict[str, dict[str, float]] = {}
+        for surface, url, article, expected_gap, expected_height in (
+            ("preview", None, ".render-preview .markdown-body", 3.61, 66.77),
+            (
+                "help",
+                self.live_server_url + "/help/writing/",
+                "#example-citation_details .markdown-body",
+                3.61,
+                66.77,
+            ),
+            (
+                "reader",
+                self.live_server_url + paper.current.read_url,
+                ".markdown-body",
+                18.05,
+                81.20,
+            ),
+        ):
+            with self.subTest(surface=surface):
+                if url:
+                    self.page.goto(url)
+                entry = self.page.locator(article + " .bm-bibliography-entry").filter(
+                    has=self.page.locator(".bm-bibliography-version")
+                )
+                version = entry.locator(".bm-bibliography-version")
+                expect(version).to_contain_text("2011")
+                entry.screenshot(path=folder / f"{surface}.png")
+                entry_box = entry.bounding_box()
+                main_box = entry.locator(":scope > p").bounding_box()
+                version_box = version.bounding_box()
+                assert entry_box is not None and main_box is not None and version_box is not None
+                gap = version_box["y"] - main_box["y"] - main_box["height"]
+                height = entry_box["height"]
+                measurements[surface] = {"gap": gap, "height": height}
+                self.assertAlmostEqual(gap, expected_gap, delta=0.1)
+                self.assertAlmostEqual(height, expected_height, delta=0.1)
+        (folder / "metrics.json").write_text(json.dumps(measurements, indent=2) + "\n")
+
     def test_diagrams_in_reader_and_upload_preview(self: "BrowserJourneys") -> None:
         source = r"""# Diagrams
 

@@ -11,3 +11,7 @@ hatcher2002:
   title: Algebraic Topology
   year: 2002
   publisher: Cambridge University Press
+  versions:
+    - relation: translation
+      language: ru
+      year: 2011

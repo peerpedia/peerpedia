@@ -1,7 +1,14 @@
 FROM node:22-alpine AS reader-assets
+WORKDIR /app/packages/peerpedia-theme
+COPY packages/peerpedia-theme/package*.json ./
+RUN npm ci --ignore-scripts
+
 WORKDIR /app/editor
 COPY editor/package*.json ./
 RUN npm ci --ignore-scripts
+COPY packages/peerpedia-theme/LICENSE /app/packages/peerpedia-theme/LICENSE
+COPY packages/peerpedia-theme/src /app/packages/peerpedia-theme/src
+COPY packages/peerpedia-theme/scripts /app/packages/peerpedia-theme/scripts
 COPY editor/ ./
 RUN npm run build
 

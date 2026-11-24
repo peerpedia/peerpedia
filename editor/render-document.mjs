@@ -83,8 +83,18 @@ async function compileChapter(
   prefix,
 ) {
   const info = { key: page.id, file: page.id + ".md", lang: "en" };
-  if (sourceInfo(page.markdown).images)
-    throw new Error("Images are not supported. Use a TikZ diagram instead.");
+  const { imageOffset } = sourceInfo(page.markdown);
+  if (imageOffset >= 0) {
+    const lines = page.markdown.slice(0, imageOffset).split("\n");
+    throw Object.assign(
+      new Error("Images are not supported. Use a TikZ diagram instead."),
+      {
+        file: info.file,
+        line: lines.length,
+        column: lines.at(-1).length + 1,
+      },
+    );
+  }
   const result = renderer.renderDocument(resolved, info);
   let diagramCount = 0;
   if (diagrams && result.html.includes("bm-tikz-source")) {

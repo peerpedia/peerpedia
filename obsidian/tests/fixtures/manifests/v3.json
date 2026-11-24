@@ -1,0 +1,48 @@
+{
+  "paper_identifier": "240229.49cee6d6cfea",
+  "snapshot_identifier": "240229.41d272a55c48",
+  "paper_url": "/papers/240229.49cee6d6cfea/",
+  "read_url": "/submissions/240229.41d272a55c48/read/",
+  "via_cli": false,
+  "ai_assisted": false,
+  "pull_request": null,
+  "hash": "41d272a55c48f8f07b9008fa56106a62509dcc9972b3aacf9108a2d6c3803bd4",
+  "manifest": {
+    "format": "peerpedia-submission-v3",
+    "submission_id": "00000000-0000-0000-0000-000000000067",
+    "paper_id": "00000000-0000-0000-0000-000000000001",
+    "contributor_id": 7,
+    "contributor_name": "fixture-author",
+    "base_hash": "db336f22fe6ca0839f14fe9242cf81ebe7d92a3b1288db8a7a2b789cfa92a7af",
+    "title": "测试 «论文» 📝",
+    "authors": "测试作者\nFixture Author",
+    "abstract": "验证 \"原文\" 与反斜线 \\。",
+    "markdown_sha256": "564f1222434d4aa01a6f3c8bccea5a40af5ba0d93ed59eb2213025c16cc83880",
+    "explanation": "历史版本",
+    "submitted_at": "2024-02-29T23:59:59.123456+00:00",
+    "primary_category": "cs.AI",
+    "secondary_categories": [
+      "cs.PL",
+      "math.AG"
+    ],
+    "license": "CC-BY-4.0",
+    "agreement": {
+      "version": "2026-10-19",
+      "sha256": "12b437586e9f6a916c0b0d51430548ea47e644ef7d714f091056eb028088b106",
+      "accepted_at": "2024-02-29T23:59:59.123456+00:00",
+      "acceptance_id": 3
+    }
+  },
+  "markdown": "# 快照 🌌\r\n\r\n原文\r\n",
+  "chapters": [],
+  "bibliography": "",
+  "status": "accepted",
+  "url": "/submissions/240229.41d272a55c48/",
+  "licensing": {
+    "code": "CC-BY-4.0",
+    "label": "CC BY 4.0",
+    "url": "https://creativecommons.org/licenses/by/4.0/",
+    "description": "Share and adapt, including commercially, with attribution and notice of changes.",
+    "declaration": null
+  }
+}

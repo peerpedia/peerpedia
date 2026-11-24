@@ -1,53 +1,6 @@
-/* Shared article typography also appears in previews and the writing guide. */
-.markdown-body {
-  font: 1.1875rem/1.75 var(--serif);
-  color: var(--ink);
-  overflow-wrap: anywhere;
-}
-.markdown-body :is(h1,h2,h3,h4,h5,h6) {
-  font-family: var(--serif);
-  color: var(--ink);
-  line-height: 1.25;
-  margin: 1.7em 0 .55em;
-  scroll-margin-top: 5.5rem;
-}
-.markdown-body h1 {
-  margin: 0 0 .7em;
-  font-size: clamp(2.1rem, 3.2vw, 3rem);
-  font-weight: 400;
-  letter-spacing: -.035em;
-  text-wrap: balance;
-}
-.markdown-body h2 { font-style: italic; font-size: 1.55em; font-weight: 400; letter-spacing: -.025em; }
-.markdown-body h3 { font-size: 1.16em; }
-.markdown-body :is(h4,h5,h6) { font-size: 1em; }
-.markdown-body p { margin: 0 0 1em; }
-.markdown-body :is(ul,ol) { padding-left: 1.5em; }
-.markdown-body li { padding-left: .15em; margin: .3em 0; }
-.markdown-body a { color: var(--accent); text-underline-offset: .15em; }
-.markdown-body code { font: .85em/1.6 ui-monospace, SFMono-Regular, Consolas, monospace; background: var(--soft); padding: .1em .25em; }
-.markdown-body pre { margin: 1.5em 0; padding: 1rem 1.25rem; overflow: auto; white-space: pre; background: var(--soft); }
-.markdown-body pre code { background: none; padding: 0; }
-.markdown-body blockquote { border-left: 2px solid var(--line); margin: 1.5em 0; padding: 0 1.2em; color: var(--muted); }
-.markdown-body blockquote p:last-child { margin-bottom: 0; }
-.markdown-body table { display: block; width: max-content; max-width: 100%; overflow: auto; border-collapse: collapse; margin: 1.75em auto; font-size: .93em; }
-.markdown-body th,.markdown-body td { border-bottom: 1px solid var(--line); padding: .55em 1em; text-align: left; }
-.markdown-body th { border-top: 1px solid var(--line); background: var(--soft); }
-.markdown-body hr { border: 0; border-top: 1px solid var(--line); margin: 2em 0; }
-
 .reader {
   --frame: 68rem;
   --gutter: clamp(.75rem, 2.5vw, 2.5rem);
-  --bm-link: var(--accent);
-  --bm-accent-theorem: var(--accent);
-  --bm-accent-definition: var(--accent);
-  --bm-accent-example: var(--muted);
-  --bm-accent-remark: var(--muted);
-  --bm-muted: var(--muted);
-  --bm-border: var(--line);
-  --bm-surface: var(--soft);
-  --bm-target: var(--soft);
-  --bm-target-border: var(--line);
   margin: 0;
   color-scheme: light;
   color: var(--ink);
@@ -97,12 +50,10 @@
 .reader .license-notice { margin: 3rem 0 0; border-top: 1px solid var(--line); padding-top: 1rem; }
 .reader [hidden] { display: none !important; }
 @media (max-width: 40rem) {
-  .markdown-body { font-size: 1.125rem; line-height: 1.7; }
   .reader-toolbar { font-size: .8125rem; }
   .reader-tools { gap: .55rem; }
   .back-reviews { display: none; }
   .reader-outline { max-height: min(14rem,25dvh); }
-  .markdown-body th,.markdown-body td { padding: .45em .65em; }
 }
 @media (max-width: 22rem) {
   .reader-toolbar { column-gap: 0; }
@@ -114,8 +65,4 @@
   .reader-toolbar,.reader-skip,.chapter-footer { display: none; }
   .reader-layout { display: block; width: auto; padding: 0; }
   .reader-layout > main { padding: 0; }
-  .markdown-body { font-size: 11pt; color: black; }
-  .markdown-body a { color: inherit; }
-  .markdown-body :is(pre,blockquote,tr) { break-inside: avoid; }
-  .markdown-body :is(h1,h2,h3,h4,h5,h6) { break-after: avoid; }
 }

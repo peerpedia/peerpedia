@@ -23,7 +23,11 @@ jobs:
         with:
           node-version: "22"
       - run: npm audit --prefix editor --audit-level=high
+      - run: npm audit --prefix packages/peerpedia-theme --audit-level=high
   quality:
+    permissions:
+      contents: read
+      actions: read
     if: github.event_name != 'schedule'
     runs-on: ubuntu-latest
     steps:
@@ -38,9 +42,13 @@ jobs:
         with:
           node-version: "22"
           cache: npm
-          cache-dependency-path: editor/package-lock.json
+          cache-dependency-path: |
+            editor/package-lock.json
+            packages/peerpedia-theme/package-lock.json
+      - run: npm ci --ignore-scripts --prefix packages/peerpedia-theme
       - run: npm ci --ignore-scripts --prefix editor
-      - run: editor/node_modules/.bin/prettier --check 'editor/*.js' 'editor/*.mjs' 'static/*.js'
+      - run: npm test --prefix packages/peerpedia-theme
+      - run: editor/node_modules/.bin/prettier --check 'editor/*.js' 'editor/*.mjs' 'static/*.js' 'packages/peerpedia-theme/{scripts,tests}/*.mjs'
       - run: for source in static/*.js editor/*.js editor/*.mjs; do node --check "$source"; done
       - run: python -m unittest discover -s scripts -p 'test_*_unit.py'
       - run: python scripts/check_dependencies.py
@@ -57,14 +65,24 @@ jobs:
       - name: Record CLI artifact checksums
         run: sha256sum dist/* > "$RUNNER_TEMP/cli-artifact-sha256"
       - uses: actions/upload-artifact@v7
+        id: cli_artifact
         with:
           name: cli-validation-distributions
           path: dist/
           retention-days: 1
-      - uses: actions/download-artifact@v8
-        with:
-          name: cli-validation-distributions
-          path: ${{ runner.temp }}/artifact-check/dist
+      - name: Retrieve the uploaded CLI artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CLI_ARTIFACT_ID: ${{ steps.cli_artifact.outputs.artifact-id }}
+        run: |
+          for attempt in 1 2 3 4 5; do
+            if gh api "repos/$GITHUB_REPOSITORY/actions/artifacts/$CLI_ARTIFACT_ID/zip" > "$RUNNER_TEMP/cli-artifact.zip"; then
+              break
+            fi
+            test "$attempt" -lt 5 || exit 1
+            sleep 3
+          done
+          python -m zipfile -e "$RUNNER_TEMP/cli-artifact.zip" "$RUNNER_TEMP/artifact-check/dist"
       - name: Verify downloaded CLI artifacts
         run: |
           cd "$RUNNER_TEMP/artifact-check"
@@ -104,7 +122,10 @@ jobs:
         with:
           node-version: "22"
           cache: npm
-          cache-dependency-path: editor/package-lock.json
+          cache-dependency-path: |
+            editor/package-lock.json
+            packages/peerpedia-theme/package-lock.json
+      - run: npm ci --ignore-scripts --prefix packages/peerpedia-theme
       - run: npm ci --ignore-scripts --prefix editor
       - run: npm run build --prefix editor
       - run: python manage.py collectstatic --noinput
@@ -142,7 +163,10 @@ jobs:
         with:
           node-version: "22"
           cache: npm
-          cache-dependency-path: editor/package-lock.json
+          cache-dependency-path: |
+            editor/package-lock.json
+            packages/peerpedia-theme/package-lock.json
+      - run: npm ci --ignore-scripts --prefix packages/peerpedia-theme
       - run: npm ci --ignore-scripts --prefix editor
       - run: npm run build --prefix editor
       - run: python scripts/test_browser.py

@@ -1,53 +1,16 @@
-/* Peerpedia's presentation of BananaMark's native article structure. */
-:root {
-  --bm-link: var(--accent);
-  --bm-accent-theorem: var(--accent);
-  --bm-accent-definition: var(--accent);
-  --bm-accent-example: var(--muted);
-  --bm-accent-remark: var(--muted);
-  --bm-muted: var(--muted);
-  --bm-faint: #8a918e;
-  --bm-border: var(--line);
-  --bm-surface: var(--ground);
-  --bm-missing: var(--alert);
-  --bm-target: var(--soft);
-  --bm-target-border: var(--control-border);
-  --bm-hl-mark: #8a918e;
-  --bm-hl-command: #23514b;
-  --bm-hl-command-mark: #5b8576;
-  --bm-hl-reference: #655181;
-  --bm-hl-structure: #98712c;
-  --bm-hl-string: #697078;
+/* Preview and help use a lighter code-block treatment and compact bibliography. */
+.site .peerpedia-article {
+  --pp-bm-surface: var(--pp-ground);
+  --pp-bm-target-border: var(--pp-control-border);
+  --pp-code-block-padding: .75em 1em;
+  --pp-bibliography-paragraph-gap: 0;
 }
-.markdown-body .bm-env {
-  margin-block: 1.4em;
-  border-radius: 0;
-  background: transparent;
+
+/* These website disclosures previously picked up BananaMark's unscoped rules. */
+:where(.author-preview,.guide-page) > details {
+  border: 1px solid var(--line);
+  border-radius: .5em;
+  padding: .5em 1em;
+  margin: 1em 0;
 }
-.markdown-body .bm-envtitle {
-  font-family: inherit;
-}
-.markdown-body .katex {
-  font-size: 1em;
-}
-.markdown-body .bm-math-display {
-  overflow-x: auto;
-  max-width: 100%;
-}
-.markdown-body .bm-tikz-rendered {
-  max-width: 100%;
-}
-.markdown-body .bm-bibliography {
-  font-size: 0.95em;
-}
-.markdown-body .bm-heading-link {
-  color: inherit;
-  opacity: 0.35;
-}
-.markdown-body .bm-heading-link:hover,
-.markdown-body .bm-heading-link:focus {
-  opacity: 1;
-}
-.cm-tooltip-autocomplete {
-  max-width: min(36rem, 90vw);
-}
+:where(.author-preview,.guide-page) > details > div > :last-child { margin-bottom: 0; }

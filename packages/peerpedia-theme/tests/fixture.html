@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Peerpedia article theme fixture</title>
+  <style>
+    body { padding: 1rem; font: 16px/1.5 system-ui, sans-serif; color: #182b56; background: #f0f4fc; }
+    button { font: inherit; color: #fff; background: #334e8a; padding: .5rem; }
+    article { max-width: 43rem; background: #fff; padding: 1rem; }
+    @font-face { font-family: FixtureTikZ; src: url("./theme/tikz/cmr10.ttf") format("truetype"); }
+  </style>
+  <link rel="stylesheet" href="./theme/style.css">
+</head>
+<body>
+  <header id="host">
+    <h2>Host interface</h2>
+    <details open><summary>Host disclosure</summary><p>These controls keep their host styles.</p></details>
+    <button type="button">Host button</button>
+    <span class="katex">Outside the article</span>
+    <div class="bm-env">Host content</div>
+  </header>
+
+  <article class="peerpedia-article">
+    <h1>A standalone article</h1>
+    <p>A paragraph with an <a href="#theorem">article link</a> and the formula <span class="katex">a+b</span>.</p>
+    <div class="bm-env bm-env-theorem" id="theorem">
+      <p class="bm-envtitle">Theorem 1</p>
+      <div class="bm-envcontent"><p>BananaMark sets a rule beside the theorem.</p></div>
+    </div>
+    <details open><summary>Article disclosure</summary><p>An article detail.</p></details>
+    <table><thead><tr><th>Shape</th><th>Sides</th></tr></thead><tbody><tr><td>Triangle</td><td>3</td></tr></tbody></table>
+    <pre class="bm-code-block"><code>print(2 + 2)</code></pre>
+    <div class="bm-math-display bm-tikz-rendered">
+      <svg width="1000" height="45" aria-label="A wide diagram">
+        <path d="M0 35H1000" stroke="currentColor"/>
+        <text x="45" y="24" style="font-family:FixtureTikZ">A arrow B</text>
+      </svg>
+    </div>
+    <div class="bm-bibliography"><div class="bm-bibliography-entry"><p>Euclid. <i>The Elements.</i></p></div></div>
+  </article>
+</body>
+</html>

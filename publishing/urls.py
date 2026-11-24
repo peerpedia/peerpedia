@@ -60,6 +60,11 @@ urlpatterns = [
         TemplateView.as_view(template_name="publishing/help_cli.html"),
         name="help_cli",
     ),
+    path(
+        "help/obsidian/",
+        TemplateView.as_view(template_name="publishing/help_obsidian.html"),
+        name="help_obsidian",
+    ),
     path("publish/", views.upload, name="publish"),
     path("papers/<uuid:paper_id>/", views.paper_detail, name="paper"),
     path("papers/<uuid:paper_id>/read/", views.read_paper, name="read_paper"),

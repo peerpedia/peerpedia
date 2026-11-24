@@ -1,0 +1,35 @@
+{
+  "name": "@peerpedia/theme",
+  "version": "0.1.0",
+  "description": "Peerpedia article typography and BananaMark styles",
+  "license": "MIT",
+  "type": "module",
+  "exports": {
+    "./style.css": "./dist/style.css",
+    "./syntax.css": "./dist/syntax.css",
+    "./tokens.css": "./dist/tokens.css",
+    "./assets.json": "./dist/assets.json",
+    "./fonts/katex/*": "./dist/fonts/katex/*",
+    "./tikz/*": "./dist/tikz/*",
+    "./licenses/*": "./dist/licenses/*",
+    "./package.json": "./package.json"
+  },
+  "files": ["dist"],
+  "sideEffects": ["**/*.css"],
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "prepack": "npm run build",
+    "test": "node --test tests/theme.test.mjs"
+  },
+  "devDependencies": {
+    "bananamark": "0.1.0",
+    "katex": "0.18.4",
+    "node-tikzjax": "1.0.5",
+    "postcss": "8.5.33",
+    "postcss-selector-parser": "7.2.1",
+    "postcss-value-parser": "4.2.0"
+  },
+  "overrides": {
+    "markdown-it": "15.0.3"
+  }
+}
