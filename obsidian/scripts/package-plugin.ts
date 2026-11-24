@@ -89,6 +89,7 @@ export async function packagePlugin(outputDirectory: string): Promise<void> {
     await cp(join(project, "styles.css"), join(plugin, "styles.css"));
     await cp(join(project, "../LICENSE"), join(plugin, "LICENSE"));
     await cp(join(project, "docs/installation.md"), join(plugin, "INSTALLATION.md"));
+    await cp(join(project, "docs/usage.md"), join(plugin, "USAGE.md"));
     await copyBundledLicenses(JSON.parse(await readFile(inputs, "utf8")), join(plugin, "licenses"));
     await chmod(plugin, 0o755);
     await chmod(join(plugin, "renderer/bin/node"), 0o755);

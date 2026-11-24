@@ -10,19 +10,31 @@ import { errorMessage } from "./conflict-modal";
 import { button } from "./paper-form";
 
 const labels:Record<SubmissionIntent,string> = {publish:"Publish a new paper", "append-pr":"Add a snapshot to the open proposal", "new-pr":"Create a new proposal"};
-function showRequest(box:HTMLElement, request:PreparedSubmission): void {
+function showChapters(box:HTMLElement, chapters:PublicationDocument["chapters"]): void {
+  for (const [index, chapter] of chapters.entries()) {
+    box.createEl("h4",{text:(index + 1) + ". " + chapter.title});
+    box.createEl("pre",{text:chapter.markdown});
+    const identifier = box.createEl("details");
+    identifier.createEl("summary",{text:"Chapter identifier"});
+    identifier.createEl("code",{text:chapter.id});
+  }
+}
+
+function showRequest(box:HTMLElement, request:PreparedSubmission, proposalHead?:VerifiedSnapshot|null): void {
   const doc = frozenPayload(request);
   box.createEl("h3",{text:doc.title});
   for (const [label,value] of [["Authors",doc.authors],["Abstract",doc.abstract],["Subjects",[doc.primary_category,...doc.secondary_categories].join(", ")],
     ["License",doc.license],["Explanation",doc.explanation],["AI assistance",doc.ai_assisted ? "Yes" : "No"]]) box.createEl("p",{text:label+" · "+value});
-  for (const chapter of doc.chapters) {
-    box.createEl("h4",{text:chapter.title+" ("+chapter.id+")"});
-    box.createEl("pre",{text:chapter.markdown});
-  }
+  showChapters(box,doc.chapters);
   if (!doc.chapters.length) box.createEl("pre",{text:doc.markdown});
   if (doc.bibliography) { box.createEl("h4",{text:"Bibliography"}); box.createEl("pre",{text:doc.bibliography}); }
   box.createEl("p",{text:request.origin+" · "+request.username+" · "+labels[request.intent]});
-  if (doc.expected_head) box.createEl("p",{text:"Current proposal snapshot · "+doc.expected_head});
+  if (doc.pull_request_id && doc.expected_head) {
+    const proposal = box.createEl("a",{text:"Open proposal on Peerpedia",href:request.origin+"/prs/"+doc.pull_request_id+"/"});
+    proposal.target = "_blank";
+    proposal.rel = "noopener noreferrer";
+    box.createEl("p",{text:"Current proposal snapshot · "+(proposalHead?.publicId ?? doc.expected_head.slice(0,12))});
+  }
 }
 
 function changes(box:HTMLElement, previous:PublicationDocument, current:PublicationDocument):void {
@@ -37,8 +49,13 @@ function changes(box:HTMLElement, previous:PublicationDocument, current:Publicat
     field.createEl("summary",{text:key.replaceAll("_"," ")});
     for (const [label,doc] of [["Before",previous],["After",current]] as const) {
       field.createEl("strong",{text:label});
-      const value = doc[key];
-      field.createEl("pre",{text:typeof value === "string" ? value : JSON.stringify(value,null,2)});
+      if (key === "chapters") {
+        if (doc.chapters.length) showChapters(field,doc.chapters);
+        else field.createEl("p",{text:"Single-file manuscript"});
+      } else {
+        const value = doc[key];
+        field.createEl("pre",{text:typeof value === "string" ? value : value.join(", ") || "(none)"});
+      }
     }
   }
   if (!changed) section.createEl("p",{text:"The manuscript matches the previous version."});
@@ -109,7 +126,7 @@ export class SubmitModal extends Modal {
     box.empty();
     if (saved) box.createEl("p",{text:"A verified site receipt is saved. Finish updating the local binding offline."});
     else if (!review) box.createEl("p",{text:"The previous submission is awaiting confirmation. Retry sends the saved content below with the original request ID."});
-    showRequest(box,request);
+    showRequest(box,request,review?.context.proposalHead);
     if (review) {
       box.createEl("p",{text:request.intent === "publish" ? "Confirming will publish this paper publicly." : "Confirming will create a public proposal snapshot for consideration."});
       const article = box.createEl("details");

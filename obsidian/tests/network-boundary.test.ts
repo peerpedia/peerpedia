@@ -173,7 +173,7 @@ test("the pending dialog offers explicit original-request replay when its receip
     const content = {empty:():void=>buttons.clear(),setText:vi.fn(),createEl:(tag:string,options:{text?:string}):object=>{
       const node:{onclick?:()=>void} = {};
       if (tag==="button") buttons.set(options.text!,node);
-      return node;
+      return Object.assign(node,{createEl:content.createEl});
     }};
     const retry = vi.fn().mockResolvedValue(snapshot), updated = vi.fn();
     const modal:SubmitModal = Object.assign(Object.create(SubmitModal.prototype),{root,store,controller:{retry},updated,contentEl:content,abort:new AbortController()});

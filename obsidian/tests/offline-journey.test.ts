@@ -63,7 +63,7 @@ test.skipIf(!appleSilicon)("relocates a verified package and renders original an
     node: "v22.22.3",
   });
   for (const name of [
-    "manifest.json", "main.js", "native/keychain", "styles.css", "LICENSE", "INSTALLATION.md", "licenses/bananamark-codemirror/LICENSE",
+    "manifest.json", "main.js", "native/keychain", "styles.css", "LICENSE", "INSTALLATION.md", "USAGE.md", "licenses/bananamark-codemirror/LICENSE",
     "renderer/bin/node", "renderer/NODE-LICENSE.txt", "renderer/renderer.mjs", "renderer/theme/assets.json",
     "renderer/theme/licenses/katex-OFL-1.1.txt", "renderer/theme/tikz/LICENCE",
   ]) {

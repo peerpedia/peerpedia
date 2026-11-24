@@ -8,6 +8,7 @@
   },
   "scripts": {
     "test": "vitest run",
+    "test:django": "PEERPEDIA_TEST_DJANGO=1 vitest run tests/remote-journey.test.ts",
     "typecheck": "tsc --noEmit",
     "check:types": "eslint .",
     "build": "tsx esbuild.config.ts production",
