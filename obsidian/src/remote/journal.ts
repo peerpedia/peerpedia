@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { join } from "node:path";
 import { isDeepStrictEqual as equal } from "node:util";
 import type { AnchoredFiles } from "../project/anchored-files";
-import type { ProjectSnapshot } from "../project/types";
+import type { ProjectSnapshot, SourceFile } from "../project/types";
 import { decodeJson, HttpStatusError, PeerpediaApi } from "./api";
 import { sourceDigest } from "../project/store";
 import { bindingAtDigest, isBindingSuccessor, readVersion, writeVersion } from "./binding";
@@ -17,6 +17,8 @@ type Storage = <T>(root:string, operation:(tree:AnchoredFiles, readCurrent:()=>P
 type Predecessor = Omit<AppendHead,"number"> & {number:number|null};
 interface Pending {request:PreparedSubmission; previous:string|null; head?:Predecessor}
 interface SavedReceipt {id:string; payloadDigest:string; checkedAt:string; httpStatus:200|201; raw:unknown}
+
+interface StoredReceipt {present:boolean; verified:SavedReceipt|null}
 
 function digestRecord(record:object):string { return sourceDigest(Buffer.from(JSON.stringify(record))); }
 
@@ -38,7 +40,9 @@ function resultReceipt(request:PreparedSubmission, saved:SavedReceipt, head:Appe
 
 async function put(tree: AnchoredFiles, root: string, name: string, data: unknown, mode:"publish"|"swap"="publish"): Promise<void> {
   const dir = join(root,state);
-  const stage = join(dir,".submit-" + randomUUID());
+  // A swap leaves the exact previous bytes at the staging path, including
+  // malformed JSON or an old unsigned receipt. Keep that evidence on disk.
+  const stage = join(dir,mode === "swap" ? name + ".replaced-" + randomUUID() : ".submit-" + randomUUID());
   await tree.file(stage,JSON.stringify(data));
   tree.rename(stage,join(dir,name),mode);
   await tree.sync(dir);
@@ -77,6 +81,7 @@ function nextBinding(binding: RemoteBinding|null, request: PreparedSubmission, r
     return {schemaVersion:1,origin:request.origin,paperId:snapshot.paperId,acceptedBase:snapshot,workingBase:snapshot,lastSubmitted:snapshot,activePr:null,checkedAt};
   }
   if (!binding || binding.paperId !== snapshot.paperId || binding.origin !== request.origin) throw new ProtocolError();
+  if (request.intent === "new-pr" && (binding.activePr?.id === proposal.id || binding.proposalSource?.id === proposal.id)) throw new ProtocolError();
   const next: RemoteBinding = {...binding,lastSubmitted:snapshot,checkedAt,activePr:null};
   if (snapshot.status === "superseded") next.proposalSource = {...proposal,snapshot};
   else {
@@ -147,23 +152,40 @@ export class SubmissionJournal {
     return {...prior,number:prior.number};
   }
 
-  private async finish(tree: AnchoredFiles, root: string, pending: Pending, saved: SavedReceipt): Promise<VerifiedSnapshot> {
+  private async finish(tree: AnchoredFiles, root: string, pending: Pending, saved: SavedReceipt,
+    write?: "publish"|"swap"): Promise<VerifiedSnapshot> {
     const {request,previous} = pending;
     const receipt = resultReceipt(request,saved,await this.storedHead(tree,root,pending));
     const {binding,digest} = await readVersion(tree,root);
-    const next = nextBinding(binding,request,receipt,saved.checkedAt);
-    if (digest === previous) {
-      if (request.intent === "new-pr" && (binding?.activePr?.id === receipt.proposal!.id || binding?.proposalSource?.id === receipt.proposal!.id)) throw new ProtocolError();
-      await writeVersion(tree,root,next,previous,undefined,request.id);
-    } else if (!await isBindingSuccessor(tree,root,next,previous)) throw new Error("The paper binding changed. Review the saved receipt.");
+    const committed = digest !== previous;
+    // Reconstruct from the original CAS parent. Starting from the current
+    // binding would copy its accepted/working axes into the supposed proof.
+    let target:RemoteBinding;
+    if (committed) {
+      if (!binding?.lastSubmitted) throw new ProtocolError();
+      const parent = previous ? await bindingAtDigest(tree,root,previous) : null;
+      const status = binding.lastSubmitted.status;
+      // Concurrent responses can arrive out of order. The same proposal cannot
+      // have two distinct terminal dispositions.
+      if (status !== receipt.snapshot.status && status !== "pending" && receipt.snapshot.status !== "pending") throw new ProtocolError();
+      // The server can now report acceptance or supersession. Only disposition
+      // and check time come from the validated local record; the replay proves
+      // every immutable snapshot field and the associated PR ID and ordinal.
+      const localReceipt:PushReceipt = {...receipt,snapshot:{...receipt.snapshot,status}};
+      target = nextBinding(parent,request,localReceipt,binding.checkedAt);
+      if (!await isBindingSuccessor(tree,root,target,previous)) throw new Error("The paper binding changed. Review the saved receipt.");
+    } else target = nextBinding(binding,request,receipt,saved.checkedAt);
+    if (write) await put(tree,root,filename(request,"receipt"),{...saved,digest:digestRecord(saved)},write);
+    if (!committed) await writeVersion(tree,root,target,previous,undefined,request.id);
     await retire(tree,root,request,"complete");
     return receipt.snapshot;
   }
 
   async hasReceipt(root: string, request: PreparedSubmission): Promise<boolean> {
     return this.locked(root,async (tree: AnchoredFiles): Promise<boolean> => {
-      requirePending(await readPending(tree,root),request);
-      return !!await this.saved(tree,root,request);
+      const pending = await readPending(tree,root);
+      requirePending(pending,request);
+      return !!(await this.saved(tree,root,request,await this.storedHead(tree,root,pending))).verified;
     });
   }
 
@@ -171,22 +193,36 @@ export class SubmissionJournal {
     return this.locked(root,async (tree: AnchoredFiles): Promise<VerifiedSnapshot> => {
       const pending = await readPending(tree,root);
       requirePending(pending,displayed);
-      const saved = await this.saved(tree,root,pending.request);
-      if (!saved) throw new Error("This submission has no saved receipt.");
-      return this.finish(tree,root,pending,saved);
+      const saved = await this.saved(tree,root,pending.request,await this.storedHead(tree,root,pending));
+      if (!saved.verified) throw new Error("A verified receipt is unavailable. Retry the saved submission to retrieve it.");
+      return this.finish(tree,root,pending,saved.verified);
     });
   }
 
-  private async saved(tree: AnchoredFiles, root: string, request: PreparedSubmission): Promise<SavedReceipt|null> {
-    const file = await tree.source(join(root,state,filename(request,"receipt")));
-    if (!file) return null;
-    const {digest,...record} = object(JSON.parse(file.text));
-    // Old unsigned receipts can only be replaced by a freshly verified response
-    // to the same frozen UUID. They never authorize local recovery.
-    if (digest === undefined && record.httpStatus === undefined && Object.keys(record).sort().join(",") === "checkedAt,id,payloadDigest,raw") return null;
-    if (digest !== digestRecord(record) || record.id !== request.id || record.payloadDigest !== request.payloadDigest
-      || typeof record.checkedAt !== "string" || (record.httpStatus !== 200 && record.httpStatus !== 201)) throw new ProtocolError();
-    return {id:request.id,payloadDigest:request.payloadDigest,checkedAt:record.checkedAt,httpStatus:record.httpStatus,raw:record.raw};
+  private async saved(tree: AnchoredFiles, root: string, request: PreparedSubmission, head:AppendHead|null): Promise<StoredReceipt> {
+    const path = join(root,state,filename(request,"receipt"));
+    let file:SourceFile|undefined;
+    try { file = await tree.source(path); }
+    catch (error:unknown) {
+      if (!(error instanceof TypeError)) throw error;
+      // A fatal UTF-8 decoding failure leaves a real file to preserve. Verify
+      // its presence through the anchored descriptor; propagate filesystem errors.
+      tree.mode(path);
+      return {present:true,verified:null};
+    }
+    if (!file) return {present:false,verified:null};
+    try {
+      const {digest,...record} = object(JSON.parse(file.text));
+      if (digest !== digestRecord(record) || record.id !== request.id || record.payloadDigest !== request.payloadDigest
+        || typeof record.checkedAt !== "string" || (record.httpStatus !== 200 && record.httpStatus !== 201)) throw new ProtocolError();
+      const verified:SavedReceipt = {id:request.id,payloadDigest:request.payloadDigest,checkedAt:record.checkedAt,httpStatus:record.httpStatus,raw:record.raw};
+      resultReceipt(request,verified,head);
+      return {present:true,verified};
+    } catch {
+      // Unusable receipts never authorize offline promotion or a fresh UUID.
+      // The original authenticated replay can replace them after full verification.
+      return {present:true,verified:null};
+    }
   }
 
   async retryPending(root: string, username: string, token: string, transport: Transport): Promise<VerifiedSnapshot> {
@@ -226,8 +262,8 @@ export class SubmissionJournal {
     const recovered = await this.locked(root,async (tree: AnchoredFiles): Promise<VerifiedSnapshot|null> => {
       const pending = await readPending(tree,root);
       requirePending(pending,request);
-      const receipt = await this.saved(tree,root,request);
-      if (receipt) return this.finish(tree,root,pending,receipt);
+      const stored = await this.saved(tree,root,request,head);
+      if (stored.verified) return this.finish(tree,root,pending,stored.verified);
       await tree.directories(attempts);
       await tree.file(join(attempts,attempt),"");
       await tree.sync(attempts);
@@ -242,7 +278,7 @@ export class SubmissionJournal {
         requirePending(await readPending(tree,root),request);
         tree.rename(join(attempts,attempt),join(attempts,attempt+".closed"),"publish");
         await tree.sync(attempts);
-        if (outcome === "terminal" && tree.list(attempts).every((name:string):boolean => name.endsWith(".closed")) && !await this.saved(tree,root,request))
+        if (outcome === "terminal" && tree.list(attempts).every((name:string):boolean => name.endsWith(".closed")) && !(await this.saved(tree,root,request,head)).present)
           await retire(tree,root,request,"rejected");
       });
       throw new HttpStatusError(result.status);
@@ -253,26 +289,16 @@ export class SubmissionJournal {
     if (JSON.stringify(raw).includes(JSON.stringify(token).slice(1,-1))) throw new ProtocolError();
     return this.locked(root,async (tree: AnchoredFiles): Promise<VerifiedSnapshot> => {
       const pending = await readPending(tree,root);
-      const saved = await this.saved(tree,root,request);
-      if (saved) {
-        const previous = resultReceipt(request,saved,head);
+      const stored = await this.saved(tree,root,request,head);
+      if (stored.verified) {
+        const previous = resultReceipt(request,stored.verified,head);
         if (previous.snapshot.hash !== incoming.snapshot.hash || !equal(previous.proposal,incoming.proposal)) throw new ProtocolError();
         if (await tree.source(join(root,state,filename(request,"complete")))) return previous.snapshot;
       }
       requirePending(pending,request);
-      let receipt = saved ?? incomingRecord;
-      if (!saved) {
-        const {binding,digest} = await readVersion(tree,root);
-        const name = filename(request,"receipt");
-        const legacy = !!await tree.source(join(root,state,name));
-        if (digest !== pending.previous) {
-          if (!legacy || !binding || !await isBindingSuccessor(tree,root,nextBinding(binding,request,incoming,binding.checkedAt),pending.previous)) throw new ProtocolError();
-          receipt = {...receipt,checkedAt:binding.checkedAt};
-        } else if (request.intent === "new-pr" && (binding?.activePr?.id === incoming.proposal!.id
-          || binding?.proposalSource?.id === incoming.proposal!.id)) throw new ProtocolError();
-        await put(tree,root,name,{...receipt,digest:digestRecord(receipt)},legacy ? "swap" : "publish");
-      }
-      return this.finish(tree,root,pending,receipt);
+      if (stored.verified) return this.finish(tree,root,pending,stored.verified);
+      if (stored.present && result.status !== 200) throw new ProtocolError();
+      return this.finish(tree,root,pending,incomingRecord,stored.present ? "swap" : "publish");
     });
   }
 

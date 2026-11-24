@@ -9,7 +9,7 @@ import { afterEach, beforeEach, expect, test } from "vitest";
 import { VaultProjectStore } from "../src/host/vault-store";
 import { prepareSubmission } from "../src/remote/submit";
 import { importChanges } from "../src/remote/import";
-import type { HttpResponse, Transport } from "../src/remote/types";
+import type { HttpResponse, Transport, VerifiedSnapshot } from "../src/remote/types";
 import { account, details, origin, project, root, snapshot } from "./fixtures/publishing";
 import { readFile, readdir } from "node:fs/promises";
 import { vi } from "vitest";
@@ -335,4 +335,93 @@ test("a verified saved receipt finishes offline even after later paper.json beco
   await reopened.submissions.recoverReceipt(root,req);
   expect(await reopened.submissions.pending(root)).toBeNull();
   expect(await readFile(config)).toEqual(damaged);
+});
+
+test.each([
+  ["before binding","damaged JSON","pending"],["before binding","damaged checksum","pending"],["before binding","damaged bytes","pending"],
+  ["after binding","damaged checksum","accepted"],["after binding","damaged JSON","superseded"],
+  ["after binding","legacy","accepted"],["after binding","legacy","superseded"],
+])("manual replay repairs %s / %s / %s with original bytes and preserves the committed binding",async (boundary:string,damage:string,status:string):Promise<void>=>{
+  await store.saveBinding(root,binding,null);
+  const request = prepareSubmission(project,binding,account,"new-pr",details);
+  await store.submissions.persistRequest(root,request);
+  const id = "00000000-0000-0000-0000-0000000000ee";
+  const raw = receipt(snapshot.hash,id);
+  const attempts:[string,string][] = [];
+  const service = (answer:HttpResponse):Transport => ({
+    async request(originValue:string,route:string,method:"GET"|"POST",headers:Readonly<Record<string,string>>,body:Uint8Array|null):Promise<HttpResponse> {
+      if (method === "GET") return site(():HttpResponse=>{throw new Error("unexpected GET");}).request(originValue,route,method,headers,body);
+      attempts.push([headers["Idempotency-Key"],Buffer.from(body!).toString()]);
+      return answer;
+    },
+  });
+  const rename = AnchoredFiles.prototype.rename;
+  const fault = vi.spyOn(AnchoredFiles.prototype,"rename").mockImplementation(function(this:AnchoredFiles,from:string,to:string,mode:"swap"|"publish"):void {
+    if (to.endsWith(boundary==="after binding" ? "-complete.json" : "/binding-history/1.json")) throw new Error("simulated crash");
+    rename.call(this,from,to,mode);
+  });
+  try { await expect(store.submissions.sendPrepared(root,request,"test-token",service(response(201,raw)))).rejects.toThrow("simulated crash"); }
+  finally { fault.mockRestore(); }
+  const dir = join(vault,root,".peerpedia-obsidian"), path = join(dir,"submit-"+request.id+"-receipt.json");
+  const written = JSON.parse(await readFile(path,"utf8"));
+  if (damage==="legacy") { delete written.digest; delete written.httpStatus; }
+  else written.raw.licensing.label = "damaged field";
+  const damaged = damage==="damaged bytes" ? Buffer.from([255]) : Buffer.from(damage==="damaged JSON" ? "{truncated receipt" : JSON.stringify(written));
+  await writeFile(path,damaged);
+  const reopened = reopen(), before = await reopened.readBindingVersion(root);
+  await expect(reopened.submissions.recoverReceipt(root,request)).rejects.toThrow();
+  expect(await reopened.submissions.hasReceipt(root,request)).toBe(false);
+  await expect(reopened.submissions.persistRequest(root,prepareSubmission(project,binding,account,"new-pr",details))).rejects.toThrow(/awaiting/);
+  await expect(reopened.submissions.retryPending(root,"different","wrong-token",service(response(200,raw)))).rejects.toThrow();
+  expect(attempts).toHaveLength(1);
+  // A stale rejection, an unrelated snapshot, or a different proposal cannot complete this repair.
+  await expect(reopened.submissions.retryPending(root,account.username,"test-token",service(response(409,{error:{code:"stale_pr"}})))).rejects.toThrow();
+  await expect(reopened.submissions.retryPending(root,account.username,"test-token",service(response(201,raw)))).rejects.toThrow();
+  const wrong = {...raw,ai_assisted:true};
+  await expect(reopened.submissions.retryPending(root,account.username,"test-token",service(response(200,wrong)))).rejects.toThrow();
+  if (boundary==="after binding") {
+    const differentSnapshot = structuredClone(raw);
+    differentSnapshot.manifest.submission_id = snapshot.submissionId;
+    await expect(reopened.submissions.retryPending(root,account.username,"test-token",service(response(200,rehash(differentSnapshot))))).rejects.toThrow();
+    const other = {...raw,pull_request:{id:snapshot.paperId,snapshot:1},status};
+    await expect(reopened.submissions.retryPending(root,account.username,"test-token",service(response(200,other)))).rejects.toThrow();
+  }
+  if (boundary==="after binding" && damage==="legacy" && status==="accepted") {
+    const tipPath = join(dir,"binding-history","1.json");
+    const originalTip = await readFile(tipPath);
+    const altered = JSON.parse(originalTip.toString());
+    altered.binding.workingBase = verifySnapshot({...raw,status:"accepted"});
+    await writeFile(tipPath,JSON.stringify(altered));
+    try {
+      await expect(reopened.submissions.retryPending(root,account.username,"test-token",service(response(200,{...raw,status})))).rejects.toThrow(/binding changed/);
+    } finally {await writeFile(tipPath,originalTip);}
+  }
+  expect(await readFile(path)).toEqual(damaged);
+  expect(await reopened.readBindingVersion(root)).toEqual(before);
+  const retry = ():Promise<VerifiedSnapshot>=>reopened.submissions.retryPending(root,account.username,"replacement-token",service(response(200,{...raw,status})));
+  let result:VerifiedSnapshot;
+  if (boundary==="after binding" && damage==="legacy" && status==="accepted") {
+    const stop = vi.spyOn(AnchoredFiles.prototype,"rename").mockImplementation(function(this:AnchoredFiles,from:string,to:string,mode:"swap"|"publish"):void {
+      if (to.endsWith("-complete.json")) throw new Error("after receipt replacement");
+      rename.call(this,from,to,mode);
+    });
+    try { await expect(retry()).rejects.toThrow("after receipt replacement"); } finally { stop.mockRestore(); }
+    const count = attempts.length;
+    result = await reopen().submissions.recoverReceipt(root,request);
+    expect(attempts).toHaveLength(count);
+  } else result = await retry();
+  expect(result.hash).toBe(raw.hash);
+  expect(result.status).toBe(status);
+  expect(await reopened.submissions.pending(root)).toBeNull();
+  const after = await reopened.readBindingVersion(root);
+  expect(after.binding).toMatchObject({acceptedBase:snapshot,workingBase:snapshot,activePr:{id,status:"pending"},lastSubmitted:{hash:raw.hash,status:"pending"}});
+  if (boundary==="after binding") {
+    expect(after.digest).toBe(before.digest);
+    expect(after.binding).toEqual(before.binding);
+  }
+  for (const attempt of attempts) expect(attempt).toEqual([request.id,request.payloadJson]);
+  expect(JSON.parse(await readFile(path,"utf8"))).toMatchObject({id:request.id,payloadDigest:request.payloadDigest,httpStatus:200,raw:{status}});
+  const evidence = (await readdir(dir)).filter((name:string):boolean=>name.startsWith("submit-"+request.id+"-receipt.json.replaced-"));
+  expect(evidence).toHaveLength(1);
+  expect(await readFile(join(dir,evidence[0]))).toEqual(damaged);
 });

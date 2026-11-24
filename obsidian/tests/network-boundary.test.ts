@@ -151,3 +151,39 @@ test("reopening an unreadable manuscript renders the saved request action from i
     expect(controls).not.toContain("Submit to Peerpedia");
   } finally {vi.unstubAllGlobals();}
 });
+
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { join } from "node:path";
+import type { Vault } from "obsidian";
+import { VaultProjectStore as NativeStore } from "../src/host/vault-store";
+import { account,details,project,root,snapshot } from "./fixtures/publishing";
+import { importChanges } from "../src/remote/import";
+import { prepareSubmission } from "../src/remote/submit";
+import { SubmitModal } from "../src/ui/submit-modal";
+
+test("the pending dialog offers explicit original-request replay when its receipt cannot verify",async ():Promise<void>=>{
+  const temporary = await mkdtemp(join(tmpdir(),"peerpedia-repair-ui-"));
+  try {
+    const store = new NativeStore(temporary,{} as Pick<Vault,"on"|"offref">);
+    await store.create(root,importChanges(snapshot));
+    const request = prepareSubmission(project,null,account,"publish",details);
+    await store.submissions.persistRequest(root,request);
+    await writeFile(join(temporary,root,".peerpedia-obsidian/submit-"+request.id+"-receipt.json"),"truncated");
+    const buttons = new Map<string,{onclick?:()=>void}>();
+    const content = {empty:():void=>buttons.clear(),setText:vi.fn(),createEl:(tag:string,options:{text?:string}):object=>{
+      const node:{onclick?:()=>void} = {};
+      if (tag==="button") buttons.set(options.text!,node);
+      return node;
+    }};
+    const retry = vi.fn().mockResolvedValue(snapshot), updated = vi.fn();
+    const modal:SubmitModal = Object.assign(Object.create(SubmitModal.prototype),{root,store,controller:{retry},updated,contentEl:content,abort:new AbortController()});
+    modal.onOpen();
+    await vi.waitFor(():void=>{expect(buttons.has("Retry saved submission")).toBe(true);});
+    expect(buttons.has("Finish from saved receipt")).toBe(false);
+    expect(retry).not.toHaveBeenCalled();
+    buttons.get("Retry saved submission")!.onclick!();
+    await vi.waitFor(():void=>{expect(updated).toHaveBeenCalledOnce();});
+    expect(retry).toHaveBeenCalledExactlyOnceWith(root,request);
+    modal.onClose();
+  } finally { await rm(temporary,{recursive:true,force:true}); }
+});
