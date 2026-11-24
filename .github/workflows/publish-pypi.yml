@@ -71,9 +71,17 @@ jobs:
       id-token: write
       actions: read
     steps:
-      - uses: actions/download-artifact@v8
-        with:
-          github-token: ${{ github.token }}
-          artifact-ids: ${{ needs.build.outputs.artifact-id }}
-          path: dist/
+      - name: Retrieve the verified distributions
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CLI_ARTIFACT_ID: ${{ needs.build.outputs.artifact-id }}
+        run: |
+          for attempt in 1 2 3 4 5; do
+            if gh api "repos/$GITHUB_REPOSITORY/actions/artifacts/$CLI_ARTIFACT_ID/zip" > "$RUNNER_TEMP/distributions.zip"; then
+              break
+            fi
+            test "$attempt" -lt 5 || exit 1
+            sleep 3
+          done
+          python -m zipfile -e "$RUNNER_TEMP/distributions.zip" dist
       - uses: pypa/gh-action-pypi-publish@release/v1

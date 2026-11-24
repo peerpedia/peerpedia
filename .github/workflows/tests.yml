@@ -70,11 +70,19 @@ jobs:
           name: cli-validation-distributions
           path: dist/
           retention-days: 1
-      - uses: actions/download-artifact@v8
-        with:
-          github-token: ${{ github.token }}
-          artifact-ids: ${{ steps.cli_artifact.outputs.artifact-id }}
-          path: ${{ runner.temp }}/artifact-check/dist
+      - name: Retrieve the uploaded CLI artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CLI_ARTIFACT_ID: ${{ steps.cli_artifact.outputs.artifact-id }}
+        run: |
+          for attempt in 1 2 3 4 5; do
+            if gh api "repos/$GITHUB_REPOSITORY/actions/artifacts/$CLI_ARTIFACT_ID/zip" > "$RUNNER_TEMP/cli-artifact.zip"; then
+              break
+            fi
+            test "$attempt" -lt 5 || exit 1
+            sleep 3
+          done
+          python -m zipfile -e "$RUNNER_TEMP/cli-artifact.zip" "$RUNNER_TEMP/artifact-check/dist"
       - name: Verify downloaded CLI artifacts
         run: |
           cd "$RUNNER_TEMP/artifact-check"
