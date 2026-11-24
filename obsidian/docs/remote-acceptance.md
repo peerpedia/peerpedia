@@ -6,13 +6,15 @@ The Peerpedia 0.1.0 personal package was tested on November 24, 2026 with macOS 
 
 | Item | Verified value |
 | --- | --- |
-| ZIP in the local build output | `obsidian/dist/manual-publication-final/peerpedia-0.1.0-darwin-arm64.zip` |
-| Size | 66,016,232 bytes |
-| ZIP SHA-256 | `f09fa120f005d8dc302bf04eb6c9d243c8978ef0c0c9250502215195360ab4bc` |
-| Product source commit in `renderer/provenance.json` | `62c81c9f29d395ca0fd72cf1b5bdf5a9f45766ab` |
-| SHA-256 of `package-manifest.json` | `305114e917861cdc720798ec2671478e562ed71243374be7e31a2dfc0dc2bc39` |
+| ZIP in the local build output | `obsidian/dist/manual-publication-reviewed/peerpedia-0.1.0-darwin-arm64.zip` |
+| Size | 66,016,345 bytes |
+| ZIP SHA-256 | `326311ad109603d2e32b736cd27307e69c8d82403f42223ad504a25cac588dc6` |
+| Package source commit in `renderer/provenance.json` | `6acb9885a3ac8415a825348f581434d5f6ab5915` |
+| SHA-256 of `package-manifest.json` | `c0e5d9f2f58d61c246ab1e302e3316cf4efdc43806ef157062767e884856589e` |
 
-The archive contains 8,245 files, including 8,244 entries covered by the package manifest and the manifest itself. All 9,259 file and directory entries, file digests and Unix permissions matched after extraction to a path containing spaces and Chinese characters. Both the renderer runtime and the Keychain helper retained mode 0755. Fresh Obsidian test vaults loaded copies of that extraction. The ZIP includes the English installation and usage guides. This acceptance record was added after packaging. [Installation and rollback](installation.md) · [Usage](usage.md) · [Offline acceptance](local-acceptance.md)
+The archive contains 8,245 files, including 8,244 entries covered by the package manifest and the manifest itself. All 9,259 file and directory entries, file digests and Unix permissions matched after extraction to a path containing spaces and Chinese characters. Both the renderer runtime and the Keychain helper retained mode 0755. The ZIP includes the English installation and usage guides.
+
+The installation guide was revised after the full acceptance run to put backup steps before copying the new plugin. Direct comparison with the fully tested package at commit `62c81c9` found 8,242 byte-identical files. The three revised files are `INSTALLATION.md`, `renderer/provenance.json` and `package-manifest.json`. The revised extraction was loaded into a fresh Obsidian test vault for the publication and retry check. [Installation and rollback](installation.md) · [Usage](usage.md) · [Offline acceptance](local-acceptance.md)
 
 ## Tests and observations
 
