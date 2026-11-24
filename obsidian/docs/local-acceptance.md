@@ -4,7 +4,7 @@ The combined personal package, its digest, the tested platform and the remote wo
 
 ## Relocated package in Obsidian
 
-The host probe copies a complete extracted package into a fresh vault under a Unicode path. It opens Obsidian 1.15.1 with its own profile, verifies installed file checksums and renders a two-chapter manuscript from the native source editor. The test uses an offline Chromium context, records HTTP(S) attempts and runs the plugin's renderer child with macOS network access denied. Obsidian itself can attempt an application update during startup.
+The host probe copies a complete extracted package into a fresh vault under a Unicode path. The final ZIP from source `20cb7a4` was exercised through this path. The probe opens Obsidian 1.15.1 with its own profile, verifies installed file checksums and renders a two-chapter manuscript from the native source editor. The test uses an offline Chromium context, records HTTP(S) attempts and runs the plugin's renderer child with macOS network access denied. Obsidian itself can attempt an application update during startup.
 
 | Activity | Observed behavior |
 | --- | --- |
@@ -12,7 +12,8 @@ The host probe copies a complete extracted package into a fresh vault under a Un
 | Read and edit | KaTeX, TikZ, commutative diagrams, bundled fonts, shared references and cross-chapter numbering work. The preview follows source edits. Scrolling or switching chapters in the preview preserves the source position until the explicit source-location action. |
 | Renderer error or timeout | Invalid math and a deliberately paused renderer keep the last successful preview visible with an error. Source navigation from stale output is disabled. A later valid edit renders successfully. |
 | Disable and remove | Preview panes close, the plugin's commands disappear, and the renderer stops. Source files, edits and bibliography remain readable after uninstalling the test copy. |
-| Conflicting writes | Independent writes to an open chapter before autosave preserve the original, editor draft and external version, including an empty initial chapter and a chapter with assistance disabled. Recovery survives restart. Ordinary saves, unlisted notes and confirmed chapter-title edits do not create spurious conflicts. |
+| Native completion in the final publication check | The source-mode editor offered the theorem completion, inserted its template and reverted it with one undo. Opening a manuscript that named a reserved bibliography path showed a source error. |
+| Conflicting writes in the final native-host check | Independent writes to an open chapter before autosave preserve the original, editor draft and external version, including an empty initial chapter and a chapter with assistance disabled. Recovery survives restart. Ordinary saves, unlisted notes and confirmed chapter-title edits do not create spurious conflicts. |
 
 ## Earlier local authoring checks
 
