@@ -2,9 +2,10 @@ import { pruneDiagramCache } from "./tikz-cache";
 import { stdin, stdout } from "node:process";
 import { createInterface } from "node:readline";
 
-import { defineDialect, type SyntaxNodeRef } from "bananamark";
+import { BananamarkError, defineDialect, type SyntaxNodeRef } from "bananamark";
 
 import type { PublicationDocument } from "../src/project/document";
+import { UserFacingError } from "../src/user-error";
 import { failure, isRecord, type RenderFailure, type RenderPage, type RenderRequest, type RenderResponse, type SourceTarget } from "./protocol";
 import { dialectOptions } from "./site/dialect.js";
 import { renderDocument, type SiteHeading, type SiteTarget } from "./site/render-document.mjs";
@@ -29,9 +30,9 @@ interface Range {
 function parseChapters(document: PublicationDocument): readonly Chapter[] {
   if (!isRecord(document) || typeof document.markdown !== "string" ||
       typeof document.bibliography !== "string" || !Array.isArray(document.chapters)) {
-    throw new Error("Expected a document with Markdown, chapters and bibliography.");
+    throw new UserFacingError("Expected a document with Markdown, chapters and bibliography.");
   }
-  if (document.chapters.length > MAX_CHAPTERS) throw new Error("Use up to 64 chapters.");
+  if (document.chapters.length > MAX_CHAPTERS) throw new UserFacingError("Use up to 64 chapters.");
   const ids = new Set<string>();
   const markup: string[] = [];
   const chapters: readonly Chapter[] = document.chapters.length
@@ -40,17 +41,17 @@ function parseChapters(document: PublicationDocument): readonly Chapter[] {
   for (const chapter of chapters) {
     if (!isRecord(chapter) || typeof chapter.id !== "string" ||
       !/^[A-Za-z0-9_-]{1,64}$/.test(chapter.id) || ids.has(chapter.id.toLowerCase())) {
-      throw new Error("Chapter IDs must be unique letters, numbers, hyphens or underscores.");
+      throw new UserFacingError("Chapter IDs must be unique letters, numbers, hyphens or underscores.");
     }
-    if (typeof chapter.markdown !== "string") throw new Error("Chapter Markdown must be text.");
+    if (typeof chapter.markdown !== "string") throw new UserFacingError("Chapter Markdown must be text.");
     ids.add(chapter.id.toLowerCase());
     markup.push(chapter.markdown);
   }
   const combined = markup.join("\n\n");
-  if (document.markdown !== combined) throw new Error("Combined Markdown must exactly match the chapter files.");
+  if (document.markdown !== combined) throw new UserFacingError("Combined Markdown must exactly match the chapter files.");
   const text = combined + document.bibliography;
   if (/[\u0000\uD800-\uDFFF]/u.test(text) || Buffer.byteLength(text) > MAX_MARKDOWN_BYTES) {
-    throw new Error("The complete paper and bibliography must be valid UTF-8, at most 1 MiB, without NUL characters.");
+    throw new UserFacingError("The complete paper and bibliography must be valid UTF-8, at most 1 MiB, without NUL characters.");
   }
   // A blank draft can be previewed before it meets the website's submission requirements.
   return chapters;
@@ -147,10 +148,37 @@ function localFonts(html: string): string {
   );
 }
 
+// The shared renderer reports these manuscript limits with plain Error objects.
+const manuscriptMessages = new Set([
+  "Document is too large.",
+  "Images are not supported. Use a TikZ diagram instead.",
+  "Keep each paper below 32 diagrams.",
+  "Keep each diagram below 32 KB.",
+]);
+const tikzInputMessages = new Set([
+  "Only one outer equation tag is supported",
+  "Equation tag requires a braced argument",
+  "Unclosed equation tag",
+  "Equation tags require display maths",
+]);
+
+function manuscriptDiagnostic(error: unknown): string | undefined {
+  if (error instanceof UserFacingError || (error instanceof Error && manuscriptMessages.has(error.message))) return error.message;
+  if (!(error instanceof BananamarkError) || !isRecord(error) || error.code === "hook_failed") return undefined;
+  if (error.code !== "tikz_failed") return error.message;
+
+  // TikZ also wraps runtime errors as source errors. The worker sends TeX diagnostics
+  // with a leading bang, or validation text for equation tags.
+  const detail = isRecord(error.params) ? error.params.message : undefined;
+  if (typeof detail === "string" && (detail.startsWith("!") || tikzInputMessages.has(detail))) return error.message;
+  return "Unable to render a TikZ diagram. Check that the local renderer can access its cache.";
+}
+
 function normalizeError(request: RenderRequest, error: unknown, last?: Chapter): RenderFailure {
-  const result = failure(request, error instanceof Error ? error.message : String(error));
-  if (!isRecord(error)) return result;
-  if (typeof error.file === "string") result.error.file = error.file;
+  const message = manuscriptDiagnostic(error);
+  const result = failure(request, message ?? "The local renderer could not complete this request.");
+  if (message === undefined || !isRecord(error)) return result;
+  if (typeof error.file === "string" && /^[A-Za-z0-9_-]{1,64}\.md$/.test(error.file)) result.error.file = error.file;
   if (typeof error.line === "number" && error.line > 0) result.error.line = error.line;
   if (typeof error.column === "number" && error.column > 0) result.error.column = error.column;
   if (last && request.document.bibliography.trim() && result.error.file === `${last.id}.md` && result.error.line) {

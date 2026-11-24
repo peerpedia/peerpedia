@@ -95,6 +95,12 @@ test.skipIf(process.platform !== "darwin" || process.arch !== "arm64")(
     const invalid: RenderRequest = {
       ...request, id: "invalid", document: { ...request.document, chapters: [], markdown: "Text.\n\n$\\badCommand$" },
     };
+    const invalidTikz: RenderRequest = {
+      ...request, id: "invalid-tikz", document: {
+        ...request.document, chapters: [],
+        markdown: ["```tikz", "\\begin{tikzpicture}", "\\badCommand", "\\end{tikzpicture}", "```"].join("\n"),
+      },
+    };
     const inline: RenderRequest = {
       ...request, id: "inline", document: {
         ...request.document, chapters: [],
@@ -110,7 +116,7 @@ test.skipIf(process.platform !== "darwin" || process.arch !== "arm64")(
         ...request.document, chapters: [], markdown: "汉".repeat(350_000), bibliography: "",
       },
     };
-    const input = [request, invalid, inline, mismatched, oversize]
+    const input = [request, invalid, invalidTikz, invalidTikz, inline, mismatched, oversize]
       .map((value: RenderRequest): string => JSON.stringify(value)).join("\n") + "\n";
     const checkout = JSON.stringify(resolve(project, ".."));
     const policy = `(version 1)(allow default)(deny network*)(deny file-read* (subpath ${checkout}))
@@ -135,7 +141,7 @@ test.skipIf(process.platform !== "darwin" || process.arch !== "arm64")(
     if (error) throw error;
     expect(status, stderr).toBe(0);
     expect(stderr).toBe("");
-    const [publication, failure, inlineResult, mismatchFailure, oversizeFailure] = stdout.trim().split("\n")
+    const [publication, failure, tikzFailure, repeatedTikzFailure, inlineResult, mismatchFailure, oversizeFailure] = stdout.trim().split("\n")
       .map((line: string): RenderResponse => JSON.parse(line));
     expectSuccess(publication);
     expect(publication).toMatchObject({ id: "paper", revision: "fixture-r1" });
@@ -163,7 +169,28 @@ test.skipIf(process.platform !== "darwin" || process.arch !== "arm64")(
     expect(proof.targets).toContainEqual({
       id: "bib-book", chapterId: "proof", from: 0, to: 5, kind: "bibliography", source: "bibliography",
     });
-    expect(failure).toMatchObject({ id: "invalid", revision: "fixture-r1", error: { file: "main.md", line: 3 } });
+    expect(failure).toMatchObject({
+      id: "invalid", revision: "fixture-r1", error: { file: "main.md", line: 3, message: /undefined control sequence.*badCommand/i },
+    });
+    expect(tikzFailure).toMatchObject({
+      id: "invalid-tikz", revision: "fixture-r1", error: { file: "main.md", message: /TikZ compilation failed: ! Undefined control sequence/ },
+    });
+    expect(repeatedTikzFailure).toEqual(tikzFailure);
+    const blockedCache = join(workspace, "Unicode-书目-cache");
+    await writeFile(blockedCache, "not a directory");
+    const blocked = spawnSync("/usr/bin/sandbox-exec", [
+      "-p", policy, join(runtime, "bin/node"), join(runtime, "renderer.mjs"),
+    ], {
+      input: JSON.stringify(request) + "\n", encoding: "utf8", cwd: workspace,
+      env: { PATH: "", BANANAMARK_CACHE: blockedCache }, timeout: 40_000,
+    });
+    if (blocked.error) throw blocked.error;
+    expect(blocked.status).toBe(0);
+    const blockedResponse: RenderResponse = JSON.parse(blocked.stdout);
+    expect(blockedResponse).toMatchObject({
+      id: request.id, revision: request.revision, error: { file: "intro.md", message: /unable to render a TikZ diagram/i },
+    });
+    expect(blocked.stdout).not.toMatch(/ENOTDIR|Unicode-书目-cache/);
     expect(mismatchFailure).toMatchObject({ id: "mismatched", error: { message: /match the chapter files/ } });
     expect(oversizeFailure).toMatchObject({ id: "oversize", error: { message: /1 MiB/ } });
     expectSuccess(inlineResult);
