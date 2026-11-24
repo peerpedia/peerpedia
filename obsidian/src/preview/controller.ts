@@ -1,3 +1,4 @@
+import { UserFacingError, userErrorMessage } from "../user-error";
 import type { RenderFailure, RenderRequest, RenderResponse } from "../../renderer/protocol";
 import type { PublicationDocument } from "../project/document";
 import type { ProjectSnapshot } from "../project/types";
@@ -50,12 +51,12 @@ export class PreviewController {
       const id = String(++this.sequence);
       const response = await this.renderer.render({ id, revision, document }, signal);
       if (signal.aborted) return;
-      if (response.id !== id || response.revision !== revision) throw new Error("预览修订不匹配。");
+      if (response.id !== id || response.revision !== revision) throw new UserFacingError("The preview revision does not match.");
       this.value = "error" in response ? { ...this.value, error: response.error, busy: false }
         : { ...this.value, result: response, renderedRevision: revision, busy: false };
     } catch (error: unknown) {
       if (signal.aborted) return;
-      this.value = { ...this.value, busy: false, error: { message: error instanceof Error ? error.message : String(error) } };
+      this.value = { ...this.value, busy: false, error: { message: userErrorMessage(error, "Unable to render the paper preview.") } };
     }
     this.active = undefined;
     this.changed();

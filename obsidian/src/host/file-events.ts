@@ -1,3 +1,4 @@
+import { UserFacingError } from "../user-error";
 import type { App, Editor, EditorSelection, MarkdownView, TFile, ViewState, WorkspaceLeaf } from "obsidian";
 import type { OpenChapterMove } from "../project/transaction";
 import type { WritingScope } from "../main";
@@ -42,7 +43,7 @@ async function indexedFile(app: App, path: string): Promise<TFile> {
   return new Promise<TFile>((resolve: (file: TFile) => void, reject: (reason: Error) => void): void => {
     const timer = setTimeout((): void => {
       app.vault.offref(ref);
-      reject(new Error("文件已保留，Obsidian 尚未识别新路径。请重新打开章节。"));
+      reject(new UserFacingError("The file was saved, but Obsidian has not found the new path. Reopen the chapter."));
     }, 3500);
     const check = (): void => {
       const file = app.vault.getFileByPath(path);
@@ -71,7 +72,7 @@ export async function ensurePublishedFile(app: App, path: string, signal: () => 
 export async function stageChapter(app: App, from: string,
   moved: (from: string, to: string) => Promise<void>): Promise<OpenChapterMove> {
   const source = app.vault.getFileByPath(from);
-  if (!source) throw new Error("Obsidian 尚未找到章节文件，请稍后再试。");
+  if (!source) throw new UserFacingError("Obsidian has not found the chapter file yet. Try again shortly.");
   const panes: { leaf: WorkspaceLeaf; view: MarkdownView; text: string; selections: EditorSelection[];
     scroll: {left: number; top: number}; state: ViewState }[] = [];
   for (const leaf of app.workspace.getLeavesOfType("markdown")) {
@@ -89,7 +90,7 @@ export async function stageChapter(app: App, from: string,
     else drafts.set(editor,text);
   });
   const checkDrafts = (): void => {
-    if (drafts.size) throw new Error("移动期间编辑器收到新内容，已保留恢复记录。");
+    if (drafts.size) throw new UserFacingError("The editor received new content during the move. A recovery record was saved.");
   };
   const reconnect = async (path: string): Promise<void> => {
     checkDrafts();
@@ -114,7 +115,7 @@ export async function stageChapter(app: App, from: string,
       await destination.openFile(target, { active: false, state: { ...pane.state.state, file: path } });
       await destination.loadIfDeferred();
       const current = destination.view as MarkdownView;
-      if (current.file?.path !== path) throw new Error("无法在原窗格打开新路径。");
+      if (current.file?.path !== path) throw new UserFacingError("Unable to open the new path in the original pane.");
       current.editor.setSelections(pane.selections);
       current.editor.scrollTo(pane.scroll.left, pane.scroll.top);
     }

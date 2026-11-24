@@ -1,3 +1,4 @@
+import { UserFacingError } from "../user-error";
 import type { LanguageInputs, LanguageKind, LanguageOutputs, LanguageRequest, LanguageResponse } from "../language/worker-protocol";
 
 declare const __PEERPEDIA_LANGUAGE_WORKER__: string;
@@ -25,9 +26,9 @@ function browserThread(source: string): LanguageThread {
       onFailure(listener: (error: Error) => void): void {
         worker.addEventListener("error", (event: ErrorEvent): void => {
           event.preventDefault();
-          listener(new Error(event.message || "BananaMark language worker could not load."));
+          listener(new UserFacingError("BananaMark language worker could not load."));
         });
-        worker.addEventListener("messageerror", (): void => listener(new Error("Unreadable BananaMark language worker reply.")));
+        worker.addEventListener("messageerror", (): void => listener(new UserFacingError("Unreadable BananaMark language worker reply.")));
       },
       request(message: LanguageRequest): void {
         worker.postMessage(message);
@@ -53,15 +54,15 @@ export class LanguageWorker {
   ) {}
 
   run<K extends LanguageKind>(kind: K, value: LanguageInputs[K]): Promise<LanguageOutputs[K]> {
-    if (this.disposed) return Promise.reject(new Error("BananaMark language worker is closed."));
+    if (this.disposed) return Promise.reject(new UserFacingError("BananaMark language worker is closed."));
     return new Promise<LanguageOutputs[K]>((resolve: (output: LanguageOutputs[K]) => void, reject: (error: Error) => void): void => {
       const thread = this.thread ?? this.start();
       const id = ++this.sequence;
       this.pending.set(id, {
         receive: (response: LanguageResponse): void => {
-          if (response.kind === "error") reject(new Error(response.message));
+          if (response.kind === "error") reject(new UserFacingError(response.message));
           else if (response.kind === kind) resolve(response.value as LanguageOutputs[K]);
-          else reject(new Error("Unexpected BananaMark language worker reply."));
+          else reject(new UserFacingError("Unexpected BananaMark language worker reply."));
         },
         reject,
       });
@@ -76,7 +77,7 @@ export class LanguageWorker {
 
   dispose(): void {
     this.disposed = true;
-    if (this.thread) this.stop(this.thread, new Error("BananaMark language worker is closed."));
+    if (this.thread) this.stop(this.thread, new UserFacingError("BananaMark language worker is closed."));
   }
 
   private start(): LanguageThread {

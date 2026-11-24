@@ -1,3 +1,4 @@
+import { UserFacingError } from "../user-error";
 import { CONFIG_PATH, projectMembers, projectRevision, sourceDigest, type FileChange, type ProjectStore } from "../project/store";
 import type { ChapterSpec, PaperConfig, ProjectSnapshot, SourceFile } from "../project/types";
 import type { PublicationDocument } from "../project/publication";
@@ -10,7 +11,7 @@ export function importChanges(snapshot: VerifiedSnapshot): FileChange[] {
   const changes: FileChange[] = [];
   if (snapshot.manifest.format === "peerpedia-submission-v4") {
     config.chapters = chapters.map((chapter: PublicationDocument["chapters"][number]): ChapterSpec => {
-      if (!/^[A-Za-z0-9_-]{1,64}$/u.test(chapter.id)) throw new Error("章节 ID 无效。");
+      if (!/^[A-Za-z0-9_-]{1,64}$/u.test(chapter.id)) throw new UserFacingError("Invalid chapter ID.");
       const file = "chapters/" + chapter.id + ".md";
       changes.push({path:file,beforeDigest:null,afterText:chapter.markdown});
       return {id:chapter.id,title:chapter.title,file};
@@ -32,12 +33,12 @@ export function importedRevision(snapshot: VerifiedSnapshot): string {
 
 export async function importPaper(target: RemoteTarget, root: string, api: PeerpediaApi, store: ProjectStore,
   current: () => boolean = (): boolean => true, onCommit?: () => void): Promise<ProjectSnapshot> {
-  const live = (): void => { if (!current()) throw new Error("已取消导入。"); };
+  const live = (): void => { if (!current()) throw new UserFacingError("Import canceled."); };
   live();
   const working = target.kind === "paper" ? await api.current(target.identifier) : await api.snapshot(target.identifier);
   live();
   const accepted = target.kind === "paper" ? working : await api.current(target.expectedPaperIdentifier ?? working.paperId);
-  if (accepted.paperId !== working.paperId || accepted.status !== "accepted") throw new Error("版本链接所指的论文与快照不一致。");
+  if (accepted.paperId !== working.paperId || accepted.status !== "accepted") throw new UserFacingError("The version link points to a different paper than the snapshot.");
   const changes = importChanges(working);
   const binding: RemoteBinding = {schemaVersion:1,origin:api.origin,paperId:working.paperId,acceptedBase:accepted,
     workingBase:working,lastSubmitted:null,activePr:null,checkedAt:new Date().toISOString()};

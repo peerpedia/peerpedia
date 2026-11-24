@@ -1,3 +1,4 @@
+import { UserFacingError } from "../user-error";
 import type { RenderPage, SourceTarget } from "../../renderer/protocol";
 import { viewportTarget, type ReaderLocation } from "./source-map";
 import { articleFragment, type PreviewTheme } from "./article";
@@ -18,7 +19,7 @@ function installTheme(doc: Document, theme: PreviewTheme, css: string): void {
     const sources = face.style.getPropertyValue("src").split(",").map((item: string): string => {
       const descriptor = /^url\("([^"]+)"\) format\("(woff2?|truetype)"\)$/.exec(item.trim());
       const url = descriptor && theme.katex.get(descriptor[1]);
-      if (!url) throw new Error("公式字体缺少本地资源。");
+      if (!url) throw new UserFacingError("A local math font file is missing.");
       return `url(${JSON.stringify(url)}) format("${descriptor[2]}")`;
     });
     face.style.setProperty("src", sources.join(", "));

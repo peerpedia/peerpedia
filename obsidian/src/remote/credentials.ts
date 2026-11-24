@@ -1,13 +1,14 @@
+import { UserFacingError } from "../user-error";
 import { execFile } from "node:child_process";
 import { exactOrigin } from "./transport";
 import type { CredentialStore } from "./types";
 
 type Operation = "read" | "write" | "remove";
-const unavailable = "无法访问本机钥匙串。";
+const unavailable = "Unable to access this Mac’s Keychain.";
 
 function credentialKey(origin: string, username: string): string {
   exactOrigin(origin);
-  if (!username.trim()) throw new Error("缺少凭据的用户名。");
+  if (!username.trim()) throw new UserFacingError("A username is required for saved credentials.");
   return JSON.stringify([origin,username]);
 }
 
@@ -21,7 +22,7 @@ export class DeviceCredentials implements CredentialStore {
 
   private invoke(operation: Operation, origin: string, username: string, token?: string): Promise<string | null> {
     return new Promise<string | null>((resolve: (result: string | null) => void, reject: (error: Error) => void): void => {
-      const fail = (): void => reject(new Error(unavailable));
+      const fail = (): void => reject(new UserFacingError(unavailable));
       const child = execFile(this.helper, [], {timeout:10_000, maxBuffer:64 * 1024, encoding:"utf8"},
         (error: Error | null, stdout: string): void => {
           if (error) { fail(); return; }
@@ -46,7 +47,7 @@ export class DeviceCredentials implements CredentialStore {
 
   async write(origin: string, username: string, token: string): Promise<void> {
     const key = credentialKey(origin, username);
-    if (!token) throw new Error("缺少访问令牌。");
+    if (!token) throw new UserFacingError("An access token is required.");
     try {
       await this.invoke("write",origin,username,token);
       this.session.delete(key);
@@ -58,6 +59,6 @@ export class DeviceCredentials implements CredentialStore {
   async remove(origin: string, username: string): Promise<void> {
     this.session.delete(credentialKey(origin, username));
     try { await this.invoke("remove",origin,username); }
-    catch { throw new Error("无法确认此账号的钥匙串条目已移除。请恢复钥匙串后重试。"); }
+    catch { throw new UserFacingError("Keychain removal could not be confirmed. Restore access to Keychain and try again."); }
   }
 }

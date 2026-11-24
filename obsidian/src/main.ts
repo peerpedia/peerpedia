@@ -1,3 +1,4 @@
+import { UserFacingError } from "./user-error";
 import { join } from "node:path";
 import type { Text } from "@codemirror/state";
 import { EditorView, type ViewUpdate } from "@codemirror/view";
@@ -105,7 +106,7 @@ export default class PeerpediaPlugin extends Plugin {
         await leaf.setViewState({ type: PROJECT_PANEL, active: true, state: { root } });
       } else if (root !== undefined && leaf.view instanceof ProjectPanel) await leaf.view.selectRoot(root);
       await this.app.workspace.revealLeaf(leaf);
-      if (!(leaf.view instanceof ProjectPanel)) throw new Error("无法打开论文管理面板。");
+      if (!(leaf.view instanceof ProjectPanel)) throw new UserFacingError("Unable to open the paper management panel.");
       return leaf.view;
     };
     const cleanup = Array.isArray(settings?.connectionCleanup) ? settings.connectionCleanup.map(storedIdentity)
@@ -113,16 +114,16 @@ export default class PeerpediaPlugin extends Plugin {
     const connection = new ConnectionModal(this.app, storedIdentity(settings?.connection), transport,
       credentials,
       (identity: AccountIdentity | null, pending: readonly AccountIdentity[]): Promise<void> => this.updateConnection(identity, pending), cleanup);
-    this.addCommand({ id: "connect-account", name: "连接或断开 Peerpedia 账号", callback: (): void => connection.open() });
+    this.addCommand({ id: "connect-account", name: "Connect or disconnect a Peerpedia account", callback: (): void => connection.open() });
     this.register((): void => connection.close());
     this.registerView(PREVIEW_VIEW, (leaf: WorkspaceLeaf): PreviewView => new PreviewView(leaf, store, dir));
-    this.addCommand({ id: "preview-paper", name: "打开论文预览", editorCallback: async (_editor: Editor, info: MarkdownView | MarkdownFileInfo): Promise<void> => {
+    this.addCommand({ id: "preview-paper", name: "Open paper preview", editorCallback: async (_editor: Editor, info: MarkdownView | MarkdownFileInfo): Promise<void> => {
       if (!(info instanceof MarkdownView)) return;
       const file = info.file;
       try {
         const root = await paperRoot(file);
         if (info.file !== file || !file) return;
-        if (root === undefined) { new Notice("请在论文目录内打开章节。"); return; }
+        if (root === undefined) { new Notice("Open a chapter in a paper folder first."); return; }
         let leaf = this.app.workspace.getLeavesOfType(PREVIEW_VIEW).find((item: WorkspaceLeaf): boolean =>
           item.getViewState().state?.root === root);
         if (!leaf) {
@@ -162,13 +163,13 @@ export default class PeerpediaPlugin extends Plugin {
       void openPanel().then((panel: ProjectPanel): void => { if (create) panel.createForm(); })
         .catch((error: unknown): void => { new Notice(errorMessage(error)); });
     };
-    this.addCommand({ id: "manage-paper", name: "管理论文", callback: (): void => showPanel(false) });
-    this.addCommand({ id: "create-paper", name: "新建论文", callback: (): void => showPanel(true) });
-    this.addCommand({ id:"import-paper", name:"从 Peerpedia 导入论文", callback:(): void => {
+    this.addCommand({ id: "manage-paper", name: "Manage paper", callback: (): void => showPanel(false) });
+    this.addCommand({ id: "create-paper", name: "Create paper", callback: (): void => showPanel(true) });
+    this.addCommand({ id:"import-paper", name:"Import paper from Peerpedia", callback:(): void => {
       void openPanel().then((panel: ProjectPanel): void => panel.importForm())
         .catch((error: unknown): void => { new Notice(errorMessage(error)); });
     } });
-    this.addRibbonIcon("book-open", "管理论文", (): void => showPanel(false));
+    this.addRibbonIcon("book-open", "Manage paper", (): void => showPanel(false));
     this.registerEvent(this.app.vault.on("rename", (file: TAbstractFile, from: string): void => {
       if (isStagedMove(file.path)) return;
       void this.moveRules(from, file.path).catch((error: unknown): void => { new Notice(errorMessage(error)); });
@@ -207,13 +208,13 @@ export default class PeerpediaPlugin extends Plugin {
       void store.recordNativeConflict(root, member, drafts, diskObserved).then((record: RecoveryNotice | undefined): void => {
         if (!record) return;
         const message = document.createDocumentFragment();
-        message.createSpan({text: `「${member}」收到外部修改，已保留草稿。 `});
-        message.createEl("button", {text: "核对版本"}).onclick = (): void => {
+        message.createSpan({text: `"${member}" changed outside Obsidian. Your draft was saved. `});
+        message.createEl("button", {text: "Review versions"}).onclick = (): void => {
           void openPanel(root).then((panel: ProjectPanel): Promise<void> => panel.revealRecovery(root, record))
             .catch((error: unknown): void => { new Notice(errorMessage(error)); });
         };
         new Notice(message, 15000);
-      }).catch((error: unknown): void => { new Notice(`无法保留草稿版本。${errorMessage(error)}`); });
+      }).catch((error: unknown): void => { new Notice(`Unable to save the draft. ${errorMessage(error)}`); });
     }));
     const suggest = new BananaMarkSuggest(
       this.app,
@@ -247,7 +248,7 @@ export default class PeerpediaPlugin extends Plugin {
     this.registerEvent(this.app.vault.on("rename", manifestChanged));
     this.addCommand({
       id: "go-to-bananamark-reference",
-      name: "跳转到 BananaMark 引用的定义",
+      name: "Go to BananaMark reference definition",
       editorCheckCallback: (checking: boolean, editor: Editor, view: MarkdownView | MarkdownFileInfo): boolean => {
         if (!(view instanceof MarkdownView)) return false;
         const file = view.file;
@@ -273,7 +274,7 @@ export default class PeerpediaPlugin extends Plugin {
             if (!reference) return;
             const target = findTarget(reference.key, context.analysis);
             if (!target) {
-              new Notice(`找不到「${reference.key}」的唯一定义。`);
+              new Notice(`No unique definition found for "${reference.key}".`);
               return;
             }
             if (!await openSourceTarget(this.app, view.leaf, context.project, target)) warnNavigationFailure();

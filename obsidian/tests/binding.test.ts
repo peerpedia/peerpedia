@@ -60,5 +60,5 @@ test("timestamp-only checks store a compact successor, and corruption or missing
   await expect(store.saveBinding("paper",binding,tip.digest)).rejects.toThrow();
   await rm(join(dir,"1.json"));
   await writeFile(join(dir,"2.json"),"{}");
-  await expect(store.loadBinding("paper")).rejects.toThrow(/不连续/);
+  await expect(store.loadBinding("paper")).rejects.toThrow(/history has a gap/i);
 });

@@ -1,17 +1,18 @@
+import { UserFacingError } from "../user-error";
 import * as http from "node:http";
 import * as https from "node:https";
 import type { HttpResponse, Transport } from "./types";
 
 const limit = 12 * 1024 * 1024;
 const messages = {
-  destination: "请求目标与授权站点不符。",
-  redirect: "站点返回了重定向，连接已停止。",
-  timeout: "网络请求超过 30 秒。",
-  size: "站点响应超过 12 MiB。",
-  network: "连接失败，请检查站点地址与网络。",
+  destination: "The request destination does not match the authorized site.",
+  redirect: "The site redirected the request. The connection was stopped.",
+  timeout: "The network request timed out after 30 seconds.",
+  size: "The site response exceeded 12 MiB.",
+  network: "Unable to connect. Check the site URL and your network connection.",
 };
 
-export class TransportError extends Error {
+export class TransportError extends UserFacingError {
   constructor(readonly code: keyof typeof messages) { super(messages[code]); }
 }
 

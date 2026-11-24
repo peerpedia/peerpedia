@@ -27,7 +27,7 @@ const aliasedVersion = "example:\n  type: book\n  title: &shared other\n  shortt
   + "  versions: [{relation: edition, key: *shared}]\n";
 
 test("editing a shared anchor refuses a change to another field or a cited version key", (): void => {
-  expect((): string => patchEntry(aliasedVersion, "example", { title: "A new title" })).toThrow(/title.*原文件/);
+  expect((): string => patchEntry(aliasedVersion, "example", { title: "A new title" })).toThrow(/title.*YAML source file/);
   expect(readEntries(aliasedVersion)[0].fields).toMatchObject({
     title: "other", shorttitle: "other", versions: [{ key: "other" }],
   });
@@ -38,8 +38,8 @@ const anchoredRecord = "example: &record\n  type: book\n  title: Original\n  not
   + "other:\n  type: book\n  title: Other\n  local-record: *record\n";
 
 test("editing or adding a field under an anchored entry refuses changes to aliased copies", (): void => {
-  expect((): string => patchEntry(anchoredRecord, "example", { title: "A new title" })).toThrow(/title.*原文件/);
-  expect((): string => patchEntry(anchoredRecord, "example", { year: 2026 })).toThrow(/year.*原文件/);
+  expect((): string => patchEntry(anchoredRecord, "example", { title: "A new title" })).toThrow(/title.*YAML source file/);
+  expect((): string => patchEntry(anchoredRecord, "example", { year: 2026 })).toThrow(/year.*YAML source file/);
   expect(patchEntry(anchoredRecord, "example", { title: "Original" })).toBe(anchoredRecord);
 });
 
@@ -191,7 +191,7 @@ test("rename updates rendered YAML prose in shared, inline, and version fields",
 
 test("renaming a citation in YAML prose stops if the enclosing entry is aliased", (): void => {
   const project = editFixture(projectFixture(), "references.yaml", anchoredRecord);
-  expect((): readonly FileChange[] => planCitationRename(project, "example", "updated")).toThrow(/example.*note.*原文件/);
+  expect((): readonly FileChange[] => planCitationRename(project, "example", "updated")).toThrow(/note.*YAML source file/);
 });
 
 test.each([
@@ -201,13 +201,13 @@ test.each([
   const source = "example:\n  type: book\n  title: Original\n" + versions
     + "other:\n  type: book\n  title: Other\n  local-version: *shared\n";
   const project = editFixture(projectFixture(), "references.yaml", source);
-  expect((): readonly FileChange[] => planCitationRename(project, "example", "updated")).toThrow(/example.*note.*原文件/);
+  expect((): readonly FileChange[] => planCitationRename(project, "example", "updated")).toThrow(/note.*YAML source file/);
 });
 
 test("renaming an anchored citation key does not change an aliased title field", (): void => {
   const source = "? &shared example\n: {type: book, title: A}\nother: {type: book, title: B, shorttitle: *shared}\n";
   const project = editFixture(projectFixture(), "references.yaml", source);
-  expect((): readonly FileChange[] => planCitationRename(project, "example", "updated")).toThrow(/引用键.*example.*原文件/);
+  expect((): readonly FileChange[] => planCitationRename(project, "example", "updated")).toThrow(/Citation key.*example.*YAML source file/);
 });
 
 test("deleting an entry reports references to its alternate versions", (): void => {
@@ -230,13 +230,13 @@ test("rename rejects collisions with shared entries, version keys, and chapter d
 
 test("rename rejects a key defined by an alias in a shared bibliography version", (): void => {
   const project = editFixture(projectFixture(), "references.yaml", aliasedVersion);
-  expect((): readonly FileChange[] => planCitationRename(project, "example", "other")).toThrow(/引用键「other」已存在/);
+  expect((): readonly FileChange[] => planCitationRename(project, "example", "other")).toThrow(/Citation key "other" already exists/);
 });
 
 test("a key defined by an aliased inline bibliography version cannot be added", (): void => {
   const inline = "~~~bibliography\n" + aliasedVersion.replace("example:", "inline-entry:") + "~~~\n";
   const project = editFixture(projectFixture(), "chapters/z-intro.md", inline);
-  expect((): void => validateNewCitationKey(project, "other")).toThrow(/引用键「other」已存在/);
+  expect((): void => validateNewCitationKey(project, "other")).toThrow(/Citation key "other" already exists/);
 });
 
 test("adding a citation key checks inline and shared definitions before saving", (): void => {
@@ -267,7 +267,7 @@ test("a stale bibliography form cannot overwrite externally changed YAML", async
     await writeFile(disk, external);
     await expect(store.apply(opened.root, opened.revision, [
       {path: file.path, beforeDigest: file.digest, afterText: draft},
-    ])).rejects.toThrow("论文已在其他地方更改");
+    ])).rejects.toThrow("The paper changed elsewhere");
     expect(await readFile(disk, "utf8")).toBe(external);
     expect(readEntries(draft)[0].fields.title).toBe("表单草稿");
   } finally {
@@ -276,6 +276,6 @@ test("a stale bibliography form cannot overwrite externally changed YAML", async
 });
 test("deletion cannot retarget a surviving field to an earlier anchor of the same name", (): void => {
   const source = "a: {type: book, title: &t Alpha}\nb: {type: book, title: &t Beta}\nc: {type: book, title: *t}\n";
-  expect((): string => removeEntry(source, "b")).toThrow(/c.*title.*YAML/u);
+  expect((): string => removeEntry(source, "b")).toThrow(/title.*entry "c".*YAML/u);
   expect(readEntries(removeEntry(source, "a"))[1].fields.title).toBe("Beta");
 });

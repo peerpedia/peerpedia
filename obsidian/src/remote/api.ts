@@ -1,11 +1,12 @@
+import { UserFacingError } from "../user-error";
 import { decodeAccount } from "./account";
 import { isPublicId, isUuid } from "./links";
 import { exactOrigin } from "./transport";
 import type { AccountInfo, Category, LicenseOption, PrHead, Transport, VerifiedSnapshot } from "./types";
 import { array, checksum, nonempty, object, ProtocolError, readStatus, verifySnapshot } from "./verify";
 
-export class HttpStatusError extends Error {
-  constructor(readonly status: number) { super(`站点请求失败（HTTP ${status}）。`); }
+export class HttpStatusError extends UserFacingError {
+  constructor(readonly status: number) { super(`The site request failed (HTTP ${status}).`); }
 }
 
 function identifier(value: string): string {
@@ -52,7 +53,7 @@ export class PeerpediaApi {
   private async get(route: string, token?: string): Promise<unknown> {
     const headers: Record<string, string> = {Accept: "application/json"};
     if (token !== undefined) {
-      if (!/^[\x21-\x7e]+$/u.test(token)) throw new Error("请输入有效的访问令牌。");
+      if (!/^[\x21-\x7e]+$/u.test(token)) throw new UserFacingError("Enter a valid access token.");
       headers.Authorization = "Bearer " + token;
     }
     const response = await this.transport.request(this.origin, "/api/v1/" + route, "GET", headers, null);

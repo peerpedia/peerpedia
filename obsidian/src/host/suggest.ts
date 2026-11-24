@@ -125,7 +125,7 @@ export class BananaMarkSuggest extends EditorSuggest<Choice> {
       if (typeof native.trigger !== "function") {
         if (!this.warnedAboutManualTrigger) {
           this.warnedAboutManualTrigger = true;
-          new Notice("当前 Obsidian 版本不支持手动触发 BananaMark 补全。");
+          new Notice("This version of Obsidian does not support triggering BananaMark suggestions manually.");
         }
         return false;
       }

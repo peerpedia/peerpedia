@@ -1,3 +1,4 @@
+import { UserFacingError } from "../user-error";
 import { defineDialect, type SyntaxNodeRef } from "bananamark";
 import type { SyntaxNode } from "@lezer/common";
 import { inspectChapter } from "../../../editor/chapter-title.js";
@@ -23,7 +24,7 @@ function titleHeading(source: string): SyntaxNode | undefined {
 }
 
 export function previewTitle(source: string, title: string): TitlePreview {
-  if (!title.trim() || /[\r\n]/.test(title)) throw new Error("请输入单行章名。");
+  if (!title.trim() || /[\r\n]/.test(title)) throw new UserFacingError("Enter a chapter title on a single line.");
   const bom = source.startsWith("\uFEFF") ? "\uFEFF" : "";
   const body = source.slice(bom.length);
   const node = titleHeading(body);

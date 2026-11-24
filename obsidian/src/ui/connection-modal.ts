@@ -1,3 +1,5 @@
+import { UserFacingError } from "../user-error";
+import { errorMessage } from "./conflict-modal";
 import { Modal, type App } from "obsidian";
 import { connectAccount, DEFAULT_ORIGIN } from "../remote/account";
 import type { DeviceCredentials } from "../remote/credentials";
@@ -22,7 +24,10 @@ export class ConnectionModal extends Modal {
   }
 
   private async remember(active: AccountIdentity | null, cleanup: readonly AccountIdentity[]): Promise<void> {
-    await this.save(active, cleanup);
+    try { await this.save(active, cleanup); }
+    catch (error: unknown) {
+      throw new UserFacingError("Unable to save the account settings. Check that the vault is writable.", {cause: error});
+    }
     this.identity = active;
     this.cleanup = cleanup;
   }
@@ -37,23 +42,23 @@ export class ConnectionModal extends Modal {
     this.message = "";
     this.render();
     try { await action(); }
-    catch (error: unknown) { this.message = error instanceof Error ? error.message : "账号操作失败。"; }
+    catch (error: unknown) { this.message = errorMessage(error, "Account operation failed."); }
     finally { this.busy = false; this.render(); }
   }
 
   private render(): void {
     const el = this.contentEl;
     el.empty();
-    this.setTitle("连接 Peerpedia 账号");
-    const site = el.createEl("label", {text:"站点地址 "}).createEl("input", {type:"url"});
+    this.setTitle("Connect Peerpedia account");
+    const site = el.createEl("label", {text:"Site URL "}).createEl("input", {type:"url"});
     site.value = this.identity?.origin ?? this.draftOrigin;
     site.disabled = this.busy || this.identity !== null;
-    if (this.identity) el.createEl("p", {text:"用户名：" + this.identity.username});
-    const tokenLabel = this.identity ? "访问令牌（留空使用本机令牌） " : "访问令牌 ";
+    if (this.identity) el.createEl("p", {text:"Username: " + this.identity.username});
+    const tokenLabel = this.identity ? "Access token (leave blank to use the saved token) " : "Access token ";
     const secret = el.createEl("label", {text:tokenLabel}).createEl("input", {type:"password"});
     secret.autocomplete = "off";
     secret.disabled = this.busy;
-    const connect = el.createEl("button", {text:this.busy ? "处理中…" : "连接并验证账号"});
+    const connect = el.createEl("button", {text:this.busy ? "Working…" : "Connect and verify account"});
     connect.disabled = this.busy;
     connect.onclick = (): void => {
       const origin = site.value.trim();
@@ -63,24 +68,24 @@ export class ConnectionModal extends Modal {
       secret.value = "";
       void this.act(async (): Promise<void> => {
         const token = entered || (this.identity && await this.credentials.read(origin, this.identity.username));
-        if (!token) throw new Error("请输入访问令牌。");
+        if (!token) throw new UserFacingError("Enter an access token.");
         this.verified = await connectAccount(origin, token, this.transport, this.credentials, this.identity?.username,
           (identity: AccountIdentity): Promise<void> => this.remember(identity, this.excluding(identity)));
       });
     };
     if (this.verified && this.identity) {
       const account = this.verified;
-      el.createEl("p", {text:"权限：" + (account.scopes.join("、") || "无")});
-      el.createEl("p", {text:"令牌到期：" + account.expiresAt});
-      el.createEl("p", {text:`协议 ${account.agreement.version}：${account.agreement.accepted ? "已接受" : "未接受"}`});
-      const link = el.createEl("a", {text:"查看协议", href:account.agreement.url});
+      el.createEl("p", {text:"Permissions: " + (account.scopes.join(", ") || "None")});
+      el.createEl("p", {text:"Token expires: " + account.expiresAt});
+      el.createEl("p", {text:`Publishing agreement ${account.agreement.version}: ${account.agreement.accepted ? "Accepted" : "Awaiting acceptance"}`});
+      const link = el.createEl("a", {text:"View agreement", href:account.agreement.url});
       link.target = "_blank";
       link.rel = "noopener noreferrer";
       const device = this.credentials.persistence(this.identity.origin,this.identity.username) === "keychain";
-      el.createEl("p", {text:device ? "令牌已保存到本机钥匙串。" : "令牌仅在本次会话有效，未保存到钥匙串。"});
+      el.createEl("p", {text:device ? "The token is stored in this Mac’s Keychain." : "The token is available for this session only."});
     }
     if (this.identity) {
-      const disconnect = el.createEl("button", {text:"断开并移除本机凭据"});
+      const disconnect = el.createEl("button", {text:"Disconnect and remove local credentials"});
       disconnect.disabled = this.busy;
       disconnect.onclick = (): void => {
         void this.act(async (): Promise<void> => {
@@ -90,24 +95,24 @@ export class ConnectionModal extends Modal {
           const pending = this.excluding(previous);
           try {
             await this.credentials.remove(previous.origin, previous.username);
-            this.message = "已断开并移除本机凭据。";
+            this.message = "Account disconnected and local credentials removed.";
           } catch {
             pending.push(previous);
-            this.message = "已清除会话令牌。钥匙串恢复后可重试移除旧凭据。";
+            this.message = "The session token was cleared. Retry removing the saved credentials when Keychain is available.";
           }
           await this.remember(null, pending);
         });
       };
     }
     for (const target of this.cleanup) {
-      el.createEl("p", {text:`钥匙串条目待清理：${target.username}（${target.origin}）。`});
-      const retry = el.createEl("button", {text:"重试移除旧凭据"});
+      el.createEl("p", {text:`Keychain removal pending for ${target.username} (${target.origin}).`});
+      const retry = el.createEl("button", {text:"Retry removing saved credentials"});
       retry.disabled = this.busy;
       retry.onclick = (): void => {
         void this.act(async (): Promise<void> => {
           await this.credentials.remove(target.origin, target.username);
           await this.remember(this.identity, this.excluding(target));
-          this.message = "已移除旧凭据。";
+          this.message = "Saved credentials removed.";
         });
       };
     }

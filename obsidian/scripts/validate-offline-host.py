@@ -203,8 +203,8 @@ def verify(page: Page, context: BrowserContext, vault: Path, package: Path, evid
         "writingScope": {"folders": {PROJECT: True}, "files": {proof: False}},
     }
     assert page.evaluate("app.commands.executeCommandById('peerpedia:connect-account')")
-    modal = next(window.locator(".modal").filter(has_text="连接 Peerpedia 账号") for window in context.pages
-                 if window.locator(".modal").filter(has_text="连接 Peerpedia 账号").count())
+    modal = next(window.locator(".modal").filter(has_text="Connect Peerpedia account") for window in context.pages
+                 if window.locator(".modal").filter(has_text="Connect Peerpedia account").count())
     assert modal.locator('input[type="url"]').input_value() == "https://peerpedia.dev"
     modal.locator('input[type="password"]').fill("synthetic-never-submitted")
     modal.locator(".modal-header-button").click()
@@ -214,7 +214,7 @@ def verify(page: Page, context: BrowserContext, vault: Path, package: Path, evid
     assert page.evaluate("app.commands.executeCommandById('peerpedia:preview-paper')")
     preview = page.locator(".peerpedia-preview")
     status = preview.get_by_role("status")
-    status.get_by_text("预览已更新", exact=True).wait_for(timeout=45_000)
+    status.get_by_text("Preview updated", exact=True).wait_for(timeout=45_000)
     frame = next(frame for frame in page.frames if frame.url == "about:srcdoc")
     assert frame.locator("svg").count() == 1
     assert frame.locator(".katex").count()
@@ -233,7 +233,7 @@ def verify(page: Page, context: BrowserContext, vault: Path, package: Path, evid
     # Native keyboard input exercises the regular source edit, autosave and live preview paths.
     page.keyboard.insert_text("\n\n" + EDIT)
     frame.get_by_text(EDIT, exact=True).wait_for(timeout=45_000)
-    status.get_by_text("预览已更新", exact=True).wait_for()
+    status.get_by_text("Preview updated", exact=True).wait_for()
     for _ in range(80):
         if EDIT in (vault / proof).read_text():
             break
@@ -257,7 +257,7 @@ def verify(page: Page, context: BrowserContext, vault: Path, package: Path, evid
     frame.evaluate("window.scrollTo(0, document.body.scrollHeight)")
     assert page.evaluate("sourceLeaf.view.file.path") == proof
     assert page.evaluate("sourceLeaf.view.editor.getCursor()") == cursor
-    preview.get_by_role("button", name="定位源码", exact=True).click()
+    preview.get_by_role("button", name="Go to source", exact=True).click()
     page.wait_for_function("""/** @param {string} path @returns {boolean} */ path =>
         sourceLeaf.view.file.path === path""", arg=intro)
     print("PASS preview scroll leaves source alone, explicit location opens the other chapter", flush=True)
@@ -266,11 +266,11 @@ def verify(page: Page, context: BrowserContext, vault: Path, package: Path, evid
     frame.get_by_text(EDIT, exact=True).wait_for()
     page.evaluate("void (window.goodSource = sourceLeaf.view.editor.getValue())")
     page.evaluate("sourceLeaf.view.editor.setValue(window.goodSource + '\\n\\n$\\\\badCommand$')")
-    status.get_by_text("显示上次成功预览", exact=False).wait_for(timeout=45_000)
+    status.get_by_text("Showing the last successful preview", exact=False).wait_for(timeout=45_000)
     assert frame.get_by_text(EDIT, exact=True).count() == 1
-    assert preview.get_by_role("button", name="定位源码", exact=True).is_disabled()
+    assert preview.get_by_role("button", name="Go to source", exact=True).is_disabled()
     page.evaluate("sourceLeaf.view.editor.setValue(window.goodSource)")
-    status.get_by_text("预览已更新", exact=True).wait_for(timeout=45_000)
+    status.get_by_text("Preview updated", exact=True).wait_for(timeout=45_000)
     print("PASS invalid math kept the last good preview; correcting the source recovered it", flush=True)
 
     # Pause one fixture-only renderer during a new diagram request, keeping the packaged bytes intact.
@@ -281,7 +281,7 @@ def verify(page: Page, context: BrowserContext, vault: Path, package: Path, evid
         status.get_by_text("Rendering timed out after 40 seconds.", exact=False).wait_for(timeout=52_000)
         assert frame.locator("svg").count() == 1
         assert frame.get_by_text(EDIT, exact=True).count() == 1
-        assert preview.get_by_role("button", name="定位源码", exact=True).is_disabled()
+        assert preview.get_by_role("button", name="Go to source", exact=True).is_disabled()
     finally:
         # The actual timeout normally already killed the stopped process.
         if paused in renderer_processes(runtime):
@@ -290,7 +290,7 @@ def verify(page: Page, context: BrowserContext, vault: Path, package: Path, evid
     page.evaluate("""/** @param {string} text @returns {void} */ text =>
         sourceLeaf.view.editor.setValue(window.goodSource + '\\n\\n' + text)""", recovered)
     frame.get_by_text(recovered, exact=True).wait_for(timeout=45_000)
-    status.get_by_text("预览已更新", exact=True).wait_for()
+    status.get_by_text("Preview updated", exact=True).wait_for()
     assert renderer_processes(runtime) and paused not in renderer_processes(runtime)
     print("PASS controlled diagram stall timed out after 40 seconds, retained preview and restarted the renderer", flush=True)
 

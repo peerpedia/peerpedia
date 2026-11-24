@@ -47,7 +47,7 @@ test("historical working version is compared even when accepted is current; conf
   expect(await store.loadBinding(root)).toEqual(binding);
   const changes = planMergedFiles(project,resolveMerge(comparison.result,{}));
   vi.mocked(api.current).mockResolvedValueOnce(prior);
-  await expect(applyMerge(project,changes,comparison.check,store,api)).rejects.toThrow(/重新比较/);
+  await expect(applyMerge(project,changes,comparison.check,store,api)).rejects.toThrow(/compare the versions again/i);
   expect(await store.loadBinding(root)).toEqual(binding);
   await writeFile(join(vault,root,"paper.md"),"external");
   await expect(applyMerge(project,changes,comparison.check,store,api)).rejects.toThrow();
@@ -91,7 +91,7 @@ test("new head uses the newest verified ordinal from this proposal and advances 
   expect(await store.loadBinding(root)).toEqual(bound);
   const changes = planMergedFiles(project,resolveMerge(comparison.result,{}));
   vi.mocked(api.prs).mockResolvedValueOnce([{...head,status:"withdrawn"}]);
-  await expect(applyMerge(project,changes,comparison.check,store,api)).rejects.toThrow(/重新比较/);
+  await expect(applyMerge(project,changes,comparison.check,store,api)).rejects.toThrow(/compare the versions again/i);
   expect(await store.loadBinding(root)).toEqual(bound);
   await applyMerge(project,changes,comparison.check,store,api);
   expect(await store.loadBinding(root)).toMatchObject({acceptedBase:prior,workingBase:latest,lastSubmitted:submitted,activePr:head});
@@ -112,7 +112,7 @@ test("unproved historic ancestry requires manual choices and a wrong proposal re
   expect((): unknown => resolveMerge(comparison.result,{})).toThrow();
   await expect(applyMerge(project,[],comparison.check,store,api)).rejects.toThrow();
   exact.mockResolvedValueOnce({snapshot:latest,proposal:{id:latest.paperId,number:3}});
-  await expect(prepareMerge(project,"proposal",store,api)).rejects.toThrow(/提案版本/);
+  await expect(prepareMerge(project,"proposal",store,api)).rejects.toThrow(/proposal version/i);
   expect(await store.loadBinding(root)).toEqual(bound);
 });
 
@@ -135,9 +135,9 @@ test("an unsaved buffer and a cancel in the confirm recheck both precede intent 
   const native = new VaultProjectStore(vault,events,{buffers:(path:string):readonly string[] => path.endsWith("paper.md") ? ["unsaved in pane"] : []});
   const project = await native.read(root), comparison = await prepareMerge(project,"accepted",native,api);
   const changes = planMergedFiles(project,resolveMerge(comparison.result,{}));
-  await expect(applyMerge(project,changes,comparison.check,native,api,():boolean => false)).rejects.toThrow(/已取消/);
+  await expect(applyMerge(project,changes,comparison.check,native,api,():boolean => false)).rejects.toThrow(/merge canceled/i);
   expect((await native.recovery(root)).length).toBe(0);
-  await expect(applyMerge(project,changes,comparison.check,native,api)).rejects.toThrow(/尚未保存/);
+  await expect(applyMerge(project,changes,comparison.check,native,api)).rejects.toThrow(/unsaved changes/i);
   expect((await native.readBindingVersion(root)).pendingMerge).toBe(false);
   expect((await native.read(root)).revision).toEqual(project.revision);
 });
@@ -167,7 +167,7 @@ test("restart before journal or after partial files never advances the baseline"
   fault.mockRestore();
   // Manifest last: first created chapter is still outside the original membership.
   expect(await readFile(join(vault,root,"chapters/intro.md"),"utf8")).toBe(current.document.chapters[0].markdown);
-  await expect(reopened.recoverMerge(root)).rejects.toThrow(/部分写入/);
+  await expect(reopened.recoverMerge(root)).rejects.toThrow(/partially saved/i);
   expect((await reopened.readBindingVersion(root)).pendingMerge).toBe(true);
   expect(await reopened.loadBinding(root)).toEqual(binding);
   expect((await reopened.recovery(root)).length).toBeGreaterThan(0);
@@ -223,7 +223,7 @@ test("restart after binding commit verifies its exact successor before closing t
   fault.mockRestore();
   const first = await store.readBindingVersion(root);
   expect(first).toMatchObject({pendingMerge:true,binding:{workingBase:current}});
-  await expect(store.saveBinding(root,binding,first.digest)).rejects.toThrow(/合并/);
+  await expect(store.saveBinding(root,binding,first.digest)).rejects.toThrow(/unfinished merge/i);
   const reopened = new VaultProjectStore(vault,events);
   await reopened.recoverMerge(root);
   expect(await reopened.readBindingVersion(root)).toMatchObject({pendingMerge:false,digest:first.digest});
@@ -248,7 +248,7 @@ test.each([false,true])("another process cannot recover a live pre-journal write
     const ready = await Promise.race([once(child,"message"),exited]);
     expect(ready,errors).toEqual(["before-journal",undefined]);
     expect((await store.readBindingVersion(root)).pendingMerge).toBe(true);
-    await expect(store.recoverMerge(root)).rejects.toThrow(/正在|占用/);
+    await expect(store.recoverMerge(root)).rejects.toThrow(/saving this paper|already exists/i);
     expect((await store.readBindingVersion(root)).pendingMerge).toBe(true);
     if (kill) child.kill("SIGKILL");
     else child.send("resume");
@@ -279,11 +279,11 @@ test("a status-only writer paused just before publication excludes merge and pre
   checked = checkProject(root,api,new VaultProjectStore(vault,events));
   await paused;
   try {
-    await expect(applyMerge(project,changes,comparison.check,store,api)).rejects.toThrow(/正在|占用/);
+    await expect(applyMerge(project,changes,comparison.check,store,api)).rejects.toThrow(/saving this paper|already exists/i);
     expect((await store.read(root)).revision).toBe(project.revision);
     expect((await store.readBindingVersion(root)).pendingMerge).toBe(false);
   } finally { resume(); await checked; }
-  await expect(applyMerge(project,changes,comparison.check,store,api)).rejects.toThrow(/重新比较/);
+  await expect(applyMerge(project,changes,comparison.check,store,api)).rejects.toThrow(/compare the versions again/i);
   const fresh = await prepareMerge(project,"accepted",store,api);
   await applyMerge(project,planMergedFiles(project,resolveMerge(fresh.result,{})),fresh.check,store,api);
   expect(await store.loadBinding(root)).toMatchObject({workingBase:current});

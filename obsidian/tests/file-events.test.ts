@@ -30,7 +30,7 @@ test("a draft captured during scope migration survives the original pane being e
     leaf.view = {getViewType: (): string => "empty"};
   });
   try {
-    await expect(move.reconnect(target.path)).rejects.toThrow(/编辑器/);
+    await expect(move.reconnect(target.path)).rejects.toThrow(/editor/i);
     expect(move.drafts?.()).toEqual(["重接期间的输入"]);
   } finally { move.dispose?.(); }
   expect(listener).toBeUndefined();

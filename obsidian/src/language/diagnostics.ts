@@ -14,9 +14,9 @@ export function definitionDiagnostics(group: readonly LabelTarget[]): Diagnostic
   for (const target of group) {
     const { key, path, from, to, label } = target;
     if (!isValidLabel(key)) {
-      result.push({ path, from, to, message: `无效标签「${label}」。` });
+      result.push({ path, from, to, message: `Invalid label "${label}".` });
     } else if (group.length > 1) {
-      result.push({ path, from, to, message: `重复标签「${label}」。` });
+      result.push({ path, from, to, message: `Duplicate label "${label}".` });
     }
   }
   return result;
@@ -31,8 +31,8 @@ export function referenceDiagnostics(
   for (const { key, from, to } of references) {
     const count = labels.get(key)?.length ?? 0;
     if (count !== 1 || !isValidLabel(key)) {
-      const message = !isValidLabel(key) ? `无效引用「${key}」。`
-        : count === 0 ? `找不到引用「${key}」的定义。` : `引用「${key}」有多个定义。`;
+      const message = !isValidLabel(key) ? `Invalid reference "${key}".`
+        : count === 0 ? `No definition found for "${key}".` : `Multiple definitions found for "${key}".`;
       result.push({ path, from, to, message });
     }
   }

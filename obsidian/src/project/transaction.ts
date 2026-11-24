@@ -1,3 +1,4 @@
+import { UserFacingError, userErrorMessage } from "../user-error";
 import { randomUUID } from "node:crypto";
 import { dirname, join } from "node:path";
 import { AnchoredFiles } from "./anchored-files";
@@ -28,13 +29,13 @@ export interface WriteHost {
 const reserved = new Set([".obsidian", ".git", ".peerpedia", ".peerpedia-obsidian"]);
 
 interface ObservedVersion { path: string; disk: string | null; editors: readonly string[] }
-export class PreconditionConflict extends Error {
+export class PreconditionConflict extends UserFacingError {
   constructor(message: string, readonly observed?: ObservedVersion) { super(message); }
 }
 
 export function safePath(path: string): void {
   if (!isRelativePath(path) || path.split("/").some((part: string): boolean => reserved.has(pathKey(part)))) {
-    throw new Error(`文件路径无效：${path}`);
+    throw new UserFacingError(`Invalid file path: ${path}`);
   }
 }
 
@@ -90,12 +91,12 @@ export async function keepConflict(tree: AnchoredFiles, project: ProjectSnapshot
 
 function writeFailure(error: unknown): string {
   const code = (error as NodeJS.ErrnoException | null)?.code;
-  if (code === "EEXIST") return "目标路径已被占用。";
-  if (code === "ENOSPC") return "磁盘空间不足。";
-  if (code === "ENOENT") return "写入期间文件或文件夹被移走。";
-  if (code) return "磁盘无法完成此次文件操作。";
-  if (error instanceof ProjectReadError) return `请核对「${error.issue.path}」的文件内容与路径。`;
-  return error instanceof Error && /[\u3400-\u9fff]/.test(error.message) ? error.message : "写入未完成。";
+  if (code === "EEXIST") return "The destination path already exists.";
+  if (code === "ENOSPC") return "There is not enough disk space.";
+  if (code === "ENOENT") return "A file or folder was moved during the save.";
+  if (code) return userErrorMessage(error, "The file operation could not be completed.");
+  if (error instanceof ProjectReadError) return `Check the contents and path of "${error.issue.path}".`;
+  return userErrorMessage(error, "The save did not complete.");
 }
 
 export async function writeTransaction(
@@ -106,7 +107,7 @@ export async function writeTransaction(
   const vaultPath = (path: string): string => root ? root + "/" + path : path;
   const manifest = changes.find((change: FileChange): boolean => change.path === CONFIG_PATH);
   const config = manifest ? parsePaperConfig(manifest.afterText ?? "") : base?.config;
-  if (!config) throw new Error("论文缺少 paper.json。");
+  if (!config) throw new UserFacingError("The paper is missing paper.json.");
   const members = new Set([...projectMembers(config), ...(base ? projectMembers(base.config) : [])]);
   const ordered = [...changes].sort((a: FileChange, b: FileChange): number =>
     Number(a.path === CONFIG_PATH) - Number(b.path === CONFIG_PATH));
@@ -115,7 +116,7 @@ export async function writeTransaction(
   for (const change of ordered) {
     safePath(change.path);
     const key = pathKey(change.path);
-    if (!members.has(change.path) || (keys.has(key) && !(caseOnly && change.path === move?.to))) throw new Error(`文件不属于这次论文修改或路径重复：${change.path}`);
+    if (!members.has(change.path) || (keys.has(key) && !(caseOnly && change.path === move?.to))) throw new UserFacingError(`The path is repeated or does not belong to this change: ${change.path}`);
     keys.add(key);
   }
   const baseMembers = new Set(base ? projectMembers(base.config) : []);
@@ -128,13 +129,13 @@ export async function writeTransaction(
     if (caseOnly && path === move?.to) { expected.set(path, version(undefined)); continue; }
     const current = await tree.source(join(root, path), identities);
     if (base && baseMembers.has(path) && current?.digest !== original.get(path)?.digest) {
-      throw new PreconditionConflict(`文件已更改，请重新载入：${path}`, {path, disk:current?.text ?? null, editors:[...host.buffers?.(vaultPath(path)) ?? []]});
+      throw new PreconditionConflict(`The file changed. Reload "${path}".`, {path, disk:current?.text ?? null, editors:[...host.buffers?.(vaultPath(path)) ?? []]});
     }
     expected.set(path, version(current));
   }
   const files = ordered.map((change: FileChange): JournalFile => {
     const current = expected.get(change.path)!;
-    if (current.digest !== change.beforeDigest) throw new PreconditionConflict(`文件已更改，请重新载入：${change.path}`);
+    if (current.digest !== change.beforeDigest) throw new PreconditionConflict(`The file changed. Reload "${change.path}".`);
     return { ...change, beforeText: current.text };
   }).filter((file: JournalFile): boolean => file.beforeText !== file.afterText);
   const priorBuffers = new Map<string, string | null>();
@@ -145,7 +146,7 @@ export async function writeTransaction(
       if (normalized(buffer) !== normalized(current.text) &&
           (!priorBuffers.has(path) || normalized(buffer) !== normalized(priorBuffers.get(path)!))) {
         conflicts.set(path, {path, disk:current.text, editors:[...buffers]});
-        throw new PreconditionConflict(`编辑器中有尚未保存的更改：${path}。请先核对并保存。`, conflicts.get(path));
+        throw new PreconditionConflict(`There are unsaved changes in "${path}". Review and save them first.`, conflicts.get(path));
       }
     }
   };
@@ -156,7 +157,7 @@ export async function writeTransaction(
     const observed = version(await tree.source(join(root,path)));
     if (observed.digest !== current.digest) {
       conflicts.set(path, {path, disk:observed.text, editors:[...host.buffers?.(vaultPath(path)) ?? []]});
-      throw new Error(`文件已被其他程序更改：${path}`);
+      throw new UserFacingError(`"${path}" was changed by another application.`);
     }
     checkBuffers(path, current);
   };
@@ -192,7 +193,7 @@ export async function writeTransaction(
         await tree.directories(join(root, dirname(move.to)));
         await check(move.to);
         await check(move.from);
-        if (!host.prepareRename) throw new Error("无法连接 Obsidian 章节窗格。");
+        if (!host.prepareRename) throw new UserFacingError("Unable to reconnect the Obsidian chapter pane.");
         const moved = join(journal, "moved.md");
         const destination = join(root, move.to);
         // Exercise both primitives on this volume before moving any manuscript.
@@ -211,7 +212,7 @@ export async function writeTransaction(
         await tree.sync(journal);
         try {
           const source = await tree.source(moved);
-          if (source?.digest !== file.beforeDigest) throw new Error("移动时原文件已更改，已保留外部内容。");
+          if (source?.digest !== file.beforeDigest) throw new UserFacingError("The original file changed during the move. The external version was saved.");
           await tree.file(staged, source!.text, mode);
           tree.copyMetadata(moved, staged, true)(moved);
           published.set(move.to, tree.publicationSignal(staged,destination));
@@ -244,7 +245,7 @@ export async function writeTransaction(
         }
         // The displaced file survives even if another editor replaced it during the syscall.
         if ((await tree.source(staged))?.digest !== file.beforeDigest) {
-          throw new Error(`替换时发现外部更改，已保留移出的文件：${file.path}`);
+          throw new UserFacingError(`"${file.path}" changed during replacement. The displaced file was saved.`);
         }
       }
       await tree.sync(dirname(target));
@@ -260,13 +261,13 @@ export async function writeTransaction(
       if ((actual.get(path) ?? null) !== expected.get(path)?.digest) {
         const disk = result.files.find((file: SourceFile): boolean => file.path === path)?.text ?? null;
         conflicts.set(path, {path, disk, editors:[...host.buffers?.(vaultPath(path)) ?? []]});
-        throw new Error(`读取结果时文件已更改：${path}`);
+        throw new UserFacingError(`"${path}" changed while checking the saved result.`);
       }
     }
     for (const path of expected.keys()) await check(path);
     // Reconnection and the final disk checks can yield to editor-change. Close
     // the capture window synchronously before the first completion-marker write.
-    if (openMove?.drafts?.().length) throw new Error("移动期间编辑器收到新内容，已保留恢复记录。");
+    if (openMove?.drafts?.().length) throw new UserFacingError("The editor received new content during the move. A recovery record was saved.");
     openMove?.dispose?.();
     openMove = undefined;
     await tree.file(join(journal, "complete"), "ok\n");
@@ -291,7 +292,7 @@ export async function writeTransaction(
     }
     await tree.file(join(journal, "observed.json"), JSON.stringify(observed, null, 2));
     await tree.sync(journal);
-    throw new Error(`${writeFailure(error)}（已保留恢复记录）`, { cause: error });
+    throw new UserFacingError(`${writeFailure(error)} A recovery record was saved.`, { cause: error });
   }
   // Retention also preserves writes through external old descriptors after completion.
   return result;

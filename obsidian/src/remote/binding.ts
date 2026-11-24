@@ -1,3 +1,4 @@
+import { UserFacingError } from "../user-error";
 import { randomUUID } from "node:crypto";
 import { join } from "node:path";
 import { isDeepStrictEqual } from "node:util";
@@ -82,11 +83,11 @@ async function records(tree: AnchoredFiles, dir: string, visit?: (binding: Remot
   catch (error: unknown) { if (!isMissing(error)) throw error; names = []; }
   const initial = await tree.source(join(dir,first));
   if (!initial) {
-    if (names.length) throw new Error("绑定历史缺少初始版本。");
+    if (names.length) throw new UserFacingError("The initial version is missing from the binding history.");
     return {binding:null,digest:null,count:0};
   }
   const rootRecord = object(JSON.parse(initial.text));
-  if (rootRecord.previous !== null) throw new Error("绑定初始版本无效。");
+  if (rootRecord.previous !== null) throw new UserFacingError("The initial binding version is invalid.");
   let binding = decodeBinding(rootRecord.binding);
   visit?.(binding);
   let digest = initial.digest;
@@ -94,15 +95,15 @@ async function records(tree: AnchoredFiles, dir: string, visit?: (binding: Remot
   const expected = new Set(names);
   for (let index = 1; index <= names.length; ++index) {
     const name = index + ".json";
-    if (!expected.has(name)) throw new Error("绑定历史不连续，请核对本地状态。");
+    if (!expected.has(name)) throw new UserFacingError("The binding history has a gap. Check the local binding.");
     const entry = await tree.source(join(dir,history,name));
-    if (!entry) throw new Error("绑定历史记录缺失。");
+    if (!entry) throw new UserFacingError("A binding history record is missing.");
     const record = object(JSON.parse(entry.text));
-    if (record.previous !== digest || Object.keys(record).length !== 2) throw new Error("绑定历史摘要不一致。");
+    if (record.previous !== digest || Object.keys(record).length !== 2) throw new UserFacingError("The binding history digest does not match.");
     if ("checkedAt" in record) binding = {...binding,checkedAt:checkedTime(record.checkedAt)};
     else {
       const next = decodeBinding(record.binding);
-      if (next.origin !== binding.origin || next.paperId !== binding.paperId) throw new Error("论文绑定身份已更改。");
+      if (next.origin !== binding.origin || next.paperId !== binding.paperId) throw new UserFacingError("The paper binding points to a different site or paper.");
       binding = next;
       visit?.(binding);
     }
@@ -114,7 +115,7 @@ async function records(tree: AnchoredFiles, dir: string, visit?: (binding: Remot
 
 export async function bindingAtDigest(tree:AnchoredFiles, root:string, expected:string):Promise<RemoteBinding> {
   const version = await records(tree,join(root,state),undefined,expected);
-  if (version.digest !== expected || !version.binding) throw new Error("Could not verify the original binding for this submission.");
+  if (version.digest !== expected || !version.binding) throw new UserFacingError("Could not verify the original binding for this submission.");
   return version.binding;
 }
 
@@ -132,14 +133,14 @@ export async function writeVersion(tree: AnchoredFiles, root: string, binding: R
   const dir = join(root,state);
   const {binding:previous,digest,count} = await records(tree,dir);
   const push = await tree.source(join(dir,"submit-pending.json"));
-  if (push && (!submissionId || object(object(JSON.parse(push.text)).request).id !== submissionId)) throw new Error("Resolve the pending submission first.");
+  if (push && (!submissionId || object(object(JSON.parse(push.text)).request).id !== submissionId)) throw new UserFacingError("Resolve the pending submission first.");
   const intent = await tree.source(join(dir,"merge-pending.json"));
-  if (intent && (!mergeTransaction || object(JSON.parse(intent.text)).transaction !== mergeTransaction)) throw new Error("请先处理未完成的合并。");
-  if (digest !== expectedDigest) throw new Error("本地绑定已更改，请重新检查。");
-  if (!previous && await tree.source(join(dir,pending))) throw new Error("请先完成导入绑定。");
-  if (!push && !await tree.source(join(root,"paper.json"))) throw new Error("论文缺少 paper.json。");
+  if (intent && (!mergeTransaction || object(JSON.parse(intent.text)).transaction !== mergeTransaction)) throw new UserFacingError("Resolve the unfinished merge first.");
+  if (digest !== expectedDigest) throw new UserFacingError("The local binding changed. Check it again.");
+  if (!previous && await tree.source(join(dir,pending))) throw new UserFacingError("Finish the import binding first.");
+  if (!push && !await tree.source(join(root,"paper.json"))) throw new UserFacingError("The paper is missing paper.json.");
   const verified = decodeBinding(binding);
-  if (previous && (previous.origin !== verified.origin || previous.paperId !== verified.paperId)) throw new Error("论文绑定身份已更改。");
+  if (previous && (previous.origin !== verified.origin || previous.paperId !== verified.paperId)) throw new UserFacingError("The paper binding points to a different site or paper.");
   if (isDeepStrictEqual(previous,verified)) return;
   const timeOnly = previous && isDeepStrictEqual({...previous,checkedAt:verified.checkedAt},verified);
   const record = timeOnly ? {previous:digest,checkedAt:verified.checkedAt} : {previous:digest,binding:verified};
@@ -167,23 +168,23 @@ interface PendingImport {
 
 export async function readPendingImport(tree: AnchoredFiles, root: string): Promise<PendingImport> {
   const dir = join(root,state);
-  if (await tree.source(join(dir,first))) throw new Error("论文已有正式绑定，请重新打开面板核对。");
+  if (await tree.source(join(dir,first))) throw new UserFacingError("The paper already has a binding. Reopen the paper panel to check it.");
   const staged = await tree.source(join(dir,pending));
-  if (!staged) throw new Error("找不到待完成的导入绑定。");
+  if (!staged) throw new UserFacingError("No pending import binding was found.");
   const record = object(JSON.parse(staged.text));
   const binding = decodeBinding(record.binding);
   const revision = checksum(record.importRevision);
-  if (record.previous !== null || importedRevision(binding.workingBase) !== revision) throw new Error("待恢复的导入记录与工作快照不符。");
+  if (record.previous !== null || importedRevision(binding.workingBase) !== revision) throw new UserFacingError("The import recovery record does not match the working snapshot.");
   return {binding,revision,digest:staged.digest};
 }
 
 export async function finishImport(tree: AnchoredFiles, root: string, revision: string, binding: RemoteBinding): Promise<void> {
   const intent = await readPendingImport(tree,root);
-  if (intent.revision !== revision || !isDeepStrictEqual(intent.binding,binding)) throw new Error("导入文件或绑定已更改，请核对恢复记录。");
+  if (intent.revision !== revision || !isDeepStrictEqual(intent.binding,binding)) throw new UserFacingError("The imported files or binding changed. Check the recovery record.");
   const dir = join(root,state);
   tree.rename(join(dir,pending),join(dir,first),"publish");
   await tree.sync(dir);
-  if ((await tree.source(join(dir,first)))?.digest !== intent.digest) throw new Error("无法确认导入绑定，请打开论文面板核对。");
+  if ((await tree.source(join(dir,first)))?.digest !== intent.digest) throw new UserFacingError("The import binding could not be confirmed. Open the paper panel to check it.");
 }
 
 export async function isBindingSuccessor(tree: AnchoredFiles, root: string, binding: RemoteBinding, previous: string|null): Promise<boolean> {
@@ -204,6 +205,6 @@ export async function readProposalBase(tree: AnchoredFiles, root: string, propos
     if (activePr?.id === proposalId && activePr.hash === workingBase.hash && activePr.submissionId === workingBase.submissionId)
       candidate = workingBase;
   });
-  if (tip.digest !== digest) throw new Error("本地绑定已更改，请重新比较。");
+  if (tip.digest !== digest) throw new UserFacingError("The local binding changed. Compare the versions again.");
   return candidate;
 }

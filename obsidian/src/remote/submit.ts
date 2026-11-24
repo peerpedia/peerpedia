@@ -1,3 +1,4 @@
+import { UserFacingError } from "../user-error";
 import { randomUUID } from "node:crypto";
 import { isDeepStrictEqual as equal } from "node:util";
 import { toPublicationDocument, type PublicationDocument } from "../project/publication";
@@ -22,10 +23,10 @@ export function defaultIntent(binding: RemoteBinding|null, username: string): Su
 }
 
 export function checkAccount(account: AccountInfo, username: string, intent: SubmissionIntent): void {
-  if (account.username !== username) throw new Error("The token belongs to a different account. Connect the account that prepared this submission.");
-  if (!account.scopes.includes(intent === "publish" ? "publish" : "propose")) throw new Error("The token lacks the required submission scope.");
-  if (Date.parse(account.expiresAt) <= Date.now()) throw new Error("The token has expired. Reconnect your account.");
-  if (!account.agreement.accepted) throw new Error("Read and accept the publishing agreement on the website at " + account.agreement.url);
+  if (account.username !== username) throw new UserFacingError("The token belongs to a different account. Connect the account that prepared this submission.");
+  if (!account.scopes.includes(intent === "publish" ? "publish" : "propose")) throw new UserFacingError("The token lacks the required submission scope.");
+  if (Date.parse(account.expiresAt) <= Date.now()) throw new UserFacingError("The token has expired. Reconnect your account.");
+  if (!account.agreement.accepted) throw new UserFacingError("Read and accept the publishing agreement on the website.");
 }
 
 // Django CharField uses Python str.strip(), including U+001C–U+001F and U+0085.
@@ -35,7 +36,7 @@ function formText(value: string): string {
 
 function shortText(raw: unknown, max: number): string {
   const value = nonempty(raw);
-  if (value !== formText(value) || Array.from(value).length > max || value.includes("\0")) throw new Error("Check the length and formatting of the title, authors, abstract and submission explanation.");
+  if (value !== formText(value) || Array.from(value).length > max || value.includes("\0")) throw new UserFacingError("Check the length and formatting of the title, authors, abstract and submission explanation.");
   return value;
 }
 
@@ -85,12 +86,12 @@ export function prepareSubmission(project: ProjectSnapshot, binding: RemoteBindi
   details: SubmissionDetails, selectedOrigin?: string): PreparedSubmission {
   const agreementOrigin = new URL(account.agreement.url).origin;
   const origin = exactOrigin(selectedOrigin ?? agreementOrigin).origin;
-  if (origin !== agreementOrigin || (binding && binding.origin !== origin)) throw new Error("The selected site differs from the account or paper binding.");
+  if (origin !== agreementOrigin || (binding && binding.origin !== origin)) throw new UserFacingError("The selected site differs from the account or paper binding.");
   checkAccount(account,account.username,intent);
   const initial = intent === "publish";
-  if (initial !== !binding || (intent === "append-pr" && defaultIntent(binding,account.username) !== intent)) throw new Error("The paper or proposal is unavailable for this submission.");
+  if (initial !== !binding || (intent === "append-pr" && defaultIntent(binding,account.username) !== intent)) throw new UserFacingError("The paper or proposal is unavailable for this submission.");
   const doc = publication(project);
-  if (binding && binding.acceptedBase.document.license && binding.acceptedBase.document.license !== doc.license) throw new Error("A proposal must use the paper’s existing license.");
+  if (binding && binding.acceptedBase.document.license && binding.acceptedBase.document.license !== doc.license) throw new UserFacingError("A proposal must use the paper’s existing license.");
   const payloadJson = JSON.stringify({...doc,paper_id:binding?.paperId ?? null,base_hash:binding?.acceptedBase.hash ?? null,
     explanation:formText(details.explanation) || (initial ? "Initial publication." : ""),ai_assisted:details.aiAssisted,
     ...(intent === "append-pr" ? {pull_request_id:binding!.activePr!.id,expected_head:binding!.activePr!.hash} : {})});

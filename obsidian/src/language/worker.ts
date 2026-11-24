@@ -1,3 +1,5 @@
+import { userErrorMessage } from "../user-error";
+import { ProjectReadError } from "../project/types";
 import { toPublicationDocument } from "../project/publication";
 import { citationImpact, previewCitationRename, validateNewCitationKey } from "../bibliography/rename";
 import { previewTitle } from "./title-preview";
@@ -52,7 +54,7 @@ port.addEventListener("message", ({ data: request }: MessageEvent<LanguageReques
       }
     }
   } catch (error: unknown) {
-    response = { id: request.id, kind: "error", message: error instanceof Error ? error.message : String(error) };
+    response = { id: request.id, kind: "error", message: error instanceof ProjectReadError ? error.issue.message : userErrorMessage(error, "BananaMark could not process the source.") };
   }
   port.postMessage(response);
 });

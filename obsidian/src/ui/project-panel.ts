@@ -1,3 +1,4 @@
+import { UserFacingError } from "../user-error";
 import { randomUUID } from "node:crypto";
 import { ItemView, Modal, Notice, type ViewStateResult, type WorkspaceLeaf } from "obsidian";
 import type { TitlePreview } from "../language/title-preview";
@@ -46,7 +47,7 @@ export class ProjectPanel extends ItemView {
     private readonly transport: Transport, private readonly submissions?: SubmissionController) { super(leaf); }
 
   override getViewType(): string { return PROJECT_PANEL; }
-  override getDisplayText(): string { return "论文管理"; }
+  override getDisplayText(): string { return "Paper management"; }
   override getIcon(): string { return "book-open"; }
   override getState(): Record<string, unknown> { return { root: this.root }; }
   override async setState(state: unknown, result: ViewStateResult): Promise<void> {
@@ -108,7 +109,7 @@ export class ProjectPanel extends ItemView {
 
   async revealRecovery(root: string, record: RecoveryNotice): Promise<void> {
     const form = new Modal(this.app);
-    form.setTitle("恢复文件");
+    form.setTitle("Recovery files");
     form.contentEl.addClass("peerpedia-paper-form");
     form.contentEl.createEl("p", { text: record.message });
     try {
@@ -121,8 +122,8 @@ export class ProjectPanel extends ItemView {
           details.createEl("pre", { text: version.text });
         }
       }
-    } catch { form.contentEl.createEl("p", { text: "部分内容无法读取，可到文件夹中检查原件。" }); }
-    button(form.contentEl, "在访达中显示", (): void => {
+    } catch { form.contentEl.createEl("p", { text: "Some content could not be read. Check the original files in the recovery folder." }); }
+    button(form.contentEl, "Reveal in Finder", (): void => {
       void this.store.localPath(root, RECOVERY_DIR + "/" + record.transactionId)
         .then((path: string): Promise<void> => openLocalFile(path, true))
         .catch((error: unknown): void => { new Notice(errorMessage(error)); });
@@ -150,19 +151,19 @@ export class ProjectPanel extends ItemView {
     this.contentEl.empty();
     this.contentEl.addClass("peerpedia-project-panel");
     const actions = this.contentEl.createDiv({ cls: "peerpedia-actions" });
-    button(actions, "打开论文", (): void => {
-      const form = new PaperForm(this.app, "打开论文");
-      const folder = form.field("库内文件夹（库根目录留空）", this.root ?? "");
-      form.submit("打开", async (): Promise<void> => { await this.selectRoot(folder.value.trim()); });
+    button(actions, "Open paper", (): void => {
+      const form = new PaperForm(this.app, "Open paper");
+      const folder = form.field("Folder in the vault (blank for vault root)", this.root ?? "");
+      form.submit("Open", async (): Promise<void> => { await this.selectRoot(folder.value.trim()); });
       form.open();
     });
-    button(actions, "新建论文", (): void => this.createForm());
-    button(actions, "从站点导入", (): void => this.importForm());
-    if (this.root !== null) this.contentEl.createEl("p", { text: this.root || "库根目录", cls: "setting-item-description" });
+    button(actions, "Create paper", (): void => this.createForm());
+    button(actions, "Import from Peerpedia", (): void => this.importForm());
+    if (this.root !== null) this.contentEl.createEl("p", { text: this.root || "Vault root", cls: "setting-item-description" });
     if (error && this.root !== null) {
       const root = this.root;
       this.contentEl.createEl("p", { text: errorMessage(error), attr: { role: "alert" } });
-      button(this.contentEl, "打开 paper.json 原文件", (): void => {
+      button(this.contentEl, "Open paper.json", (): void => {
         void this.store.localPath(root, CONFIG_PATH).then((path: string): Promise<void> => openLocalFile(path, false))
           .catch((err: unknown): void => { new Notice(errorMessage(err)); });
       });
@@ -171,15 +172,15 @@ export class ProjectPanel extends ItemView {
       const root = this.root!;
       const item = this.contentEl.createDiv();
       item.createEl("p", { text: record.message });
-      item.createEl("small", { text: record.paths.join("、") });
-      button(item, "查看恢复文件", (): void => {
+      item.createEl("small", { text: record.paths.join(", ") });
+      button(item, "View recovery files", (): void => {
         void this.revealRecovery(root, record).catch((err: unknown): void => { new Notice(errorMessage(err)); });
       });
     }
     if (this.bindingError) this.contentEl.createEl("p",{text:this.bindingError,attr:{role:"alert"}});
     if (this.binding?.pendingImport && this.root !== null) {
       const root = this.root;
-      button(this.contentEl,"完成导入绑定", (): void => {
+      button(this.contentEl,"Finish import binding", (): void => {
         void this.store.recoverImport(root).then(async (): Promise<void> => {
           if (this.root === root) await this.selectRoot(root);
         }).catch((err: unknown): void => { new Notice(errorMessage(err)); });
@@ -187,7 +188,7 @@ export class ProjectPanel extends ItemView {
     }
     if (this.binding?.pendingMerge && this.root !== null) {
       const root = this.root;
-      button(this.contentEl,"核对并恢复合并",(): void => {
+      button(this.contentEl,"Review and recover merge",(): void => {
         void this.store.recoverMerge(root).then(async (): Promise<void> => {
           if (this.root === root) await this.selectRoot(root);
         }).catch((err: unknown): void => { new Notice(errorMessage(err)); });
@@ -206,9 +207,9 @@ export class ProjectPanel extends ItemView {
     }
     if (!project) return;
     this.renderRemote(project);
-    this.contentEl.createEl("h3", { text: project.config.title || "未命名论文" });
-    button(this.contentEl, "编辑论文信息", (): void => this.metadataForm(project));
-    this.contentEl.createEl("h4", { text: "正文" });
+    this.contentEl.createEl("h3", { text: project.config.title || "Untitled paper" });
+    button(this.contentEl, "Edit paper details", (): void => this.metadataForm(project));
+    this.contentEl.createEl("h4", { text: "Manuscript" });
     const chapters = project.config.chapters ?? [];
     if (!chapters.length) this.contentEl.createEl("p", { text: "paper.md" });
     const list = this.contentEl.createEl("ol");
@@ -225,12 +226,12 @@ export class ProjectPanel extends ItemView {
         if (!data) return;
         try {
           const [revision, id]: [string, string] = JSON.parse(data);
-          if (revision !== project.revision) throw new Error("拖动期间论文已更改，请重新排序。");
+          if (revision !== project.revision) throw new UserFacingError("The paper changed while dragging. Reorder the chapters again.");
           this.move(project, id, index);
         } catch (err: unknown) { new Notice(errorMessage(err)); }
       };
       const file = project.files.find((f: SourceFile): boolean => f.path === chapter.file);
-      const heading = row.createEl("strong", { text: file ? chapter.title || chapter.file : "原文件缺失" });
+      const heading = row.createEl("strong", { text: file ? chapter.title || chapter.file : "Source file missing" });
       if (file) {
         let cached = this.titles.get(file.path);
         if (!cached || cached.digest !== file.digest) {
@@ -238,18 +239,18 @@ export class ProjectPanel extends ItemView {
           this.titles.set(file.path, cached);
         }
         void cached.title.then((title: string): void => {
-          if (heading.isConnected && this.snapshot === project) heading.setText(title === "Untitled chapter" ? "未命名章节" : title);
+          if (heading.isConnected && this.snapshot === project) heading.setText(title);
         }).catch((): void => {});
       }
       row.createDiv({ text: chapter.file, cls: "setting-item-description" });
       const tools = row.createDiv({ cls: "peerpedia-actions" });
-      button(tools, "上移", (): void => this.move(project, chapter.id, index - 1)).disabled = index === 0;
-      button(tools, "下移", (): void => this.move(project, chapter.id, index + 1)).disabled = index === chapters.length - 1;
-      button(tools, "改章名", (): void => this.titleForm(project, chapter)).disabled = !file;
-      button(tools, "重命名文件", (): void => this.renameForm(project, chapter)).disabled = !file;
-      button(tools, "移出论文", (): void => this.removeForm(project, chapter));
+      button(tools, "Move up", (): void => this.move(project, chapter.id, index - 1)).disabled = index === 0;
+      button(tools, "Move down", (): void => this.move(project, chapter.id, index + 1)).disabled = index === chapters.length - 1;
+      button(tools, "Rename chapter", (): void => this.titleForm(project, chapter)).disabled = !file;
+      button(tools, "Rename file", (): void => this.renameForm(project, chapter)).disabled = !file;
+      button(tools, "Remove from paper", (): void => this.removeForm(project, chapter));
     });
-    button(this.contentEl, "添加章节", (): void => this.addForm(project));
+    button(this.contentEl, "Add chapter", (): void => this.addForm(project));
     renderBibliography(this.contentEl, {
       app: this.app, store: this.store, worker: this.languageWorker, project,
       save: (snapshot: ProjectSnapshot, changes: readonly FileChange[]): Promise<void> => this.save(snapshot, changes),
@@ -259,7 +260,7 @@ export class ProjectPanel extends ItemView {
   importForm(): void {
     new ImportModal(this.app,this.origin(),this.transport,this.store,async (project: ProjectSnapshot): Promise<void> => {
       await this.selectRoot(project.root);
-      await this.enableFolder(project.root).catch((): void => { new Notice("请在设置中启用写作辅助。"); });
+      await this.enableFolder(project.root).catch((): void => { new Notice("Enable writing assistance in Settings."); });
     }).open();
   }
 
@@ -267,13 +268,13 @@ export class ProjectPanel extends ItemView {
     const binding = this.binding?.binding, digest = this.binding?.digest;
     if (!binding || !digest) return;
     const box = this.contentEl.createDiv();
-    box.createEl("p",{text:"绑定站点：" + binding.origin});
-    box.createEl("p",{text:"本地文件：" + (project.revision === importedRevision(binding.workingBase) ? "与工作基准一致" : "有更改")});
-    box.createEl("p",{text:"上次主动检查：" + new Date(binding.checkedAt).toLocaleString()});
+    box.createEl("p",{text:"Bound site: " + binding.origin});
+    box.createEl("p",{text:"Local files: " + (project.revision === importedRevision(binding.workingBase) ? "Match the working version" : "Changed")});
+    box.createEl("p",{text:"Last remote check: " + new Date(binding.checkedAt).toLocaleString("en")});
     if (this.observation) {
-      box.createEl("p",{text:"已检查的当前版本：" + (this.observation.current.publicId ?? this.observation.current.hash)});
-      box.createEl("p",{text:this.observation.activePr ? "关联提案：" + this.observation.activePr.status : "此次检查未找到关联提案。"});
-    } else box.createEl("p",{text:"关联提案状态：本次打开后尚未检查"});
+      box.createEl("p",{text:"Current version at last check: " + (this.observation.current.publicId ?? this.observation.current.hash)});
+      box.createEl("p",{text:this.observation.activePr ? "Linked proposal: " + this.observation.activePr.status : "No linked proposal was found during this check."});
+    } else box.createEl("p",{text:"Linked proposal status has not been checked since opening."});
     if (this.checkError) box.createEl("p",{text:this.checkError,attr:{role:"alert"}});
     const selection = this.selection;
     if (this.binding?.pendingMerge || this.binding?.pendingSubmission) return;
@@ -286,14 +287,14 @@ export class ProjectPanel extends ItemView {
         this.render();
       }).open();
     };
-    button(box,"比较已接受版本",(): void => compare("accepted"));
+    button(box,"Compare accepted version",(): void => compare("accepted"));
     if (binding.activePr || binding.proposalSource || binding.lastSubmitted || binding.workingBase.status !== "accepted" || this.observation?.activePr)
-      button(box,"比较开放提案",(): void => compare("proposal"));
+      button(box,"Compare open proposal",(): void => compare("proposal"));
     if (this.observation && this.observation.current.hash !== binding.acceptedBase.hash)
-      box.createEl("p",{text:"站点有尚未合并的已接受版本。"});
+      box.createEl("p",{text:"The site has an accepted version that has not been merged."});
     if (this.observation?.activePr?.status === "pending" && this.observation.activePr.hash !== binding.activePr?.hash)
-      box.createEl("p",{text:"关联提案有尚未合并的快照。"});
-    button(box,"检查远程版本", (): void => {
+      box.createEl("p",{text:"The linked proposal has a snapshot that has not been merged."});
+    button(box,"Check remote version", (): void => {
       if (this.checking) return;
       this.checking = true;
       this.checkError = undefined;
@@ -314,30 +315,30 @@ export class ProjectPanel extends ItemView {
   }
 
   createForm(): void {
-    const form = new PaperForm(this.app, "新建论文");
-    const folder = form.field("新文件夹（相对于库，父文件夹须存在）");
-    const title = form.field("论文标题");
-    const layout = form.contentEl.createEl("select", { attr: { "aria-label": "正文格式" } });
-    layout.createEl("option", { text: "单文件", value: "single" });
-    layout.createEl("option", { text: "多章节", value: "chapters" });
-    form.submit("创建", async (): Promise<void> => {
+    const form = new PaperForm(this.app, "Create paper");
+    const folder = form.field("New folder in the vault (parent folder must exist)");
+    const title = form.field("Paper title");
+    const layout = form.contentEl.createEl("select", { attr: { "aria-label": "Manuscript layout" } });
+    layout.createEl("option", { text: "Single file", value: "single" });
+    layout.createEl("option", { text: "Multiple chapters", value: "chapters" });
+    form.submit("Create", async (): Promise<void> => {
       const root = folder.value.trim();
       await this.store.create(root, newPaper(title.value.trim(), layout.value === "chapters"));
       await this.selectRoot(root);
-      await this.enableFolder(root).catch((): void => { new Notice("论文已创建，请在设置中启用写作辅助。"); });
+      await this.enableFolder(root).catch((): void => { new Notice("Paper created. Enable writing assistance in Settings."); });
     });
     form.open();
   }
 
   private metadataForm(project: ProjectSnapshot): void {
-    const form = new PaperForm(this.app, "编辑论文信息");
+    const form = new PaperForm(this.app, "Edit paper details");
     const config = project.config;
-    const title = form.field("标题", config.title);
-    const authors = form.field("作者", config.authors);
-    const abstract = form.field("摘要", config.abstract, true);
-    const category = form.field("主分类", config.primary_category);
-    const secondary = form.field("其他分类（用逗号分隔）", config.secondary_categories.join(", "));
-    const license = form.field("许可", config.license);
+    const title = form.field("Title", config.title);
+    const authors = form.field("Authors", config.authors);
+    const abstract = form.field("Abstract", config.abstract, true);
+    const category = form.field("Primary subject", config.primary_category);
+    const secondary = form.field("Secondary subjects (comma-separated)", config.secondary_categories.join(", "));
+    const license = form.field("License", config.license);
     const catalog = this.submissions?.catalog(this.binding?.binding?.origin ?? this.origin());
     if (catalog) {
       const addOptions = (input: HTMLInputElement|HTMLTextAreaElement, options: readonly [string,string][]): void => {
@@ -349,7 +350,7 @@ export class ProjectPanel extends ItemView {
       addOptions(category,catalog.categories.map((c:Category):[string,string] => [c.id,c.name]));
       addOptions(license,catalog.licenses.map((v:LicenseOption):[string,string] => [v.code,v.label]));
     }
-    form.submit("保存到 paper.json", (): Promise<void> => this.save(project, [configChange(project, {
+    form.submit("Save to paper.json", (): Promise<void> => this.save(project, [configChange(project, {
       ...config, title: title.value, authors: authors.value, abstract: abstract.value, primary_category: category.value,
       secondary_categories: secondary.value.split(/[,，]/).map((s: string): string => s.trim()).filter(Boolean), license: license.value,
     })]));
@@ -357,26 +358,26 @@ export class ProjectPanel extends ItemView {
   }
 
   private titleForm(project: ProjectSnapshot, chapter: ChapterSpec): void {
-    const form = new PaperForm(this.app, "修改章名");
+    const form = new PaperForm(this.app, "Rename chapter");
     const original = project.files.find((file: SourceFile): boolean => file.path === chapter.file)!;
-    const title = form.field("章名", chapter.title);
+    const title = form.field("Chapter title", chapter.title);
     const preview = form.contentEl.createDiv();
     const current = (): boolean => form.contentEl.isConnected && this.snapshot?.revision === project.revision && this.root === project.root;
     const initial = form.request.begin(current);
     void this.languageWorker.run("title",original.text).then((name: string): void => {
       if (initial()) title.value = name;
     }).catch((): void => {});
-    button(form.contentEl, "预览源码修改", (): void => {
+    button(form.contentEl, "Preview source changes", (): void => {
       preview.empty();
       const valid = form.request.begin(current);
       void this.languageWorker.run("previewTitle",{source:original.text, title:title.value}).then((result: TitlePreview): void => {
         if (!valid()) return;
         const edits = chapterTitleEdit(project,chapter,result);
         preview.createEl("p", {text:chapter.file});
-        preview.createEl("strong", {text:"修改前"}); preview.createEl("pre", {text:result.before || "（文件开头）"});
-        preview.createEl("strong", {text:"修改后"}); preview.createEl("pre", {text:result.after});
-        const save = button(preview,"确认修改源码",(): void => {
-          if (!valid()) { preview.setText("论文已更改，请重新载入。"); return; }
+        preview.createEl("strong", {text:"Before"}); preview.createEl("pre", {text:result.before || "(start of file)"});
+        preview.createEl("strong", {text:"After"}); preview.createEl("pre", {text:result.after});
+        const save = button(preview,"Confirm source changes",(): void => {
+          if (!valid()) { preview.setText("The paper changed. Reload it and try again."); return; }
           save.disabled = true;
           void this.save(project,edits).then((): void => form.close()).catch((): void => {save.disabled = false;});
         });
@@ -387,12 +388,12 @@ export class ProjectPanel extends ItemView {
   }
 
   private renameForm(project: ProjectSnapshot, chapter: ChapterSpec): void {
-    const form = new PaperForm(this.app, "重命名章节文件");
+    const form = new PaperForm(this.app, "Rename chapter file");
     if (openBuffers(this.app, project.root ? project.root + "/" + chapter.file : chapter.file).length) {
-      form.contentEl.createEl("p", { text: "打开的窗格会转到新路径，之前的撤销记录会清空。" });
+      form.contentEl.createEl("p", { text: "Open panes will follow the renamed file. Undo history will be cleared." });
     }
-    const path = form.field("论文内的新路径", chapter.file);
-    form.submit("重命名", async (): Promise<void> => {
+    const path = form.field("New path within the paper folder", chapter.file);
+    form.submit("Rename", async (): Promise<void> => {
       try { await this.store.renameChapter(project, chapter.id, path.value.trim()); }
       catch (error: unknown) { await this.conflict(project.root, error); throw error; }
       await this.reload();
@@ -401,24 +402,24 @@ export class ProjectPanel extends ItemView {
   }
 
   private addForm(project: ProjectSnapshot): void {
-    const form = new PaperForm(this.app, "添加章节");
-    const path = form.field("论文内的 Markdown 文件路径");
-    form.contentEl.createEl("p", { text: "选择已有文件，或输入新文件名创建空白章节。" });
+    const form = new PaperForm(this.app, "Add chapter");
+    const path = form.field("Markdown path within the paper folder");
+    form.contentEl.createEl("p", { text: "Choose an existing file or enter a new file name to create an empty chapter." });
     path.oninput = (): void => form.request.cancel();
-    form.submit("添加", async (): Promise<void> => {
+    form.submit("Add", async (): Promise<void> => {
       const current = form.request.begin((): boolean =>
         form.contentEl.isConnected && this.snapshot?.revision === project.revision && this.root === project.root);
       const file = path.value.trim();
-      if (!/\.md$/i.test(file)) throw new Error("请输入 .md 文件路径。");
+      if (!/\.md$/i.test(file)) throw new UserFacingError("Enter a .md file path.");
       const existing = await this.store.member(project.root,file);
       const chapters = [...project.config.chapters ?? []];
       if (!chapters.length && file !== "paper.md") {
         const body = project.files.find((f: SourceFile): boolean => f.path === "paper.md");
         chapters.push({file:"paper.md", id:randomUUID(), title:body ? await this.languageWorker.run("title",body.text) : ""});
       }
-      if (chapters.some((ch: ChapterSpec): boolean => ch.file === file)) throw new Error("此文件已是论文成员。");
+      if (chapters.some((ch: ChapterSpec): boolean => ch.file === file)) throw new UserFacingError("This file already belongs to the paper.");
       chapters.push({file,id:randomUUID(),title:await this.languageWorker.run("title",existing?.text ?? "")});
-      if (!current()) throw new Error("文件或表单已更改，请重新核对。");
+      if (!current()) throw new UserFacingError("The file or form changed. Review it and try again.");
       await this.save(project, [{ path: file, beforeDigest: existing?.digest ?? null, afterText: existing?.text ?? "" },
         changeMembership(project, chapters)]);
     });
@@ -426,11 +427,11 @@ export class ProjectPanel extends ItemView {
   }
 
   private removeForm(project: ProjectSnapshot, chapter: ChapterSpec): void {
-    const form = new PaperForm(this.app, "移出章节");
+    const form = new PaperForm(this.app, "Remove chapter");
     const remaining = project.config.chapters!.filter((item: ChapterSpec): boolean => item.id !== chapter.id);
-    form.contentEl.createEl("p", { text: `「${chapter.file}」的原文件会保留。` });
-    if (!remaining.length) form.contentEl.createEl("p", { text: "移出后，论文将使用单文件正文 paper.md。" });
-    form.submit("确认移出", async (): Promise<void> => {
+    form.contentEl.createEl("p", { text: `The source file "${chapter.file}" will be kept.` });
+    if (!remaining.length) form.contentEl.createEl("p", { text: "The paper will use paper.md as its single manuscript file." });
+    form.submit("Confirm removal", async (): Promise<void> => {
       const changes = [changeMembership(project, remaining)];
       if (!remaining.length && !await this.store.member(project.root, "paper.md")) {
         changes.push({ path: "paper.md", beforeDigest: null, afterText: "" });

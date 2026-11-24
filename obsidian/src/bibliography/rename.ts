@@ -1,3 +1,4 @@
+import { UserFacingError } from "../user-error";
 import type { Diagnostic } from "../language/diagnostics";
 import { inlineReferences, isValidLabel, scanBibliography, scanChapter, type LabelTarget, type Range, type Reference } from "../language/index";
 import { projectMembers } from "../project/members";
@@ -36,13 +37,13 @@ interface Edit extends Range {
 
 function bibliography(project: ProjectSnapshot): SourceFile {
   const file = project.files.find((item: SourceFile): boolean => item.path === project.config.bibliography);
-  if (!file) throw new Error("找不到共享书目原文件。");
+  if (!file) throw new UserFacingError("The shared bibliography file is missing.");
   return file;
 }
 
 function entry(file: SourceFile, key: string): BibliographyEntry {
   const found = readEntries(file.text).find((item: BibliographyEntry): boolean => item.key === key);
-  if (!found) throw new Error(`找不到条目「${key}」。`);
+  if (!found) throw new UserFacingError(`Entry "${key}" was not found.`);
   return found;
 }
 
@@ -52,10 +53,10 @@ function scanChapters(project: ProjectSnapshot): { labels: LabelTarget[]; chapte
   for (const path of projectMembers(project.config).slice(1)) {
     if (path === project.config.bibliography) continue;
     const file = project.files.find((item: SourceFile): boolean => item.path === path);
-    if (!file) throw new Error(`找不到正文原文件「${path}」。`);
+    if (!file) throw new UserFacingError(`The manuscript file "${path}" was not found.`);
     const scanned = scanChapter(file.text, path);
     if (scanned.diagnostics.some((issue: Diagnostic): boolean => issue.code === "bibliography-yaml")) {
-      throw new Error(`「${path}」包含无法读取的内嵌书目，请先修正。`);
+      throw new UserFacingError(`Fix the unreadable inline bibliography in "${path}" first.`);
     }
     labels.push(...scanned.labels);
     chapters.push({ file, references: scanned.references, bibliographies: scanned.bibliographies });
@@ -176,7 +177,7 @@ export function citationImpact(project: ProjectSnapshot, key: string): readonly 
 function checkedKey(key: string): string {
   const normalized = key.normalize("NFC");
   // Leading "-" is an operator in bare/braced citations.
-  if (!isValidLabel(normalized) || normalized.startsWith("-")) throw new Error("请输入有效的引用键。");
+  if (!isValidLabel(normalized) || normalized.startsWith("-")) throw new UserFacingError("Enter a valid citation key.");
   return normalized;
 }
 
@@ -187,7 +188,7 @@ export function validateNewCitationKey(project: ProjectSnapshot, key: string): v
   const { labels } = scanChapters(project);
   labels.push(...scanBibliography(file.text, file.path).labels);
   if (labels.some((item: LabelTarget): boolean => item.key === normalized)) {
-    throw new Error(`引用键「${key}」已存在。`);
+    throw new UserFacingError(`Citation key "${key}" already exists.`);
   }
 }
 
@@ -196,13 +197,13 @@ export function previewCitationRename(project: ProjectSnapshot, from: string, to
   entry(file, from);
   const oldKey = from.normalize("NFC");
   const newKey = checkedKey(to);
-  if (from === to) throw new Error("请输入不同的引用键。");
+  if (from === to) throw new UserFacingError("Enter a different citation key.");
   const { labels, chapters } = scanChapters(project);
   labels.push(...scanBibliography(file.text, file.path).labels);
   const oldLabels = labels.filter((item: LabelTarget): boolean => item.key === oldKey);
-  if (oldLabels.length !== 1) throw new Error(`引用键「${from}」有多个定义或无法定位。`);
+  if (oldLabels.length !== 1) throw new UserFacingError(`Citation key "${from}" has multiple definitions or could not be located.`);
   if (oldKey !== newKey && labels.some((item: LabelTarget): boolean => item.key === newKey)) {
-    throw new Error(`引用键「${to}」已存在。`);
+    throw new UserFacingError(`Citation key "${to}" already exists.`);
   }
   const keys = new Set([oldKey]);
   const { changes, references } = searchChapters(chapters, keys, to);

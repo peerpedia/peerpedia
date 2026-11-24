@@ -16,7 +16,7 @@ export class BibliographySourceView extends ItemView {
   }
 
   override getDisplayText(): string {
-    return "书目源码";
+    return "Bibliography source";
   }
 
   show(path: string, source: string, target: Range): void {
@@ -25,7 +25,7 @@ export class BibliographySourceView extends ItemView {
     this.contentEl.createEl("h2", { text: path });
     const text = this.contentEl.createEl("textarea", {
       cls: "peerpedia-bibliography-text",
-      attr: { readonly: "", "aria-label": `书目源码 ${path}`, wrap: "off" },
+      attr: { readonly: "", "aria-label": `Bibliography source for ${path}`, wrap: "off" },
     });
     text.value = editorText(source);
     const from = editorOffset(source, target.from);
@@ -73,5 +73,5 @@ export async function openSourceTarget(
 }
 
 export function warnNavigationFailure(): void {
-  new Notice("源码已更改或无法打开。请再次跳转。");
+  new Notice("The source changed or could not be opened. Try navigating to it again.");
 }

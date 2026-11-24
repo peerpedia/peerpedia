@@ -1,10 +1,11 @@
+import { UserFacingError } from "../user-error";
 import { createHash } from "node:crypto";
 import type { PublicationDocument } from "../project/publication";
 import { isPublicId, isUuid } from "./links";
 import type { JsonValue, VerifiedSnapshot } from "./types";
 
-export class ProtocolError extends Error {
-  constructor() { super("站点返回的数据不符合版本协议或内容摘要。"); }
+export class ProtocolError extends UserFacingError {
+  constructor() { super("The site returned invalid or unverifiable version data."); }
 }
 
 export function object(value: unknown): Record<string, unknown> {

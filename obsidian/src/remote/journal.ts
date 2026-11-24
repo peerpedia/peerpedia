@@ -1,3 +1,4 @@
+import { UserFacingError } from "../user-error";
 import { randomUUID } from "node:crypto";
 import { join } from "node:path";
 import { isDeepStrictEqual as equal } from "node:util";
@@ -67,7 +68,7 @@ async function readPending(tree: AnchoredFiles, root: string): Promise<Pending|n
   return pending;
 }
 function requirePending(pending: Pending|null, request: PreparedSubmission): asserts pending is Pending {
-  if (!pending || !equal(pending.request,request)) throw new Error("The original submission was processed or changed. Reopen the paper.");
+  if (!pending || !equal(pending.request,request)) throw new UserFacingError("The original submission was processed or changed. Reopen the paper.");
 }
 function filename(request: PreparedSubmission, kind: string): string { return "submit-" + request.id + "-" + kind + ".json"; }
 async function retire(tree: AnchoredFiles, root: string, request: PreparedSubmission, kind: string): Promise<void> {
@@ -111,18 +112,18 @@ export class SubmissionJournal {
   async persistRequest(root: string, input: PreparedSubmission, expectedDigest?: string|null, live?: ()=>boolean, reviewed?:AppendHead|null): Promise<void> {
     const request = decodeRequest(input);
     await this.locked(root,async (tree: AnchoredFiles, readCurrent: ()=>Promise<ProjectSnapshot>): Promise<void> => {
-      if (await readPending(tree,root)) throw new Error("A submission is awaiting confirmation. Retry the saved request.");
+      if (await readPending(tree,root)) throw new UserFacingError("A submission is awaiting confirmation. Retry the saved request.");
       const {binding,digest,pendingImport,pendingMerge} = await readVersion(tree,root);
-      if (pendingImport || pendingMerge || (expectedDigest !== undefined && expectedDigest !== digest)) throw new Error("Check the paper binding and recover any unfinished operation first.");
+      if (pendingImport || pendingMerge || (expectedDigest !== undefined && expectedDigest !== digest)) throw new UserFacingError("Check the paper binding and recover any unfinished operation first.");
       const {paper_id,base_hash,pull_request_id,expected_head,explanation,ai_assisted,...doc} = frozenPayload(request);
       if (binding ? binding.origin !== request.origin || binding.paperId !== paper_id || binding.acceptedBase.hash !== base_hash : paper_id !== null)
-        throw new Error("The submission base changed. Review it again.");
+        throw new UserFacingError("The submission base changed. Review it again.");
       const pending:Pending = {request,previous:digest};
       if (pull_request_id) {
         const head = binding?.activePr;
         const confirmed = head ? head.id === pull_request_id && head.hash === expected_head && head.owner === request.username && head.status === "pending"
           : !!binding && binding.workingBase.hash === expected_head && binding.workingBase.manifest.contributor_name === request.username;
-        if (!confirmed) throw new Error("The proposal head changed. Review it again.");
+        if (!confirmed) throw new UserFacingError("The proposal head changed. Review it again.");
         const prior = head ?? binding!.workingBase;
         pending.head = predecessor({id:pull_request_id,hash:prior.hash,submissionId:prior.submissionId,number:reviewed?.number ?? null},request);
         if (reviewed && !equal(reviewed,pending.head)) throw new ProtocolError();
@@ -130,11 +131,11 @@ export class SubmissionJournal {
       const dir = join(root,state);
       await tree.directories(dir);
       for (const kind of ["complete","rejected","receipt"]) {
-        if (await tree.source(join(dir,filename(request,kind)))) throw new Error("This request has already been processed. Check the original submission.");
+        if (await tree.source(join(dir,filename(request,kind)))) throw new UserFacingError("This request has already been processed. Check the original submission.");
       }
       const current = await readCurrent();
-      if (current.revision !== request.sourceRevision || !equal(doc,publication(current))) throw new Error("The manuscript changed. Preview it again before confirming.");
-      if (live && !live()) throw new Error("Submission canceled.");
+      if (current.revision !== request.sourceRevision || !equal(doc,publication(current))) throw new UserFacingError("The manuscript changed. Preview it again before confirming.");
+      if (live && !live()) throw new UserFacingError("Submission canceled.");
       await put(tree,root,pendingPush,{...pending,digest:digestRecord(pending)});
     });
   }
@@ -173,7 +174,7 @@ export class SubmissionJournal {
       // every immutable snapshot field and the associated PR ID and ordinal.
       const localReceipt:PushReceipt = {...receipt,snapshot:{...receipt.snapshot,status}};
       target = nextBinding(parent,request,localReceipt,binding.checkedAt);
-      if (!await isBindingSuccessor(tree,root,target,previous)) throw new Error("The paper binding changed. Review the saved receipt.");
+      if (!await isBindingSuccessor(tree,root,target,previous)) throw new UserFacingError("The paper binding changed. Review the saved receipt.");
     } else target = nextBinding(binding,request,receipt,saved.checkedAt);
     if (write) await put(tree,root,filename(request,"receipt"),{...saved,digest:digestRecord(saved)},write);
     if (!committed) await writeVersion(tree,root,target,previous,undefined,request.id);
@@ -194,7 +195,7 @@ export class SubmissionJournal {
       const pending = await readPending(tree,root);
       requirePending(pending,displayed);
       const saved = await this.saved(tree,root,pending.request,await this.storedHead(tree,root,pending));
-      if (!saved.verified) throw new Error("A verified receipt is unavailable. Retry the saved submission to retrieve it.");
+      if (!saved.verified) throw new UserFacingError("A verified receipt is unavailable. Retry the saved submission to retrieve it.");
       return this.finish(tree,root,pending,saved.verified);
     });
   }
@@ -227,7 +228,7 @@ export class SubmissionJournal {
 
   async retryPending(root: string, username: string, token: string, transport: Transport): Promise<VerifiedSnapshot> {
     const request = await this.pending(root);
-    if (!request || username !== request.username) throw new Error("Connect the account that prepared this request.");
+    if (!request || username !== request.username) throw new UserFacingError("Connect the account that prepared this request.");
     return this.sendPrepared(root,request,token,transport);
   }
 

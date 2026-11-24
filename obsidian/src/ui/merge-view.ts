@@ -10,18 +10,29 @@ import type { JsonValue, RemoteCheck } from "../remote/types";
 import { errorMessage } from "./conflict-modal";
 import { button } from "./paper-form";
 
-const labels: Record<string,string> = {title:"标题",authors:"作者",abstract:"摘要",primary_category:"主分类",secondary_categories:"其他分类",
-  license:"许可",markdown:"正文",bibliography:"书目",chapters:"章节",id:"章节 ID"};
+const labels: Record<string,string> = {title:"Title",authors:"Authors",abstract:"Abstract",primary_category:"Primary subject",secondary_categories:"Secondary subjects",
+  license:"License",markdown:"Manuscript",bibliography:"Bibliography",chapters:"Chapters",id:"Chapter ID"};
+function conflictLabel(target: string): string {
+  const [field, position] = target.split(" · ", 2);
+  const translated = ({
+    "章节顺序": "Chapter order", "正文": "Manuscript", "单文件与分章正文": "Single-file and chaptered manuscripts",
+    "正文与章节": "Manuscript and chapters", "书目 YAML": "Bibliography YAML", "书目开头": "Start of bibliography",
+  } as Record<string, string>)[field] ?? labels[field] ?? field
+    .replace(/^章节 /u, "Chapter ").replace(/^章名 /u, "Chapter title ").replace(/^书目条目 /u, "Bibliography entry ");
+  if (target.startsWith("书目条目 ")) return "Bibliography entry " + target.slice("书目条目 ".length);
+  if (position === undefined) return translated;
+  return translated + " · Line " + position.replace(/^第 (\d+) 行$/u, "$1");
+}
 function show(parent: HTMLElement, value: JsonValue): void {
   if (Array.isArray(value)) {
-    if (value.every((item: JsonValue): boolean => typeof item === "string")) parent.createEl("pre",{text:value.join("\n") || "（空）"});
+    if (value.every((item: JsonValue): boolean => typeof item === "string")) parent.createEl("pre",{text:value.join("\n") || "(empty)"});
     else for (const item of value) show(parent.createDiv(),item);
   } else if (value && typeof value === "object") {
     for (const [key,item] of Object.entries(value)) {
       parent.createEl("strong",{text:labels[key] ?? key});
       show(parent,item);
     }
-  } else parent.createEl("pre",{text:value === null ? "（无）" : String(value) || "（空）"});
+  } else parent.createEl("pre",{text:value === null ? "(none)" : String(value) || "(empty)"});
 }
 function section(parent: HTMLElement, title: string): HTMLElement {
   const details = parent.createEl("details");
@@ -35,7 +46,7 @@ function displayDoc(parent: HTMLElement, doc: PublicationDocument): void {
 type ReadEdit = () => JsonValue;
 function editor(parent: HTMLElement, label: string, original: JsonValue): ReadEdit {
   if (Array.isArray(original) && original.every((item: JsonValue): item is string => typeof item === "string")) {
-    const read = editor(parent,label + "（每行一项）",original.join("\n"));
+    const read = editor(parent,label + " (one per line)",original.join("\n"));
     return (): JsonValue => String(read()).split(/\r?\n/).filter(Boolean);
   }
   if (Array.isArray(original)) {
@@ -59,13 +70,13 @@ export class MergeView extends Modal {
   constructor(app: App, private readonly project: ProjectSnapshot, private readonly axis: MergeAxis, private readonly store: ProjectStore,
     private readonly api: PeerpediaApi, private readonly update: (observation?: RemoteCheck) => Promise<void>) {
     super(app);
-    this.setTitle(axis === "accepted" ? "比较已接受版本" : "比较开放提案");
+    this.setTitle(axis === "accepted" ? "Compare accepted version" : "Compare open proposal");
     this.contentEl.addClass("peerpedia-paper-form");
   }
   override onClose(): void { ++this.generation; }
   override onOpen(): void {
     const id = ++this.generation;
-    this.contentEl.setText("正在读取远程版本…");
+    this.contentEl.setText("Loading the remote version…");
     void prepareMerge(this.project,this.axis,this.store,this.api).then((comparison: Comparison): void => {
       if (id === this.generation) this.renderComparison(comparison,id);
     }).catch((error: unknown): void => { if (id === this.generation) this.contentEl.setText(errorMessage(error)); });
@@ -75,28 +86,28 @@ export class MergeView extends Modal {
     const box = this.contentEl;
     box.empty();
     const {base,target,result} = comparison;
-    box.createEl("p",{text:(this.axis === "accepted" ? "已接受版本 " : "开放提案快照 ") + (target.publicId ?? target.hash)});
-    if (base) displayDoc(section(box,"共同版本 " + (base.publicId ?? base.hash)),base.document);
-    else box.createEl("p",{text:"无法确定共同版本。请逐项比较本地与远程来源并选择结果。"});
-    displayDoc(section(box,"本地全文"),toPublicationDocument(this.project));
-    displayDoc(section(box,"远程全文"),target.document);
+    box.createEl("p",{text:(this.axis === "accepted" ? "Accepted version " : "Open proposal snapshot ") + (target.publicId ?? target.hash)});
+    if (base) displayDoc(section(box,"Common version " + (base.publicId ?? base.hash)),base.document);
+    else box.createEl("p",{text:"No common version was found. Compare the local and remote sources and choose a result for each conflict."});
+    displayDoc(section(box,"Local manuscript"),toPublicationDocument(this.project));
+    displayDoc(section(box,"Remote manuscript"),target.document);
     const choices: Record<string,JsonValue> = Object.create(null);
-    const resultBox = section(box,"合并结果预览");
+    const resultBox = section(box,"Merge preview");
     const controls = box.createDiv();
     const status = box.createEl("p",{attr:{role:"status"}});
     const actions = box.createDiv({cls:"peerpedia-actions"});
-    button(actions,"取消",(): void => this.close());
-    const confirm = button(actions,"确认写入",(): void => {
+    button(actions,"Cancel",(): void => this.close());
+    const confirm = button(actions,"Confirm merge",(): void => {
       confirm.disabled = true;
       controls.inert = true;
       let saving = false;
       const save = async (): Promise<void> => {
         const changes = planMergedFiles(this.project,resolveMerge(result,choices));
-        status.setText("正在重新核对远程与本地版本…");
+        status.setText("Checking the remote and local versions again…");
         await applyMerge(this.project,changes,comparison.check,this.store,this.api,(): boolean => {
           if (id !== this.generation) return false;
           saving = true;
-          status.setText("正在写入论文与绑定。");
+          status.setText("Saving the paper and its binding…");
           actions.querySelectorAll("button").forEach((item: HTMLButtonElement): void => { item.disabled = true; });
           return true;
         });
@@ -105,7 +116,7 @@ export class MergeView extends Modal {
       };
       void save().catch(async (error: unknown): Promise<void> => {
         if (saving) await this.update().catch((): void => {});
-        const message = errorMessage(error) + " 请关闭后重新比较，或在论文管理面板核对恢复记录。";
+        const message = errorMessage(error) + " Close this window and compare again, or check recovery records in the paper panel.";
         if (id === this.generation) status.setText(message);
         else if (saving) new Notice(message);
       });
@@ -121,31 +132,31 @@ export class MergeView extends Modal {
         const document = resolveMerge(result,preview);
         displayDoc(resultBox,document);
         if (!pending.length) { planMergedFiles(this.project,document); confirm.disabled = false; }
-        status.setText(pending.length ? "尚有 " + pending.length + " 处需要选择，预览暂用本地内容。" : "已可确认写入。");
+        status.setText(pending.length ? "Unresolved conflicts: " + pending.length + ". The preview uses local content for those conflicts." : "Ready to confirm the merge.");
       } catch (error: unknown) { status.setText(errorMessage(error)); }
     };
     for (const c of result.conflicts) {
       const row = controls.createDiv({cls:"peerpedia-merge-conflict"});
-      row.createEl("h4",{text:labels[c.target] ?? c.target});
-      if (base) show(section(row,"原内容"),c.base);
-      show(section(row,"本地内容"),c.local);
-      show(section(row,"远程内容"),c.remote);
+      row.createEl("h4",{text:conflictLabel(c.target)});
+      if (base) show(section(row,"Original content"),c.base);
+      show(section(row,"Local content"),c.local);
+      show(section(row,"Remote content"),c.remote);
       const selected = row.createEl("p"), editBox = row.createDiv();
       const choose = (value: JsonValue,label: string): void => {
         choices[c.id] = value;
-        selected.setText("已选择：" + label);
+        selected.setText("Selected: " + label);
         editBox.empty();
         refresh();
       };
-      button(row,"采用本地",(): void => choose(c.local,"本地"));
-      button(row,"采用远程",(): void => choose(c.remote,"远程"));
-      button(row,"编辑结果",(): void => {
+      button(row,"Use local",(): void => choose(c.local,"Local"));
+      button(row,"Use remote",(): void => choose(c.remote,"Remote"));
+      button(row,"Edit result",(): void => {
         const initial = Object.hasOwn(choices,c.id) ? choices[c.id] : c.local ?? c.remote;
         delete choices[c.id];
-        selected.setText("正在编辑");
+        selected.setText("Editing");
         editBox.empty();
-        const read = editor(editBox,"结果",initial);
-        button(editBox,"使用编辑结果",(): void => choose(read(),"编辑结果"));
+        const read = editor(editBox,"Result",initial);
+        button(editBox,"Use edited result",(): void => choose(read(),"Edit result"));
         refresh();
       });
     }

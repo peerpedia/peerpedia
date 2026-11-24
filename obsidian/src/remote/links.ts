@@ -1,3 +1,4 @@
+import { UserFacingError } from "../user-error";
 import { exactOrigin } from "./transport";
 import type { RemoteTarget } from "./types";
 
@@ -14,7 +15,7 @@ export function isPublicId(value: unknown): value is string {
 
 export function parseRemoteLink(input: string, origin: string): RemoteTarget {
   exactOrigin(origin);
-  const invalid = new Error("请输入所选站点的论文、快照或版本阅读链接。");
+  const invalid = new UserFacingError("Enter a paper, snapshot, or version reading link from the selected site.");
   const match = /^https?:\/\/[^/?#]+(\/[^?#]*)/iu.exec(input);
   if (!match || /[\\\x00-\x20\x7f]/u.test(input)) throw invalid;
   let url: URL;

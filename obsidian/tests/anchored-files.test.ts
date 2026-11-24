@@ -49,9 +49,9 @@ test("closing prevents delayed callbacks from using released or reused directory
     tree.rename("stage", "live", "publish");
     const pending = tree.sync(".");
     tree.close();
-    expect(announce).toThrow(/已结束/);
+    expect(announce).toThrow(/operation has ended/i);
     await pending;
-    await expect(tree.file("unexpected", "late")).rejects.toThrow(/已结束/);
+    await expect(tree.file("unexpected", "late")).rejects.toThrow(/operation has ended/i);
     expect(await fs.readdir(base)).toEqual(["live"]);
   } finally { tree.close(); await fs.rm(base, { recursive: true, force: true }); }
 });
@@ -69,6 +69,6 @@ test("asking the host to observe publication preserves content and mtime and ver
     expect(await fs.readFile(join(base, "live"), "utf8")).toBe("已发布");
     await fs.rename(join(base, "live"), join(base, "saved"));
     await fs.writeFile(join(base, "live"), "other");
-    expect(signal).toThrow(/已改变/);
+    expect(signal).toThrow(/changed after it was saved/i);
   } finally { tree.close(); await fs.rm(base, { recursive: true, force: true }); }
 });

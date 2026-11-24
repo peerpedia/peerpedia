@@ -1,3 +1,4 @@
+import { UserFacingError } from "../user-error";
 import { CST, isAlias, isMap, isScalar, isSeq, parseDocument, stringify, visit, type Document, type Pair, type ParsedNode, type Scalar, type YAMLMap } from "yaml";
 
 export interface BibliographyEntry {
@@ -24,21 +25,21 @@ function stringKeys(node: unknown): node is Mapping {
 function parse(source: string): BibliographyDocument {
   const doc = parseDocument(source, { keepSourceTokens: true });
   const issue = doc.errors[0] ?? doc.warnings[0];
-  if (issue) throw new Error(`无法读取书目 YAML：${issue.message.split("\n")[0]}`);
+  if (issue) throw new UserFacingError(`Unable to read bibliography YAML: ${issue.message.split("\n")[0]}`);
   const mapping = doc.contents;
   if (mapping === null || (isScalar(mapping) && mapping.value === null && mapping.source === "")) {
     return { doc, pairs: [], entries: [] };
   }
-  if (!stringKeys(mapping)) throw new Error("书目须以文本引用键组织条目。请检查原文件。");
+  if (!stringKeys(mapping)) throw new UserFacingError("Bibliography entries must use text citation keys. Check the source file.");
   if (mapping.items.some((pair: Pair<StringKey, ParsedNode | null>): boolean => !stringKeys(pair.value))) {
-    throw new Error("每个书目条目须包含字段映射。请检查原文件。");
+    throw new UserFacingError("Each bibliography entry must map field names to values. Check the source file.");
   }
   doc.options.logLevel = "silent";
   let fields: Record<string, Fields>;
   try {
     fields = doc.toJS({ maxAliasCount: 50 });
   } catch (error: unknown) {
-    throw new Error("无法解析书目中的 YAML 别名。请检查原文件。", { cause: error });
+    throw new UserFacingError("Unable to resolve a YAML alias in the bibliography. Check the source file.", { cause: error });
   }
   const pairs = mapping.items as EntryPair[];
   const entries = pairs.map((pair: EntryPair): BibliographyEntry => ({ key: pair.key.value, fields: fields[pair.key.value] }));
@@ -93,7 +94,7 @@ function replace(source: string, from: number, to: number, text: string): string
 
 function entryPair(pairs: readonly EntryPair[], key: string): EntryPair {
   const pair = pairs.find((item: EntryPair): boolean => item.key.value === key);
-  if (!pair) throw new Error(`找不到条目「${key}」。`);
+  if (!pair) throw new UserFacingError(`Entry "${key}" was not found.`);
   return pair;
 }
 
@@ -111,7 +112,7 @@ function isAnchored(node: unknown): boolean {
 }
 
 function sharedDataError(field: string): Error {
-  return new Error(`${field}使用共享 YAML 数据，请在 YAML 原文件中核对并调整。`);
+  return new UserFacingError(`${field} uses shared YAML data. Review and edit the YAML source file.`);
 }
 
 function assertIndependentEdit(field: string, owners: readonly unknown[], value?: ParsedNode): void {
@@ -178,13 +179,13 @@ export function patchEntry(source: string, key: string, patch: Fields): string {
     const field = entry.items.find((item: Pair<StringKey, ParsedNode | null>): boolean => item.key.value === name);
     const current = field?.value;
     if (isScalar(current) && Object.is(current.value, value)) continue;
-    assertIndependentEdit(`字段「${name}」`, [parsed.mapping, entry], current ?? undefined);
+    assertIndependentEdit(`Field "${name}"`, [parsed.mapping, entry], current ?? undefined);
     if (current) {
       updated = replaceValue(updated, parsed.doc, current, value);
     } else if (!field) {
       updated = appendPairs(updated, parsed, entry, { [name]: value });
     } else {
-      throw new Error(`无法用表单修改字段「${name}」。请编辑 YAML 原文件。`);
+      throw new UserFacingError(`The form cannot change field "${name}". Edit the YAML source file.`);
     }
   }
   entryPair(parse(updated).pairs, key);
@@ -195,7 +196,7 @@ export function addEntry(source: string, key: string, fields: Fields): string {
   const parsed = parse(source);
   if (parsed.entries.some((entry: BibliographyEntry): boolean =>
     entryCitationKeys(entry).some((name: string): boolean => name.normalize("NFC") === key.normalize("NFC")))) {
-    throw new Error(`引用键「${key}」已存在。`);
+    throw new UserFacingError(`Citation key "${key}" already exists.`);
   }
   const updated = appendPairs(source, parsed, parsed.mapping, { [key]: fields });
   entryPair(parse(updated).pairs, key);
@@ -261,7 +262,7 @@ export function removeEntry(source: string, key: string): string {
         if (!field.value) continue;
         visit(field.value, (_key: unknown, node: unknown): void => {
           if (isAlias(node) && anchors.has(node.resolve(parsed.doc))) {
-            throw sharedDataError(`条目「${survivor.key.value}」的 ${field.key.value} `);
+            throw sharedDataError(`Field "${field.key.value}" in entry "${survivor.key.value}"`);
           }
         });
       }
@@ -274,7 +275,7 @@ export function removeEntry(source: string, key: string): string {
 export function renameEntry(source: string, from: string, to: string): string {
   const parsed = parse(source);
   const { key } = entryPair(parsed.pairs, from);
-  assertIndependentEdit(`引用键「${from}」`, [parsed.mapping], key);
+  assertIndependentEdit(`Citation key "${from}"`, [parsed.mapping], key);
   const replacement = renderValue(parsed.doc, to, key);
   const updated = replace(source, key.range[0], key.range[1], replacement);
   entryPair(parse(updated).pairs, to);
@@ -307,8 +308,8 @@ export function rewriteBibliographyProse(source: string, update: (field: Bibliog
       const [from, to] = node?.range ?? key.range;
       const after = update({ entry: key.value, version, field, value, from, to });
       if (after === value) continue;
-      const position = version === undefined ? "" : `版本 ${version} `;
-      const description = `条目「${key.value}」${position}的 ${field} `;
+      const position = version === undefined ? "" : ` (version ${version})`;
+      const description = `Field "${field}" in entry "${key.value}"${position}`;
       if (!node) throw sharedDataError(description);
       assertIndependentEdit(description, [...owners, nodes], node);
       edits.push({ node, value: after });

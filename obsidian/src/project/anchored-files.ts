@@ -1,3 +1,4 @@
+import { UserFacingError } from "../user-error";
 import {
   closeSync, constants, fstatSync, fsync, mkdtempSync, openSync, readFile, readFileSync,
   rmSync, writeFile, writeFileSync, type BigIntStats,
@@ -25,7 +26,7 @@ interface Native {
 let bindings: Native | undefined;
 function native(): Native {
   if (bindings) return bindings;
-  if (process.platform !== "darwin" || !__PEERPEDIA_ANCHORED__) throw new Error("本机不支持安全项目写入。");
+  if (process.platform !== "darwin" || !__PEERPEDIA_ANCHORED__) throw new UserFacingError("Safe project writes are unavailable on this device.");
   const bytes = Buffer.from(__PEERPEDIA_ANCHORED__, "base64");
   const key = Symbol.for("peerpedia.anchored-files." + sourceDigest(bytes));
   const cache = globalThis as typeof globalThis & Record<symbol, Native | undefined>;
@@ -34,7 +35,7 @@ function native(): Native {
   try {
     const lib = join(dir, "anchored.node");
     writeFileSync(lib, bytes, { flag: "wx", mode: 0o500 });
-    if (!readFileSync(lib).equals(bytes)) throw new Error("无法校验本地文件组件。");
+    if (!readFileSync(lib).equals(bytes)) throw new UserFacingError("Unable to verify the local file component.");
     bindings = createRequire(lib)(lib) as Native;
     cache[key] = bindings;
     return bindings;
@@ -68,30 +69,30 @@ export class AnchoredFiles {
     const fd = pin.parent ? native().open(pin.parent.fd, pin.name, directoryFlags, 0) :
       openSync(this.base, directoryFlags | 0x20000000);
     try {
-      if (!same(pin.identity, fstatSync(fd, { bigint: true }))) throw new Error("文件夹已移动或被替换。");
+      if (!same(pin.identity, fstatSync(fd, { bigint: true }))) throw new UserFacingError("The folder was moved or replaced.");
     } finally { closeSync(fd); }
   }
 
   private entry(dir: Pin, name: string): string {
     const matches = native().list(dir.fd).filter((item: string): boolean => pathKey(item) === pathKey(name));
     if (matches.length > 1 || (matches[0] && matches[0].normalize("NFD") !== name.normalize("NFD"))) {
-      throw new Error(`文件名的大小写或拼写有冲突：${name}`);
+      throw new UserFacingError(`File name conflicts with existing spelling or capitalization: ${name}`);
     }
     return matches[0] ?? name;
   }
 
   private pin(path: string, make: boolean = false): Pin {
-    if (this.closed) throw new Error("文件操作已结束。");
+    if (this.closed) throw new UserFacingError("The file operation has ended.");
     if (path === ".") path = "";
     const existing = this.pins.get(path);
     if (existing) { this.verify(existing); return existing; }
-    if (!isRelativePath(path)) throw new Error("文件夹路径无效。");
+    if (!isRelativePath(path)) throw new UserFacingError("The folder path is invalid.");
     const parent = this.pin(dirname(path), make);
     const name = this.entry(parent, basename(path));
     let fd: number;
     try {
       fd = native().open(parent.fd, name, directoryFlags, 0);
-      if (this.missing.has(path)) { closeSync(fd); throw new Error("写入期间出现了同名文件夹。"); }
+      if (this.missing.has(path)) { closeSync(fd); throw new UserFacingError("A folder with the same name appeared during the save."); }
     }
     catch (error: unknown) {
       if (!isMissing(error)) throw error;
@@ -134,7 +135,7 @@ export class AnchoredFiles {
   }
 
   checkRoot(expected: BigIntStats): void {
-    if (!same(this.pin("").identity, expected)) throw new Error("原有库文件夹已被替换。");
+    if (!same(this.pin("").identity, expected)) throw new UserFacingError("The original vault folder was replaced.");
   }
   directory(path: string): void { this.pin(path); }
   lockProject(path: string): void { native().lock(this.pin(path).fd); }
@@ -152,7 +153,7 @@ export class AnchoredFiles {
   }
   sameVolume(...paths: string[]): void {
     const devices = new Set(paths.map((path: string): bigint => this.pin(path).identity.dev));
-    if (devices.size !== 1) throw new Error("章节与恢复目录必须位于同一文件系统。");
+    if (devices.size !== 1) throw new UserFacingError("Chapter files and the recovery folder must be on the same file system.");
   }
   list(path: string): string[] { return native().list(this.pin(path).fd); }
   async sync(path: string): Promise<void> {
@@ -165,7 +166,7 @@ export class AnchoredFiles {
   }
 
   private parent(path: string): { dir: Pin; name: string } {
-    if (!isRelativePath(path)) throw new Error("项目路径无效。");
+    if (!isRelativePath(path)) throw new UserFacingError("The project path is invalid.");
     const dir = this.pin(dirname(path));
     return { dir, name: this.entry(dir, basename(path)) };
   }
@@ -176,9 +177,9 @@ export class AnchoredFiles {
       const fd = native().open(dir.fd, name, constants.O_RDONLY, 0);
       try {
         const st = fstatSync(fd, { bigint: true });
-        if (!st.isFile()) throw new Error(`需要普通文件：${path}`);
+        if (!st.isFile()) throw new UserFacingError(`Expected a regular file: ${path}`);
         const key = `${st.dev}:${st.ino}`;
-        if (identities?.has(key)) throw new Error(`文件路径重复：${path}`);
+        if (identities?.has(key)) throw new UserFacingError(`Duplicate file path: ${path}`);
         identities?.set(key, path);
         const bytes = await read(fd);
         return { path, text: decoder.decode(bytes), digest: sourceDigest(bytes) };
@@ -205,7 +206,7 @@ export class AnchoredFiles {
       const live = this.parent(path);
       const fd = native().open(live.dir.fd, live.name, constants.O_RDONLY, 0);
       try {
-        if (!same(identity, fstatSync(fd, {bigint: true}))) throw new Error("复制元数据时发现外部更改，原文件已被替换。");
+        if (!same(identity, fstatSync(fd, {bigint: true}))) throw new UserFacingError("The original file was replaced while copying its metadata.");
       } finally { closeSync(fd); }
     };
   }
@@ -219,7 +220,7 @@ export class AnchoredFiles {
       const current = this.parent(target);
       const live = native().open(current.dir.fd, current.name, constants.O_RDONLY, 0);
       try {
-        if (!same(identity, fstatSync(live, { bigint: true }))) throw new Error("发布后文件已改变。");
+        if (!same(identity, fstatSync(live, { bigint: true }))) throw new UserFacingError("The file changed after it was saved.");
         native().announce(live);
       } finally { closeSync(live); }
     };

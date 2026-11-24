@@ -40,7 +40,7 @@ test("rejects duplicate normalized labels in one chapter and across files", (): 
   const analysis = analyzeProject(project);
   expect(findTarget("thm:é", analysis)).toBeNull();
   expect(findTarget("thm:e\u0301", analysis)).toBeNull();
-  expect(analysis.diagnostics.filter((item: { message: string }): boolean => item.message.includes("重复标签"))).toEqual([
+  expect(analysis.diagnostics.filter((item: { message: string }): boolean => item.message.includes("Duplicate label"))).toEqual([
     expect.objectContaining({ path: intro, from: 11, to: 17 }),
     expect.objectContaining({ path: intro, from: 34, to: 39 }),
     expect.objectContaining({ path: proof }),
@@ -54,7 +54,7 @@ test("invalid definitions receive precise diagnostics and cannot become targets"
   expect(findTarget("bad.", analysis)).toBeNull();
   expect(findTarget("bad label", analysis)).toBeNull();
   const excerpts = analysis.diagnostics
-    .filter((item: { path: string; message: string }): boolean => item.path === intro && item.message.includes("无效标签"))
+    .filter((item: { path: string; message: string }): boolean => item.path === intro && item.message.includes("Invalid label"))
     .map((item: { from: number; to: number }): string => source.slice(item.from, item.to));
   expect(excerpts).toEqual(["bad.", "bad label"]);
 });
@@ -87,9 +87,9 @@ test("a bibliography duplicate and a chapter label never resolve to an arbitrary
   const analysis = analyzeProject(project);
   expect(findTarget("example", analysis)).toBeNull();
   expect(analysis.diagnostics).toEqual(expect.arrayContaining([
-    expect.objectContaining({ path: intro, message: expect.stringContaining("重复标签") }),
-    expect.objectContaining({ path: bibliography, message: expect.stringContaining("重复标签") }),
-    expect.objectContaining({ path: proof, message: expect.stringContaining("有多个定义") }),
+    expect.objectContaining({ path: intro, message: expect.stringContaining("Duplicate label") }),
+    expect.objectContaining({ path: bibliography, message: expect.stringContaining("Duplicate label") }),
+    expect.objectContaining({ path: proof, message: expect.stringContaining("Multiple definitions") }),
   ]));
 });
 

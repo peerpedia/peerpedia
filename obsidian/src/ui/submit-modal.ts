@@ -6,6 +6,7 @@ import type { SubmissionController, SubmissionReview, SubmitContext } from "../r
 import { frozenPayload, type PreparedSubmission, type SubmissionDetails, type SubmissionIntent } from "../remote/submit";
 import type { Category, LicenseOption, VerifiedSnapshot } from "../remote/types";
 import { articleFragment } from "../preview/article";
+import { errorMessage } from "./conflict-modal";
 import { button } from "./paper-form";
 
 const labels:Record<SubmissionIntent,string> = {publish:"Publish a new paper", "append-pr":"Add a snapshot to the open proposal", "new-pr":"Create a new proposal"};
@@ -54,7 +55,7 @@ export class SubmitModal extends Modal {
   private run(action:()=>Promise<void>): void {
     void action().catch((error:unknown):void => {
       if (this.abort.signal.aborted) return;
-      this.contentEl.createEl("p",{text:error instanceof Error ? error.message : "Submission failed.",attr:{role:"alert"}});
+      this.contentEl.createEl("p",{text:errorMessage(error, "Submission failed."),attr:{role:"alert"}});
       button(this.contentEl,"Review again",():void => {this.run(():Promise<void> => this.openForm());});
     });
   }

@@ -1,3 +1,4 @@
+import { UserFacingError } from "../user-error";
 import { isDeepStrictEqual as equal } from "node:util";
 import { inspectChapter } from "../../../editor/chapter-title.js";
 import { toPublicationDocument, type PublicationDocument } from "../project/publication";
@@ -20,6 +21,7 @@ export interface MergeConflict {
 }
 export interface MergeResult { candidate: PublicationDocument; conflicts: readonly MergeConflict[] }
 type Choices = Readonly<Record<string,JsonValue>>;
+// Targets also identify choices within a comparison. Translate them when rendering the conflict.
 type Decide = (kind: MergeConflict["kind"], target: string, base: JsonValue, local: JsonValue, remote: JsonValue) => JsonValue;
 type Builder = (decide: Decide) => PublicationDocument;
 type Chapter = PublicationDocument["chapters"][number];
@@ -46,11 +48,11 @@ function resultOf(build: Builder): MergeResult {
 }
 
 function string(value: JsonValue): string {
-  if (typeof value !== "string") throw new Error("此处需要文本。");
+  if (typeof value !== "string") throw new UserFacingError("Enter text here.");
   return value;
 }
 function strings(value: JsonValue): string[] {
-  if (!Array.isArray(value) || !value.every((item: JsonValue): item is string => typeof item === "string")) throw new Error("此处需要文本列表。");
+  if (!Array.isArray(value) || !value.every((item: JsonValue): item is string => typeof item === "string")) throw new UserFacingError("Enter a list of text values.");
   return value;
 }
 function select<T extends JsonValue>(base: T, local: T, remote: T, choose: () => JsonValue): JsonValue {
@@ -59,14 +61,14 @@ function select<T extends JsonValue>(base: T, local: T, remote: T, choose: () =>
   return choose();
 }
 function chapter(value: JsonValue): Chapter {
-  if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("章节格式无效。");
+  if (!value || typeof value !== "object" || Array.isArray(value)) throw new UserFacingError("The chapter format is invalid.");
   return {id:string(value.id),title:string(value.title),markdown:string(value.markdown)};
 }
 function body(doc: PublicationDocument): {chapters: Chapter[];markdown:string} {
   return {chapters:[...doc.chapters],markdown:doc.markdown};
 }
 function parsedBody(value: JsonValue): ReturnType<typeof body> {
-  if (!value || typeof value !== "object" || Array.isArray(value) || !Array.isArray(value.chapters)) throw new Error("请核对正文章节。");
+  if (!value || typeof value !== "object" || Array.isArray(value) || !Array.isArray(value.chapters)) throw new UserFacingError("Check the manuscript chapters.");
   const chapters = value.chapters.map(chapter);
   return {chapters,markdown:chapters.length ? chapters.map((c: Chapter): string => c.markdown).join("\n\n") : string(value.markdown)};
 }
@@ -80,7 +82,7 @@ function chapterOrder(base: string[], local: string[], remote: string[], decide:
   const all = new Set([...base,...local,...remote]);
   const complete = (chosen: string[]): string[] => {
     const order = [...chosen];
-    if (new Set(order).size !== order.length || order.some((id: string): boolean => !all.has(id))) throw new Error("章节顺序含有重复或未知 ID。");
+    if (new Set(order).size !== order.length || order.some((id: string): boolean => !all.has(id))) throw new UserFacingError("The chapter order contains duplicate or unknown IDs.");
     for (const keys of [remote,local,base]) {
       for (const [i,id] of keys.entries()) if (!order.includes(id)) {
         const next = keys.slice(i+1).find((key: string): boolean => order.includes(key));
@@ -130,7 +132,7 @@ function mergeBody(base: PublicationDocument, local: PublicationDocument, remote
       const selected = select(old,left,right,(): JsonValue => decide("chapter","章节 " + id,old,left,right));
       if (selected !== null) {
         const kept = chapter(selected);
-        if (!differentIds && kept.id !== id) throw new Error("选择的章节 ID 不符。");
+        if (!differentIds && kept.id !== id) throw new UserFacingError("The selected chapter ID does not match.");
         chapters.push(kept);
       }
     }
@@ -173,10 +175,10 @@ export function manualMerge(local: PublicationDocument, remote: PublicationDocum
 
 export function resolveMerge(result: MergeResult, choices: Choices): PublicationDocument {
   const build = builders.get(result);
-  if (!build) throw new Error("请重新比较。");
+  if (!build) throw new UserFacingError("Compare the versions again.");
   const doc = build((kind: MergeConflict["kind"],target: string): JsonValue => {
     const id = JSON.stringify([kind,target]);
-    if (!Object.hasOwn(choices,id)) throw new Error("请先处理全部冲突。");
+    if (!Object.hasOwn(choices,id)) throw new UserFacingError("Resolve all conflicts first.");
     return choices[id];
   });
   resolutions.set(doc,result);
@@ -184,7 +186,7 @@ export function resolveMerge(result: MergeResult, choices: Choices): Publication
 }
 
 export function planMergedFiles(project: ProjectSnapshot, merged: PublicationDocument): readonly FileChange[] {
-  if (previews.has(merged)) throw new Error("请先处理全部冲突。");
+  if (previews.has(merged)) throw new UserFacingError("Resolve all conflicts first.");
   const local = toPublicationDocument(project);
   const {chapters,markdown,bibliography,...metadata} = merged;
   const config = {...project.config,...metadata};
@@ -198,7 +200,7 @@ export function planMergedFiles(project: ProjectSnapshot, merged: PublicationDoc
   if (chapters.length || config.chapters) {
     const occupied = new Set([...files.keys()].map(pathKey));
     config.chapters = chapters.map((item: Chapter): ChapterSpec => {
-      if (inspectChapter(item.markdown).title !== item.title) throw new Error("章节标题与正文标题不一致，请核对：" + item.id);
+      if (inspectChapter(item.markdown).title !== item.title) throw new UserFacingError("The chapter title does not match the manuscript heading. Check chapter " + item.id);
       const prior = project.config.chapters?.find((c: ChapterSpec): boolean => c.id === item.id);
       let file = prior?.file ?? "chapters/" + item.id + ".md";
       if (!prior) {

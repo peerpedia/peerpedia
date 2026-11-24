@@ -1,3 +1,4 @@
+import { UserFacingError } from "../user-error";
 import { isDeepStrictEqual as equal } from "node:util";
 import { toPublicationDocument } from "../project/publication";
 import { parsePaperConfig, projectMembers, projectRevision, sourceDigest, type FileChange, type ProjectStore } from "../project/store";
@@ -31,7 +32,7 @@ function matches(a: VerifiedSnapshot, b: VerifiedSnapshot): boolean {
 
 async function receipt(api: PeerpediaApi, saved: VerifiedSnapshot): Promise<ProposalSnapshot> {
   const response = await api.proposalSnapshot(saved.submissionId);
-  if (!matches(response.snapshot,saved)) throw new Error("提案快照身份不符，请重新比较。");
+  if (!matches(response.snapshot,saved)) throw new UserFacingError("The proposal snapshot does not match. Compare the versions again.");
   return response;
 }
 
@@ -82,9 +83,9 @@ async function proposalAncestor(binding: RemoteBinding, latest: ProposalSnapshot
 
 export async function prepareMerge(project: ProjectSnapshot, axis: MergeAxis, store: ProjectStore, api: PeerpediaApi): Promise<Comparison> {
   const version = await store.readBindingVersion?.(project.root);
-  if (!version?.binding || !version.digest || version.pendingMerge) throw new Error("请先核对项目绑定或恢复未完成的合并。");
+  if (!version?.binding || !version.digest || version.pendingMerge) throw new UserFacingError("Check the paper binding or recover the unfinished merge first.");
   const {binding,digest} = version;
-  if (binding.origin !== api.origin) throw new Error("比较站点与绑定不符。");
+  if (binding.origin !== api.origin) throw new UserFacingError("The comparison site does not match the paper binding.");
   const saved = binding.lastSubmitted ?? binding.workingBase;
   let proposalSource = binding.proposalSource;
   let selectedPr = binding.activePr?.id ?? proposalSource?.id;
@@ -99,11 +100,11 @@ export async function prepareMerge(project: ProjectSnapshot, axis: MergeAxis, st
   let target = check.current, base: VerifiedSnapshot|null;
   if (axis === "proposal") {
     const head = check.activePr;
-    if (!head || head.status !== "pending") throw new Error("没有可比较的开放提案。");
+    if (!head || head.status !== "pending") throw new UserFacingError("There is no open proposal to compare.");
     const latest = await api.proposalSnapshot(head.submissionId);
     target = latest.snapshot;
     if (latest.proposal?.id !== head.id || target.paperId !== binding.paperId || target.status !== head.status
-      || target.submissionId !== head.submissionId || target.hash !== head.hash) throw new Error("提案版本已变化，请重新比较。");
+      || target.submissionId !== head.submissionId || target.hash !== head.hash) throw new UserFacingError("The proposal version changed. Compare the versions again.");
     const history = await store.readProposalBase?.(project.root,head.id,digest) ?? null;
     base = await proposalAncestor(binding,latest,history,api);
   } else base = acceptedAncestor(binding,target);
@@ -123,7 +124,7 @@ function projectedRevision(project: ProjectSnapshot, changes: readonly FileChang
   const config = parsePaperConfig(files.get("paper.json")!.text);
   return projectRevision(projectMembers(config).map((path:string): SourceFile => {
     const file = files.get(path);
-    if (!file) throw new Error("缺少合并文件：" + path);
+    if (!file) throw new UserFacingError("Missing merge file: " + path);
     return file;
   }));
 }
@@ -132,14 +133,14 @@ export async function applyMerge(project: ProjectSnapshot, changes: readonly Fil
   live: () => boolean = (): boolean => true): Promise<ProjectSnapshot> {
   const session = sessions.get(check);
   if (!session || session.project.root !== project.root || session.project.revision !== project.revision ||
-    plannedResult(project,changes) !== session.comparison.result) throw new Error("请先完成本次比较并确认全部冲突。");
+    plannedResult(project,changes) !== session.comparison.result) throw new UserFacingError("Finish this comparison and resolve all conflicts first.");
   const {comparison,binding,digest,selectedPr,proposalSource} = session;
   const version = await store.readBindingVersion?.(project.root);
   if (version?.digest !== digest || version.pendingMerge || (await store.read(project.root)).revision !== project.revision)
-    throw new Error("本地论文或绑定已更改，请重新比较。");
+    throw new UserFacingError("The local paper or binding changed. Compare the versions again.");
   const now = await checkRemote(binding,api,selectedPr);
-  if (!matches(check.current,now.current) || !equal(check.activePr,now.activePr)) throw new Error("远程版本已更改，请重新比较。");
-  if (!live()) throw new Error("已取消合并。");
+  if (!matches(check.current,now.current) || !equal(check.activePr,now.activePr)) throw new UserFacingError("The remote version changed. Compare the versions again.");
+  if (!live()) throw new UserFacingError("Merge canceled.");
   const next = {...binding,workingBase:comparison.target,checkedAt:now.checkedAt};
   if (comparison.axis === "accepted") {
     next.acceptedBase = now.current;

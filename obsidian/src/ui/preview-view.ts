@@ -50,7 +50,7 @@ export class PreviewView extends ItemView {
   }
 
   override getViewType(): string { return PREVIEW_VIEW; }
-  override getDisplayText(): string { return "论文预览"; }
+  override getDisplayText(): string { return "Paper preview"; }
   override getIcon(): string { return "book-open"; }
   override getState(): Record<string, unknown> { return {root: this.root}; }
 
@@ -70,12 +70,12 @@ export class PreviewView extends ItemView {
   override async onOpen(): Promise<void> {
     this.contentEl.addClass("peerpedia-preview");
     const tools = this.contentEl.createDiv({cls: "peerpedia-actions"});
-    this.chapters = tools.createEl("select", {attr: {"aria-label": "预览章节"}});
+    this.chapters = tools.createEl("select", {attr: {"aria-label": "Preview chapter"}});
     this.chapters.onchange = (): void => {
       const page = this.shown?.pages[this.chapters.selectedIndex];
       if (page) this.show(page);
     };
-    this.sourceButton = tools.createEl("button", {text: "定位源码"});
+    this.sourceButton = tools.createEl("button", {text: "Go to source"});
     this.sourceButton.disabled = true;
     bindSourceButton(this.sourceButton, (): void => { void this.goToSource().catch(warnNavigationFailure); });
     this.status = this.contentEl.createDiv({attr: {role: "status"}});
@@ -87,15 +87,15 @@ export class PreviewView extends ItemView {
         (path: string): string => adapter.getResourcePath(base + path));
       const css = await adapter.read(base + "style.css");
       if (this.closed) return;
-      const frame = this.contentEl.createEl("iframe", {attr: {title: "论文正文"}});
+      const frame = this.contentEl.createEl("iframe", {attr: {title: "Paper manuscript"}});
       this.reader = new PreviewReader(frame, theme, css, (value: string): void => this.openLink(value), (): void => {
         this.reader = undefined;
         this.sourceButton.disabled = true;
-        this.status.textContent = "无法加载本地预览样式或字体。";
+        this.status.textContent = "Unable to load local preview styles or fonts.";
       });
       this.refresh();
     } catch {
-      this.status.textContent = "缺少本地预览组件。请检查插件的 renderer 目录。";
+      this.status.textContent = "The preview runtime is missing. Check the plugin’s renderer folder.";
     }
   }
 
@@ -155,8 +155,8 @@ export class PreviewView extends ItemView {
     const error = state.error;
     const where = error && [this.errorFile(error.file), error.line, error.column].filter(Boolean).join(":");
     const problem = error && [where, error.message].filter(Boolean).join(" · ");
-    const status = problem ? `预览失败 · ${problem}` : state.busy ? "正在生成预览…" : state.result ? "预览已更新" : "等待论文…";
-    this.status.textContent = status + (stale ? " · 显示上次成功预览" : error && !state.result ? " · 暂无预览" : "");
+    const status = problem ? `Preview failed · ${problem}` : state.busy ? "Rendering preview…" : state.result ? "Preview updated" : "Waiting for a paper…";
+    this.status.textContent = status + (stale ? " · Showing the last successful preview" : error && !state.result ? " · No preview available" : "");
     this.sourceButton.disabled = !state.result || Boolean(stale);
     if (state.result && state.result !== this.shown) {
       this.shown = state.result;
@@ -201,8 +201,8 @@ export class PreviewView extends ItemView {
     if (!activated && this.followed === key) return;
     this.followed = key;
     this.show(page);
-    if (target && this.reader.scroll(target.id, Boolean(exact))) this.position.textContent = this.sourceHint?.text ?? (exact ? "" : "近似定位 · 最近的结构");
-    else { this.reader.scroll(null); this.position.textContent = "近似定位 · 章首"; }
+    if (target && this.reader.scroll(target.id, Boolean(exact))) this.position.textContent = this.sourceHint?.text ?? (exact ? "" : "Approximate position · Nearest element");
+    else { this.reader.scroll(null); this.position.textContent = "Approximate position · Start of chapter"; }
   }
 
   private openLink(link: string): void {
@@ -217,8 +217,8 @@ export class PreviewView extends ItemView {
       if (fragment !== null && this.reader?.scroll(fragment || null)) return;
       const nearest = this.reader?.visibleTarget().target;
       this.reader?.scroll(nearest?.id ?? null, false);
-      this.position.textContent = nearest ? "近似定位 · 最近的结构" : "近似定位 · 章首";
-    } else void shell.openExternal(link).catch((): void => { new Notice("无法打开外链。"); });
+      this.position.textContent = nearest ? "Approximate position · Nearest element" : "Approximate position · Start of chapter";
+    } else void shell.openExternal(link).catch((): void => { new Notice("Unable to open the external link."); });
   }
 
   private async goToSource(): Promise<void> {
@@ -235,7 +235,7 @@ export class PreviewView extends ItemView {
       warnNavigationFailure();
     } else if (!location?.exact && this.shown === shown && !this.closed) {
       // Host focus/selection events may follow this programmatic selection later.
-      const text = target ? "近似定位 · 最近的结构" : "近似定位 · 章首";
+      const text = target ? "Approximate position · Nearest element" : "Approximate position · Start of chapter";
       this.sourceHint = {revision: shown.revision, path, from: target?.from ?? 0, to: target?.to ?? 0, text};
       this.position.textContent = text;
     }

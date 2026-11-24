@@ -1,3 +1,4 @@
+import { UserFacingError } from "../user-error";
 import { realpathSync, statSync, type BigIntStats, watch as watchFiles, type Dirent, type FSWatcher } from "node:fs";
 import { readdir, realpath } from "node:fs/promises";
 import { basename, dirname, join, resolve } from "node:path";
@@ -141,13 +142,13 @@ export class VaultProjectStore implements ProjectStore {
     const base = await realpath(this.basePath);
     if (!root) return base;
     const dir = await locatePath(base, root, CONFIG_PATH);
-    if (!dir?.stat.isDirectory()) throw new Error("论文文件夹不存在。");
+    if (!dir?.stat.isDirectory()) throw new UserFacingError("The paper folder does not exist.");
     return dir.absolute;
   }
 
   async localPath(root: string, path: string): Promise<string> {
     const found = await locatePath(await this.directory(root), path, path);
-    if (!found) throw new Error("找不到原文件。");
+    if (!found) throw new UserFacingError("The source file was not found.");
     return found.absolute;
   }
 
@@ -179,7 +180,7 @@ export class VaultProjectStore implements ProjectStore {
           afterText: local, externalText: external.text}];
         await tree.file(join(dir, "journal.json"), JSON.stringify({kind: "native-conflict", files}));
         await tree.sync(dir);
-        notice = {transactionId: basename(dir), paths: [member], message: "已保留修改前、编辑器草稿和外部修改。"};
+        notice = {transactionId: basename(dir), paths: [member], message: "The original, editor draft, and external changes were saved."};
       }
       return notice;
     });
@@ -213,7 +214,7 @@ export class VaultProjectStore implements ProjectStore {
   private async pinnedSnapshot(tree: AnchoredFiles, root: string): Promise<ProjectSnapshot> {
     const identities = new Map<string,string>();
     const manifest = await tree.source(join(root,CONFIG_PATH),identities);
-    if (!manifest) throw new Error("论文缺少 paper.json。");
+    if (!manifest) throw new UserFacingError("The paper is missing paper.json.");
     const config = parsePaperConfig(manifest.text);
     const files = [{...manifest, path:CONFIG_PATH}];
     for (const path of projectMembers(config).slice(1)) {
@@ -226,7 +227,7 @@ export class VaultProjectStore implements ProjectStore {
 
   private async exclusive(root: string, operation: () => Promise<ProjectSnapshot>): Promise<ProjectSnapshot> {
     const key = pathKey(join(this.basePath, root));
-    if (writes.has(key)) throw new Error("论文正在保存，请稍后再试。");
+    if (writes.has(key)) throw new UserFacingError("This paper is being saved. Try again shortly.");
     const pending = operation();
     writes.set(key, pending);
     try { return await pending; } finally { writes.delete(key); }
@@ -266,7 +267,7 @@ export class VaultProjectStore implements ProjectStore {
       for (const change of changes) {
         const existing = await tree.source(join(root,change.path));
         if (!existing) continue;
-        if (existing.text !== change.afterText) throw new Error(`导入文件已更改，请核对：${change.path}`);
+        if (existing.text !== change.afterText) throw new UserFacingError(`The imported file changed. Check "${change.path}".`);
         change.beforeDigest = existing.digest;
       }
       // The transaction rechecks every observed digest and open buffer. Equal members
@@ -281,7 +282,7 @@ export class VaultProjectStore implements ProjectStore {
     return this.exclusive(root, async (): Promise<ProjectSnapshot> => {
       safePath(root);
       if (changes.some((change: FileChange): boolean => change.beforeDigest !== null || change.afterText === null)) {
-        throw new Error("新论文只能创建新文件。");
+        throw new UserFacingError("A new paper can only create new files.");
       }
       const config = parsePaperConfig(changes.find((change: FileChange): boolean => change.path === CONFIG_PATH)?.afterText ?? "");
       const members = projectMembers(config);
@@ -290,17 +291,17 @@ export class VaultProjectStore implements ProjectStore {
       for (const change of changes) {
         safePath(change.path);
         const key = pathKey(change.path);
-        if (!members.includes(change.path) || keys.has(key)) throw new Error("发现重复路径或不属于论文的文件。");
+        if (!members.includes(change.path) || keys.has(key)) throw new UserFacingError("There is a duplicate path or a file outside the paper.");
         keys.add(key);
       }
       return this.anchored(root,async (tree: AnchoredFiles): Promise<ProjectSnapshot> => {
         const parent = dirname(root);
         if (tree.list(parent).some((name: string): boolean => pathKey(name) === pathKey(basename(root)))) {
-          throw new Error("目标文件夹已存在，请选择新名称。");
+          throw new UserFacingError("The destination folder already exists. Choose a different name.");
         }
         for (let ancestor = parent;; ancestor = dirname(ancestor)) {
           if (tree.list(ancestor).some((name: string): boolean => pathKey(name) === CONFIG_PATH)) {
-            throw new Error("不能在另一篇论文中创建新论文。");
+            throw new UserFacingError("Create the new paper outside existing paper folders.");
           }
           if (ancestor === ".") break;
         }
@@ -318,7 +319,7 @@ export class VaultProjectStore implements ProjectStore {
           return project;
         } catch (error: unknown) {
           if (!initialBinding) throw error;
-          throw new Error("导入未完成，请从论文管理面板打开此文件夹并完成绑定。", {cause:error});
+          throw new UserFacingError("The import did not finish. Open this folder in the paper panel to finish the binding.", {cause:error});
         }
       });
     });
@@ -344,7 +345,7 @@ export class VaultProjectStore implements ProjectStore {
     const chapters = project.config.chapters ?? [];
     const chapter = chapters.find((item: ChapterSpec): boolean => item.id === id);
     const source = project.files.find((file: SourceFile): boolean => file.path === chapter?.file);
-    if (!chapter || !source) return Promise.reject(new Error("找不到章节原文件。"));
+    if (!chapter || !source) return Promise.reject(new UserFacingError("The chapter source file was not found."));
     if (chapter.file === to) return this.apply(project.root, project.revision, []);
     const config = { ...project.config, chapters: chapters.map((item: ChapterSpec): ChapterSpec =>
       item.id === id ? { ...item, file: to } : item) };
@@ -365,7 +366,7 @@ export class VaultProjectStore implements ProjectStore {
         await rejectNestedProject(this.basePath, root, join(this.basePath,root));
         const project = await this.pinnedSnapshot(tree,root);
         try {
-          if (project.revision !== expectedRevision) throw new PreconditionConflict("论文已在其他地方更改，请重新载入后核对。");
+          if (project.revision !== expectedRevision) throw new PreconditionConflict("The paper changed elsewhere. Reload it and review the changes.");
           let transaction: string|undefined;
           const prepare = merge ? async (journal: string): Promise<string> => {
             const digest = await stageMerge(tree,root,journal,expectedRevision,merge);

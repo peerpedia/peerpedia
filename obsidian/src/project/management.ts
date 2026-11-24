@@ -1,3 +1,4 @@
+import { UserFacingError } from "../user-error";
 import { randomUUID } from "node:crypto";
 import type { TitlePreview } from "../language/title-preview";
 import { CONFIG_PATH, type FileChange } from "./store";
@@ -11,10 +12,10 @@ export function configChange(project: ProjectSnapshot, config: PaperConfig): Fil
 export function newPaper(title: string, chaptered: boolean): FileChange[] {
   const config: PaperConfig = { title, authors: "", abstract: "", primary_category: "", secondary_categories: [], license: "" };
   const file = chaptered ? "chapters/intro.md" : "paper.md";
-  if (chaptered) config.chapters = [{ id: randomUUID(), title: "引言", file }];
+  if (chaptered) config.chapters = [{ id: randomUUID(), title: "Introduction", file }];
   return [
     { path: CONFIG_PATH, beforeDigest: null, afterText: JSON.stringify(config, null, 2) + "\n" },
-    { path: file, beforeDigest: null, afterText: chaptered ? "# 引言\n" : "" },
+    { path: file, beforeDigest: null, afterText: chaptered ? "# Introduction\n" : "" },
   ];
 }
 
@@ -25,14 +26,14 @@ export function changeMembership(project: ProjectSnapshot, chapters: ChapterSpec
 export function reorderChapter(project: ProjectSnapshot, id: string, position: number): FileChange {
   const chapters = [...project.config.chapters ?? []];
   const index = chapters.findIndex((item: ChapterSpec): boolean => item.id === id);
-  if (index < 0 || position < 0 || position >= chapters.length) throw new Error("章节顺序已更改。");
+  if (index < 0 || position < 0 || position >= chapters.length) throw new UserFacingError("The chapter order changed.");
   chapters.splice(position, 0, ...chapters.splice(index, 1));
   return changeMembership(project, chapters);
 }
 
 export function chapterTitleEdit(project: ProjectSnapshot, chapter: ChapterSpec, preview: TitlePreview): FileChange[] {
   const source = project.files.find((file: SourceFile): boolean => file.path === chapter.file);
-  if (!source) throw new Error("章节原文件不存在。");
+  if (!source) throw new UserFacingError("The chapter source file is missing.");
   const chapters = project.config.chapters!.map((item: ChapterSpec): ChapterSpec =>
     item.id === chapter.id ? { ...item, title: preview.title } : item);
   return [{ path: chapter.file, beforeDigest: source.digest, afterText: preview.text }, changeMembership(project, chapters)];

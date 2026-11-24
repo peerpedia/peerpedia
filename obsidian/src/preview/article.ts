@@ -1,3 +1,4 @@
+import { UserFacingError } from "../user-error";
 /** The renderer's output is manuscript data. Construct an inert reading DOM, never install its HTML in a live document. */
 const HTML = "http://www.w3.org/1999/xhtml";
 const SVG = "http://www.w3.org/2000/svg";
@@ -68,20 +69,20 @@ export interface PreviewTheme { katex: ReadonlyMap<string, string>; fonts: strin
 export function localTheme(
   manifest: { stylesheet: string; katex: { fonts: string[] }; tikz: { fonts: string[] } }, resource: (path: string) => string,
 ): PreviewTheme {
-  if (manifest.stylesheet !== "style.css") throw new Error("预览样式清单无效。");
+  if (manifest.stylesheet !== "style.css") throw new UserFacingError("The preview stylesheet manifest is invalid.");
   const local = (path: string): string => {
     const url = new URL(resource(path));
-    if (url.protocol !== "app:") throw new Error("预览资源必须位于本机。");
+    if (url.protocol !== "app:") throw new UserFacingError("Preview assets must be local.");
     return url.href;
   };
   const fonts = manifest.tikz.fonts.map((path: string): string => {
     const name = /^tikz\/([\w-]+)\.ttf$/.exec(path)?.[1];
-    if (!name) throw new Error("图形字体清单无效。");
+    if (!name) throw new UserFacingError("The diagram font manifest is invalid.");
     return `@font-face{font-family:tikzjax-${name};src:url(${JSON.stringify(local(path))}) format("truetype")}`;
   }).join("\n");
   const katex = new Map<string, string>();
   for (const path of manifest.katex.fonts) {
-    if (!/^fonts\/katex\/[\w-]+\.(?:ttf|woff2?)$/.test(path)) throw new Error("公式字体清单无效。");
+    if (!/^fonts\/katex\/[\w-]+\.(?:ttf|woff2?)$/.test(path)) throw new UserFacingError("The math font manifest is invalid.");
     katex.set("./" + path, local(path));
   }
   return { katex, fonts };

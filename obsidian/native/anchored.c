@@ -67,7 +67,7 @@ static napi_value lock_directory(napi_env env, napi_callback_info info) {
     if (fd < 0 || fstat(fd, &st) < 0 || !S_ISDIR(st.st_mode)) return failure(env, EINVAL);
     if (flock(fd, LOCK_EX | LOCK_NB) == 0) return result(env, 0);
     if (errno != EWOULDBLOCK) return failure(env, errno);
-    napi_throw_error(env, "EWOULDBLOCK", "另一操作正在保存论文，请稍后重新核对。");
+    napi_throw_error(env, "EWOULDBLOCK", "Another operation is saving this paper. Try again shortly.");
     return NULL;
 }
 

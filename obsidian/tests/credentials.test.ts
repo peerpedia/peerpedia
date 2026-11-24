@@ -32,7 +32,7 @@ test("only saves after /me/ validates scope, expiry and the same-origin agreemen
   await expect(connectAccount(origin, token, transport, credentials)).rejects.toThrow();
   expect(credentials.write).not.toHaveBeenCalled();
   status = 200;
-  await expect(connectAccount(origin, token, transport, credentials, "another-account")).rejects.toThrow(/其他账号/);
+  await expect(connectAccount(origin, token, transport, credentials, "another-account")).rejects.toThrow(/another account/i);
   expect(credentials.write).not.toHaveBeenCalled();
   expect(await connectAccount(origin, token, transport, credentials)).toMatchObject({
     username:"writer", scopes:["propose"], expiresAt:sample.expires_at,
@@ -62,7 +62,7 @@ test("unavailable Keychain uses isolated, removable session memory", async (): P
   expect(await credentials.read(origin, "writer")).toBe("memory-value");
   const other = new DeviceCredentials("/nonexistent-peerpedia-helper");
   await expect(other.read(origin, "writer")).rejects.toThrow();
-  await expect(credentials.remove(origin, "writer")).rejects.toThrow(/重试/);
+  await expect(credentials.remove(origin, "writer")).rejects.toThrow(/try again/i);
   await expect(credentials.read(origin, "writer")).rejects.toThrow();
 });
 
@@ -108,7 +108,7 @@ else { process.stderr.write(JSON.stringify(input)); process.exit(3); }
     const store = new DeviceCredentials(helper);
     await store.write(origin,"writer",token);
     expect(store.persistence(origin,"writer")).toBe("keychain");
-    await expect(store.read(origin,token)).rejects.toThrow(/^无法访问本机钥匙串。$/);
+    await expect(store.read(origin,token)).rejects.toThrow(/^Unable to access this Mac’s Keychain\.$/);
     expect(diagnostics.every((spy: typeof diagnostics[number]): boolean => spy.mock.calls.length === 0)).toBe(true);
   } finally {
     for (const spy of diagnostics) spy.mockRestore();

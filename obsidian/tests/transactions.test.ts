@@ -158,7 +158,7 @@ test("native staging plus exclusive destination preserves an external creation a
   expect(record.paths).toContain("new.md");
   expect(await fs.readFile(join(base, "paper/.peerpedia-obsidian/recovery", record.transactionId, "moved.md"), "utf8")).toBe(first.text);
   expect(await store.recoveryFiles("paper", record.transactionId)).toContainEqual(expect.objectContaining({
-    path: "new.md", versions: expect.arrayContaining([{ label: "中断时的磁盘内容", text: "第三方新建" }]),
+    path: "new.md", versions: expect.arrayContaining([{ label: "Disk contents at interruption", text: "第三方新建" }]),
   }));
 });
 
@@ -196,9 +196,9 @@ test("case-only native rename keeps the chapter ID and handles the old spelling 
   const [record] = await store.recovery("paper");
   const versions = await store.recoveryFiles("paper",record.transactionId);
   expect(versions.find((item: {path:string}): boolean => item.path === first.path)?.versions)
-    .toContainEqual({label:"保留的外部文件",text:first.text+"延迟写入"});
+    .toContainEqual({label:"Saved external file",text:first.text+"延迟写入"});
   expect(versions.find((item: {path:string}): boolean => item.path === target)?.versions)
-    .toContainEqual({label:"当前磁盘内容",text:first.text});
+    .toContainEqual({label:"Current disk contents",text:first.text});
   } finally { await late.close(); }
 });
 
@@ -214,8 +214,8 @@ test("record stale disk, editor and proposed versions before a host autosave can
   const [record] = await store.recovery("paper");
   const [file] = await store.recoveryFiles("paper", record.transactionId);
   expect(file.versions).toEqual(expect.arrayContaining([
-    { label: "拟写入", text: "拟写版本" }, { label: "中断时的编辑器内容", text: "编辑器未保存" },
-    { label: "中断时的磁盘内容", text: "磁盘外部版本" },
+    { label: "Proposed changes", text: "拟写版本" }, { label: "Editor contents at interruption", text: "编辑器未保存" },
+    { label: "Disk contents at interruption", text: "磁盘外部版本" },
   ]));
 });
 
@@ -250,12 +250,12 @@ test("a replacement arriving inside the check-to-swap window survives as a reada
     await fs.rename(external, join(tree.base,target));
     await swap(stage, target, tree);
   });
-  await expect(store.apply("paper", fixture.revision, [change(first, "面板版本")])).rejects.toThrow(/外部更改/);
+  await expect(store.apply("paper", fixture.revision, [change(first, "面板版本")])).rejects.toThrow(/replaced while copying its metadata/i);
   const [record] = await store.recovery("paper");
   const [file] = await store.recoveryFiles("paper", record.transactionId);
   expect(file.versions).toEqual(expect.arrayContaining([
-    { label: "修改前", text: first.text }, { label: "保留的外部文件", text: "最后一刻保存的版本" },
-    { label: "当前磁盘内容", text: "面板版本" },
+    { label: "Before", text: first.text }, { label: "Saved external file", text: "最后一刻保存的版本" },
+    { label: "Current disk contents", text: "面板版本" },
   ]));
 });
 
@@ -276,7 +276,7 @@ test("recovery includes conflicting disk and editor versions of a dependency out
   expect(notice.paths).toContain(second.path);
   const saved = (await store.recoveryFiles("paper", notice.transactionId)).find((f: {path: string}): boolean => f.path === second.path);
   expect(saved?.versions).toEqual(expect.arrayContaining([
-    { label: "中断时的磁盘内容", text: "外部磁盘稿" }, { label: "中断时的编辑器内容", text: "编辑器中的另一稿" },
+    { label: "Disk contents at interruption", text: "外部磁盘稿" }, { label: "Editor contents at interruption", text: "编辑器中的另一稿" },
   ]));
 });
 
@@ -366,12 +366,12 @@ test("a pane draft captured after reconnection starts is durable before rename c
       return [];
     },
   });
-  await expect(store.renameChapter(fixture, "intro", "new.md")).rejects.toThrow(/编辑器/);
+  await expect(store.renameChapter(fixture, "intro", "new.md")).rejects.toThrow(/editor/i);
   const reopened = new VaultProjectStore(base, events);
   const [record] = await reopened.recovery("paper");
   const versions = await reopened.recoveryFiles("paper", record.transactionId);
   expect(versions.find((f: {path: string}): boolean => f.path === first.path)?.versions)
-    .toContainEqual({label: "中断时的编辑器内容", text: "窗格重接时的新稿"});
+    .toContainEqual({label: "Editor contents at interruption", text: "窗格重接时的新稿"});
 });
 
 test("failure inspection keeps two successive observed disk versions despite a later autosave", async (): Promise<void> => {
@@ -400,8 +400,8 @@ test("failure inspection keeps two successive observed disk versions despite a l
   const [record] = await reopened.recovery("paper");
   const versions = await reopened.recoveryFiles("paper", record.transactionId);
   expect(versions.find((f: {path: string}): boolean => f.path === second.path)?.versions).toEqual(expect.arrayContaining([
-    {label: "中断时的磁盘内容", text: "第一次外部保存"}, {label: "中断时的磁盘内容", text: "第二次外部保存"},
-    {label: "当前磁盘内容", text: "之后的自动保存"},
+    {label: "Disk contents at interruption", text: "第一次外部保存"}, {label: "Disk contents at interruption", text: "第二次外部保存"},
+    {label: "Current disk contents", text: "之后的自动保存"},
   ]));
 });
 test("replacing and renaming an existing chapter preserve Finder metadata", async (): Promise<void> => {

@@ -166,7 +166,7 @@ export function scanBibliography(source: string, path: string, start: number = 0
   } catch {
     // Keep authored definitions visible in the editor, but block refactoring an incomplete set of keys.
     diagnostics.push({code:"bibliography-yaml", path, from:start, to:start + source.length,
-      message:"无法解析书目中的 YAML 别名。"});
+      message:"Unable to resolve a YAML alias in the bibliography."});
   }
   if (!isMap(doc.contents)) return {labels, diagnostics};
   for (const pair of doc.contents.items) {
@@ -263,7 +263,7 @@ export function scanChapter(source: string, path: string): {
   if (source.includes("![")) tree.iterate({
     enter(node: SyntaxNodeRef): void {
       const range = publicationImage(source, node);
-      if (range) diagnostics.push({code: "publication-compatibility", path, ...range, message: "论文不支持图片，请使用 TikZ 图形。"});
+      if (range) diagnostics.push({code: "publication-compatibility", path, ...range, message: "Use TikZ figures for publication. Image embeds are unsupported."});
     },
   });
   tree.iterate({
@@ -274,7 +274,7 @@ export function scanChapter(source: string, path: string): {
       if (name === "PlainBracket" && source.startsWith("[[", from)) {
         const wiki = /\[\[[^\[\]\r\n]+\]\]/y;
         wiki.lastIndex = from;
-        if (wiki.test(source)) diagnostics.push({code: "publication-compatibility", path, from, to: wiki.lastIndex, message: "论文会按普通文字显示此 Obsidian 链接。"});
+        if (wiki.test(source)) diagnostics.push({code: "publication-compatibility", path, from, to: wiki.lastIndex, message: "This Obsidian link appears as plain text in the published paper."});
       }
       if (name === "Escape" && source.startsWith("\\{@", from)) {
         const literal = readReference(source, from + 1, { ignoreEscape: true });

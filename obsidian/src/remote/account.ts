@@ -1,3 +1,4 @@
+import { UserFacingError } from "../user-error";
 import { exactOrigin } from "./transport";
 import type { AccountIdentity, AccountInfo, CredentialStore, Transport } from "./types";
 
@@ -21,7 +22,7 @@ export function storedIdentity(value: unknown): AccountIdentity | null {
 
 export function decodeAccount(origin: string, value: unknown): AccountInfo {
   const base = exactOrigin(origin);
-  const invalid = new Error("站点返回的账号信息不完整或格式错误。");
+  const invalid = new UserFacingError("The site returned incomplete or invalid account information.");
   if (!record(value) || !text(value.username) || !Array.isArray(value.scopes) || !value.scopes.every(text)
     || !text(value.expires_at) || !/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d+)?(?:Z|[+-]\d\d:\d\d)$/u.test(value.expires_at)
     || !Number.isFinite(Date.parse(value.expires_at)) || !record(value.agreement)
@@ -37,15 +38,15 @@ export function decodeAccount(origin: string, value: unknown): AccountInfo {
 export async function connectAccount(origin: string, token: string, transport: Transport, credentials: CredentialStore,
   expectedUsername?: string, persistIdentity?: (identity: AccountIdentity) => Promise<void>): Promise<AccountInfo> {
   exactOrigin(origin);
-  if (!token || !/^[\x21-\x7e]+$/u.test(token)) throw new Error("请输入有效的访问令牌。");
+  if (!token || !/^[\x21-\x7e]+$/u.test(token)) throw new UserFacingError("Enter a valid access token.");
   const response = await transport.request(origin, "/api/v1/me/", "GET", {Authorization:"Bearer " + token, Accept:"application/json"}, null);
-  if (response.status !== 200) throw new Error(`账号验证失败（HTTP ${response.status}）。`);
+  if (response.status !== 200) throw new UserFacingError(`Account verification failed (HTTP ${response.status}).`);
   let payload: unknown;
   try { payload = JSON.parse(new TextDecoder("utf-8", {fatal:true}).decode(response.body)); }
-  catch { throw new Error("站点返回了无效的账号数据。"); }
+  catch { throw new UserFacingError("The site returned invalid account data."); }
   const account = decodeAccount(origin, payload);
-  if (expectedUsername !== undefined && account.username !== expectedUsername) throw new Error("令牌属于其他账号。请先断开当前账号。");
-  if (account.username.includes(token)) throw new Error("站点返回的用户名包含访问令牌。");
+  if (expectedUsername !== undefined && account.username !== expectedUsername) throw new UserFacingError("The token belongs to another account. Disconnect the current account first.");
+  if (account.username.includes(token)) throw new UserFacingError("The site returned an unsafe username.");
   await persistIdentity?.({origin, username:account.username});
   await credentials.write(origin,account.username,token);
   return account;

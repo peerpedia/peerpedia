@@ -71,7 +71,7 @@ def overlap(page: Page, vault: Path, chapter: str, base: str, member: bool = Tru
     assert path.read_text() == base
     path.write_text(external)
     if member:
-        action = page.get_by_role("button", name="核对版本", exact=True).last
+        action = page.get_by_role("button", name="Review versions", exact=True).last
         action.wait_for(timeout=6000)
         action.click()
         modal = page.locator(".modal").last
@@ -92,7 +92,7 @@ def errors(page: Page, vault: Path) -> None:
         }""", folder)
         panel = page.locator(".peerpedia-project-panel")
         assert detail in panel.get_by_role("alert").inner_text()
-        assert panel.get_by_role("button", name="打开 paper.json 原文件").is_visible()
+        assert panel.get_by_role("button", name="Open paper.json").is_visible()
         assert {p.relative_to(directory): p.read_bytes() for p in directory.rglob("*") if p.is_file()} == before
         print("PASS project error", panel.get_by_role("alert").inner_text(), flush=True)
 
@@ -106,18 +106,18 @@ def preview(page: Page, vault: Path) -> None:
     page.wait_for_function("/** @param {string} text @returns {boolean} */ text => sourceLeaf.view.editor.getValue() === text", arg=article)
     assert page.evaluate("app.commands.executeCommandById('peerpedia:manage-paper')")
     panel = page.locator(".peerpedia-project-panel")
-    panel.get_by_role("button", name="改章名").first.click()
+    panel.get_by_role("button", name="Rename chapter").first.click()
     form = page.locator(".modal").last
-    form.get_by_label("章名", exact=True).fill("Revised")
-    form.get_by_role("button", name="预览源码修改").click()
+    form.get_by_label("Chapter title", exact=True).fill("Revised")
+    form.get_by_role("button", name="Preview source changes").click()
     assert form.locator("pre").last.inner_text() == "## Revised {@sec:old .red}*"
-    form.get_by_role("button", name="确认修改源码").click()
+    form.get_by_role("button", name="Confirm source changes").click()
     form.wait_for(state="hidden")
     assert (vault / PROJECT / "intro.md").read_text() == article.replace("Original", "Revised")
     host.open_source(page, PROJECT + "/intro.md")
     assert page.evaluate("app.commands.executeCommandById('peerpedia:preview-paper')")
     reading = page.locator(".peerpedia-preview")
-    reading.get_by_role("status").get_by_text("预览已更新", exact=True).wait_for(timeout=45000)
+    reading.get_by_role("status").get_by_text("Preview updated", exact=True).wait_for(timeout=45000)
     frame = next(f for f in page.frames if f.url == "about:srcdoc")
     assert "Revised" in frame.locator("h2").first.inner_text()
     geometry = frame.evaluate("""/** @returns {object} */ () => {
@@ -180,8 +180,8 @@ def main(app: Path, package: Path, fixture: Path, evidence: Path) -> None:
             for entry in saved:
                 versions = {v["label"]: v["text"] for v in entry["versions"]}
                 name = entry["path"]
-                assert versions["修改前"] == ("" if name == "intro.md" else "SHARED")
-                assert versions["编辑器草稿"] == "LOCAL " + name and versions["外部修改"] == "EXTERNAL " + name
+                assert versions["Before"] == ("" if name == "intro.md" else "SHARED")
+                assert versions["Editor draft"] == "LOCAL " + name and versions["External changes"] == "EXTERNAL " + name
             print("PASS fresh host retrieves all three versions for both chapters", flush=True)
             preview(page, vault)
 

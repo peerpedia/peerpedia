@@ -96,7 +96,7 @@ test.each(["[[My note]]", "![image](figure.png)"])("bibliography commands preser
   const worker = new LanguageWorker(bundled, nodeThread);
   try {
     expect((await worker.run("analyze", project)).analysis.diagnostics).toContainEqual(
-      expect.objectContaining({path, from: source.indexOf(markup), message: expect.stringMatching(/图片|Obsidian/) }));
+      expect.objectContaining({path, from: source.indexOf(markup), message: expect.stringMatching(/Image embeds|Obsidian/) }));
     await expect(worker.run("validateCitationKey", {project, key: "fresh"})).resolves.toBeUndefined();
     expect(await worker.run("citationImpact", {project, key: "example"})).toContainEqual(
       expect.objectContaining({path, key: "example", line: 1}));
@@ -118,9 +118,9 @@ test.each(["entry: [broken", "*missing", "entry: *missing", "entry: {versions: *
       expect((await worker.run("analyze", project)).analysis.diagnostics).toContainEqual(
         expect.objectContaining({path, from:source.indexOf(yaml), to:source.indexOf("\n~~~") + 1, code:"bibliography-yaml"}));
     }
-    await expect(worker.run("validateCitationKey", {project, key: "fresh"})).rejects.toThrow(/内嵌书目/);
-    await expect(worker.run("citationImpact", {project, key: "example"})).rejects.toThrow(/内嵌书目/);
-    await expect(worker.run("citationRename", {project, from: "example", to: "fresh"})).rejects.toThrow(/内嵌书目/);
+    await expect(worker.run("validateCitationKey", {project, key: "fresh"})).rejects.toThrow(/inline bibliography/);
+    await expect(worker.run("citationImpact", {project, key: "example"})).rejects.toThrow(/inline bibliography/);
+    await expect(worker.run("citationRename", {project, from: "example", to: "fresh"})).rejects.toThrow(/inline bibliography/);
   } finally {
     worker.dispose();
   }

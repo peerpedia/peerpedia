@@ -143,5 +143,5 @@ test("a lone CR cannot introduce an ordered-list label", (): void => {
 test("the publication image rule also inspects nested link contents", (): void => {
   const source = "[![caption](figure.png)](article)";
   const issues = analyzeProject(editFixture(projectFixture(), intro, source)).diagnostics;
-  expect(issues).toContainEqual({code:"publication-compatibility", path:intro, from:1, to:23, message:"论文不支持图片，请使用 TikZ 图形。"});
+  expect(issues).toContainEqual({code:"publication-compatibility", path:intro, from:1, to:23, message:"Use TikZ figures for publication. Image embeds are unsupported."});
 });

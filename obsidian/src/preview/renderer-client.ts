@@ -23,7 +23,6 @@ interface Worker {
   closed: Promise<void>;
   stopping: boolean;
   error?: string;
-  stderr: string;
 }
 
 export class RendererClient {
@@ -83,8 +82,8 @@ export class RendererClient {
     try {
       const worker = this.#worker ?? this.#start();
       worker.child.stdin.write(JSON.stringify(pending.request) + "\n");
-    } catch (error: unknown) {
-      this.#cancel(pending, error instanceof Error ? error.message : String(error));
+    } catch {
+      this.#cancel(pending, "Unable to send the paper to the local renderer.");
     }
   }
 
@@ -100,22 +99,19 @@ export class RendererClient {
       child,
       closed: new Promise((resolveClose: () => void): void => { close = resolveClose; }),
       stopping: false,
-      stderr: "",
     };
     this.#worker = worker;
     const output = createInterface({ input: child.stdout, crlfDelay: Infinity });
     output.on("line", (line: string): void => this.#receive(worker, line));
-    child.stderr.setEncoding("utf8").on("data", (chunk: string): void => {
-      worker.stderr = (worker.stderr + chunk).slice(-2000);
-    });
-    child.on("error", (error: Error): void => {
-      worker.error ??= error.message;
+    child.stderr.resume();
+    child.on("error", (): void => {
+      worker.error ??= "Unable to start the local renderer.";
       this.#stop(worker);
     });
     child.stdin.on("error", (error: Error): void => {
       // A process that exits while stdin is being written may produce EPIPE before its exit status.
       if ((error as NodeJS.ErrnoException).code === "EPIPE") return;
-      worker.error ??= error.message;
+      worker.error ??= "Unable to send the paper to the local renderer.";
       this.#stop(worker);
     });
     child.once("close", (code: number | null, signal: NodeJS.Signals | null): void => {
@@ -125,8 +121,7 @@ export class RendererClient {
       this.#active = undefined;
       if (active) {
         const reason = worker.error ?? `Renderer exited (${signal ?? `code ${code}`}).`;
-        const detail = worker.stderr.trim();
-        active.finish(failure(active.request, detail ? `${reason}\n${detail}` : reason));
+        active.finish(failure(active.request, reason));
       }
       close();
       this.#pump();

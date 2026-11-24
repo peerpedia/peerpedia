@@ -61,7 +61,7 @@ test("chaptered import writes the declared order, exact source bytes and bibliog
 });
 test("refuses every existing target including an empty directory", async (): Promise<void> => {
   await mkdir(join(vault,"occupied"));
-  await expect(importPaper(target,"occupied",api(),store)).rejects.toThrow(/已存在/);
+  await expect(importPaper(target,"occupied",api(),store)).rejects.toThrow(/already exists/i);
   expect(await readdir(join(vault,"occupied"))).toEqual([]);
 });
 test("a valid snapshot qualified by a different paper fails before any vault write", async (): Promise<void> => {
@@ -75,7 +75,7 @@ test("a valid snapshot qualified by a different paper fails before any vault wri
     const body = route.startsWith("/api/v1/submissions/") ? old : {paper_id:other.manifest.paper_id,paper_identifier:qualifier,current:other};
     return {status:200,headers:{},body:Buffer.from(JSON.stringify(body))};
   }});
-  await expect(importPaper(target,"mismatch",client,store)).rejects.toThrow(/论文与快照不一致/);
+  await expect(importPaper(target,"mismatch",client,store)).rejects.toThrow(/different paper than the snapshot/i);
   expect(calls).toEqual(["/api/v1/submissions/" + old.manifest.submission_id + "/", "/api/v1/papers/" + qualifier + "/"]);
   expect(await readdir(vault)).toEqual([]);
 });
@@ -84,7 +84,7 @@ test("unsafe chapter ids fail before a directory or projected chapter is created
   const bad = await client.current(paper);
   bad.document.chapters = [{id:"../../escape",title:"bad",markdown:"bad"}];
   vi.spyOn(client,"current").mockResolvedValue(bad);
-  await expect(importPaper({kind:"paper",identifier:paper},"nested",client,store)).rejects.toThrow(/章节|chapter/);
+  await expect(importPaper({kind:"paper",identifier:paper},"nested",client,store)).rejects.toThrow(/chapter/i);
   expect(await readdir(vault)).toEqual([]);
 });
 test("closing the form while the current response is pending cancels before commit", async (): Promise<void> => {
@@ -92,7 +92,7 @@ test("closing the form while the current response is pending cancels before comm
   const head = await client.current(paper);
   let live = true;
   vi.spyOn(client,"current").mockImplementation(async (): Promise<typeof head> => { live = false; return head; });
-  await expect(importPaper(target,"cancelled",client,store,():boolean => live)).rejects.toThrow(/取消|更改/);
+  await expect(importPaper(target,"cancelled",client,store,():boolean => live)).rejects.toThrow(/canceled|changed/i);
   expect(await readdir(vault)).toEqual([]);
 });
 test("an interrupted binding commit is reported and recoverable after restart without another request", async (): Promise<void> => {
@@ -107,7 +107,7 @@ test("an interrupted binding commit is reported and recoverable after restart wi
   const reopened = new VaultProjectStore(vault, {} as Pick<Vault,"on"|"offref">);
   expect(await reopened.readBindingVersion("partial")).toMatchObject({pendingImport:true,binding:null});
   await writeFile(join(vault,"partial/paper.md"),"post-interruption local work");
-  await expect(reopened.recoverImport("partial")).rejects.toThrow(/已更改/);
+  await expect(reopened.recoverImport("partial")).rejects.toThrow(/changed/i);
   expect(await readFile(join(vault,"partial/paper.md"),"utf8")).toBe("post-interruption local work");
   await writeFile(join(vault,"partial/paper.md"),old.markdown);
   await reopened.recoverImport("partial");
@@ -133,10 +133,10 @@ test("a missing bound proposal or a mismatched site leaves the project's binding
     submissionId:old.manifest.submission_id,owner:"synthetic",status:"pending"}};
   await store.saveBinding(project.root,withPr,digest);
   const before = await store.readBindingVersion(project.root);
-  await expect(checkProject(project.root,api(),store)).rejects.toThrow(/提案当前不可见/);
+  await expect(checkProject(project.root,api(),store)).rejects.toThrow(/linked proposal is currently unavailable/i);
   expect(await store.readBindingVersion(project.root)).toEqual(before);
   const lastCall = calls.length;
-  await expect(checkRemote({...withPr,origin:"https://another.invalid"},api())).rejects.toThrow(/站点/);
+  await expect(checkRemote({...withPr,origin:"https://another.invalid"},api())).rejects.toThrow(/selected site/i);
   expect(calls).toHaveLength(lastCall);
 });
 
@@ -175,12 +175,12 @@ test("partial chapter recovery checks every present member and native draft befo
     buffers:(path: string): readonly string[] => path === root + "/chapters/intro.md" ? drafts : [],
   });
   await writeFile(chapter,"external version");
-  await expect(reopened.recoverImport(root)).rejects.toThrow(/已更改/);
+  await expect(reopened.recoverImport(root)).rejects.toThrow(/changed/i);
   expect(await readFile(chapter,"utf8")).toBe("external version");
   await expect(stat(missing)).rejects.toMatchObject({code:"ENOENT"});
   await writeFile(chapter,exact);
   drafts = ["unsaved native work"];
-  await expect(reopened.recoverImport(root)).rejects.toThrow(/编辑器/);
+  await expect(reopened.recoverImport(root)).rejects.toThrow(/unsaved changes/i);
   await expect(stat(missing)).rejects.toMatchObject({code:"ENOENT"});
   expect(await reopened.loadBinding(root)).toBeNull();
   drafts = [];
