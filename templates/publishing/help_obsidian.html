@@ -41,7 +41,7 @@
   <h3>Start a new manuscript</h3>
   <p>Press <kbd>⌘P</kbd> and choose <strong>Peerpedia: Create paper</strong>. Enter a new folder name within the vault, choose <strong>Single file</strong> or <strong>Multiple chapters</strong>, and complete the form. Open the resulting Markdown file to write. No account is needed for local writing or preview.</p>
   <h3>Download an existing paper</h3>
-  <p>Choose <strong>Peerpedia: Import paper from Peerpedia</strong>. Use <code>{{ site_url }}</code> as the site, paste the paper’s website URL, and choose a new destination folder within the vault. A paper link imports the latest accepted version; a snapshot or version reading link imports that exact version. Public papers can be imported without signing in.</p>
+  <p>Choose <strong>Peerpedia: Import paper</strong>. Use <code>{{ site_url }}</code> as the site, paste the paper’s website URL, and choose a new destination folder within the vault. A paper link imports the latest accepted version; a snapshot or version reading link imports that exact version. Public papers can be imported without signing in.</p>
   <p>Keep <code>paper.json</code>, the Markdown chapters, the shared bibliography and the hidden <code>.peerpedia-obsidian/</code> folder together. The hidden folder records the website binding and recovery information. Back up the whole paper folder.</p>
 </section>
 <section id="preview">
@@ -68,7 +68,7 @@
   <ol class="help-steps">
     <li>Sign in on the website, verify your email and accept the <a href="{% url 'agreements' %}">submission agreement</a>.</li>
     <li>Open <strong>Account → <a href="{% url 'access_tokens' %}">Access tokens</a></strong>, confirm your password, and create a token. Enable <strong>Also allow publishing new papers</strong> to publish your own new work; proposal permission is enough to submit revisions. For a Google-only account, use <strong>Account → Add a password by email</strong> first.</li>
-    <li>In Obsidian, choose <strong>Peerpedia: Connect or disconnect a Peerpedia account</strong>. Enter <code>{{ site_url }}</code> and paste the token into the token field. Choose <strong>Connect and verify account</strong>.</li>
+    <li>In Obsidian, choose <strong>Peerpedia: Connect or disconnect account</strong>. Enter <code>{{ site_url }}</code> and paste the token into the token field. Choose <strong>Connect and verify account</strong>.</li>
     <li>Check that the account and site are correct. Later, the paper’s <strong>… → Peerpedia account</strong> menu opens the same connection panel.</li>
   </ol>
   <p>The token is shown only once on the website. Keep it out of notes, chats and source repositories. The plugin stores it using Obsidian secret storage; its settings contain a secret reference rather than the token. If secret storage is unavailable, the connection lasts for the current session only. Revoke tokens from the website’s Access tokens page.</p>

@@ -116,3 +116,9 @@ test("closing one preview leaves its shared renderer available to another previe
   await right.dispose();
   expect(dispose).not.toHaveBeenCalled();
 });
+
+test("diagram font declarations preserve family names with WOFF2 resources", (): void => {
+  const manifest = {stylesheet:"style.css", katex:{fonts:[]}, tikz:{fonts:["tikz/cmr10.woff2"]}};
+  expect(localTheme(manifest, (): string => "data:font/woff2;base64,AAAA").fonts)
+    .toContain('font-family:tikzjax-cmr10;src:url("data:font/woff2;base64,AAAA") format("woff2")');
+});

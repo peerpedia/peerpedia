@@ -1,3 +1,4 @@
+import { setTimeout, clearTimeout } from "node:timers";
 import { UserFacingError } from "../user-error";
 import * as http from "node:http";
 import * as https from "node:https";

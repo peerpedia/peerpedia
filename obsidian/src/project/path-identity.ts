@@ -13,8 +13,9 @@ export function isReservedComponent(name: string): boolean {
   return reserved.has(pathKey(name));
 }
 
-export function isManuscriptPath(path: string): boolean {
-  return isRelativePath(path) && !path.split("/").some(isReservedComponent);
+export function isManuscriptPath(path: string, configDir?: string): boolean {
+  const key = pathKey(path), config = configDir && pathKey(configDir);
+  return (!config || (key !== config && !key.startsWith(config + "/"))) && isRelativePath(path) && !path.split("/").some(isReservedComponent);
 }
 
 export function vaultPath(root: string, path: string): string {

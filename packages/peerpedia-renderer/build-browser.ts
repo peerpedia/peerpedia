@@ -10,6 +10,13 @@ const base = dirname(fileURLToPath(import.meta.url));
 const root = resolve(base, "../..");
 const upstream = join(base, "node_modules");
 const require = createRequire(join(base, "package.json"));
+/** Gzip's OS byte must not make otherwise identical release bundles differ. */
+export function portableGzip(source: string): Buffer {
+  const bytes = gzipSync(source, { level: 9 });
+  bytes[9] = 255;
+  return bytes;
+}
+
 export async function buildBrowserRenderer(
   entry: string,
 ): Promise<{ source: string; inputs: Record<string, string> }> {
@@ -39,14 +46,14 @@ export async function buildBrowserRenderer(
   const fs = engine.dumpMemfs();
   const files: Record<string, string> = {};
   function collect(path: string): void {
-    for (const name of fs.readdirSync(path)) {
+    for (const name of fs.readdirSync(path).sort()) {
       const file = path.replace(/\/$/, "") + "/" + name;
       if (fs.statSync(file).isDirectory()) collect(file);
       else files[file] = fs.readFileSync(file).toString("base64");
     }
   }
   collect("/");
-  const texAssets = gzipSync(
+  const texAssets = portableGzip(
     JSON.stringify({
       files,
       core: gunzipSync(

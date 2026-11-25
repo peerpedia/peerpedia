@@ -1,3 +1,4 @@
+import { setTimeout, clearTimeout } from "node:timers";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 
@@ -185,7 +186,7 @@ export class WritingProjects {
 
   rootFor(path: string): string | null {
     if (this.knownRoots.has(path)) return this.knownRoots.get(path) ?? null;
-    if (!isManuscriptPath(path)) return null;
+    if (!isManuscriptPath(path, this.app.vault.configDir)) return null;
     let parent = path;
     while (parent) {
       parent = parent.slice(0, Math.max(0, parent.lastIndexOf("/")));

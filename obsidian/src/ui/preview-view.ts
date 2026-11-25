@@ -1,7 +1,6 @@
 import type { LanguageWorker } from "../host/language-worker";
-import { join } from "node:path";
 import { shell } from "electron";
-import { FileSystemAdapter, ItemView, MarkdownView, Notice, type Editor, type ViewStateResult, type WorkspaceLeaf } from "obsidian";
+import { ItemView, MarkdownView, Notice, type Editor, type ViewStateResult, type WorkspaceLeaf } from "obsidian";
 
 import type { RenderPage, RenderSuccess } from "../../renderer/protocol";
 import { openBuffers } from "../host/file-events";

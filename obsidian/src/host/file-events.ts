@@ -1,3 +1,4 @@
+import { setTimeout, clearTimeout } from "node:timers";
 import { UserFacingError } from "../user-error";
 import type { App, Editor, EditorSelection, MarkdownView, TFile, ViewState, WorkspaceLeaf } from "obsidian";
 import type { OpenChapterMove } from "../project/transaction";

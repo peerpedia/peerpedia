@@ -1,3 +1,4 @@
+import { setTimeout, clearTimeout } from "node:timers";
 import { UserFacingError } from "../user-error";
 import { realpathSync, statSync, type BigIntStats, watch as watchFiles, type Dirent, type FSWatcher } from "node:fs";
 import { readdir, realpath } from "node:fs/promises";
@@ -5,7 +6,7 @@ import { basename, dirname, join, resolve } from "node:path";
 
 import type { TAbstractFile, Vault } from "obsidian";
 
-import { isMissing, isManuscriptPath, isReservedComponent, locatePath, pathKey } from "../project/paths";
+import { isMissing, isManuscriptPath, locatePath, pathKey } from "../project/paths";
 import {
   CONFIG_PATH, parsePaperConfig, projectMembers, projectRevision, sourceDigest, type FileChange,
   type ProjectEvent, type ProjectStore, type MergeCommit,
@@ -35,7 +36,7 @@ function isManifest(entry: Dirent): boolean {
   return pathKey(entry.name) === CONFIG_PATH && (entry.isFile() || entry.isSymbolicLink());
 }
 
-async function rejectNestedProject(base: string, root: string, absolute: string): Promise<void> {
+async function rejectNestedProject(base: string, root: string, absolute: string, configDir?: string): Promise<void> {
   for (let parent = absolute; parent !== base;) {
     parent = dirname(parent);
     const entries = await readdir(parent, { withFileTypes: true });
@@ -55,7 +56,7 @@ async function rejectNestedProject(base: string, root: string, absolute: string)
       if (folder && isManifest(entry)) {
         throw new ProjectReadError(CONFIG_PATH, `Nested projects are not supported. Found "${join(folder, entry.name)}" inside this project.`);
       }
-      if (entry.isDirectory() && !isReservedComponent(entry.name)) {
+      if (entry.isDirectory() && isManuscriptPath(join(root, folder, entry.name), configDir)) {
         folders.push(join(folder, entry.name));
       }
     }
@@ -103,7 +104,7 @@ export class VaultProjectStore implements ProjectStore {
   private readonly basePath: string;
   private vaultIdentity?: BigIntStats;
 
-  constructor(basePath: string, private readonly vault: Pick<Vault, "on" | "offref">,
+  constructor(basePath: string, private readonly vault: Pick<Vault, "on" | "offref"> & Partial<Pick<Vault, "configDir">>,
     private readonly host: WriteHost = {}) {
     this.basePath = resolve(basePath);
     try {
@@ -112,8 +113,17 @@ export class VaultProjectStore implements ProjectStore {
     } catch (error: unknown) { if (!isMissing(error)) throw error; }
   }
 
-  async read(root: string): Promise<ProjectSnapshot> {
+  private checkPaths(root: string, paths: readonly string[] = []): void {
     checkRoot(root);
+    const config = this.vault.configDir && pathKey(this.vault.configDir);
+    for (const path of [root, ...paths.map((path: string): string => root ? root + "/" + path : path)]) {
+      const key = pathKey(path);
+      if (config && (key === config || key.startsWith(config + "/"))) throw new UserFacingError("Paper files must stay outside the vault configuration directory.");
+    }
+  }
+
+  async read(root: string): Promise<ProjectSnapshot> {
+    this.checkPaths(root);
     const base = await realpath(this.basePath);
     const directory = root === "" ? undefined : await locatePath(base, root, CONFIG_PATH);
     if (root && !directory) throw new ProjectReadError(CONFIG_PATH, `Missing project directory "${root}".`, "missing");
@@ -124,8 +134,9 @@ export class VaultProjectStore implements ProjectStore {
     const identities = new Map<string, string>();
     const metadata = await readSource(absolute, CONFIG_PATH, identities);
     if (!metadata) throw new ProjectReadError(CONFIG_PATH, `Missing paper.json in "${root || "/"}".`, "missing");
-    await rejectNestedProject(base, root, absolute);
+    await rejectNestedProject(base, root, absolute, this.vault.configDir);
     const config = parsePaperConfig(metadata.text);
+    this.checkPaths(root, projectMembers(config));
     const files = [metadata];
     for (const path of projectMembers(config).slice(1)) {
       const file = await readSource(absolute, path, identities);
@@ -135,7 +146,7 @@ export class VaultProjectStore implements ProjectStore {
   }
 
   private async directory(root: string): Promise<string> {
-    checkRoot(root);
+    this.checkPaths(root);
     const base = await realpath(this.basePath);
     if (!root) return base;
     const dir = await locatePath(base, root, CONFIG_PATH);
@@ -144,6 +155,7 @@ export class VaultProjectStore implements ProjectStore {
   }
 
   async localPath(root: string, path: string): Promise<string> {
+    this.checkPaths(root, [path]);
     const found = await locatePath(await this.directory(root), path, path);
     if (!found) throw new UserFacingError("The source file was not found.");
     return found.absolute;
@@ -152,6 +164,7 @@ export class VaultProjectStore implements ProjectStore {
   async recordNativeConflict(root: string, path: string, drafts: readonly {base: string; local: string}[],
     observed: (disk: string) => void): Promise<RecoveryNotice | undefined> {
     safePath(path);
+    this.checkPaths(root, [path]);
     return this.anchored(root, async (tree: AnchoredFiles): Promise<RecoveryNotice | undefined> => {
       // Start the descriptor-pinned read before the native view can merge or autosave the external text.
       const external = await tree.source(join(root, path));
@@ -193,6 +206,7 @@ export class VaultProjectStore implements ProjectStore {
 
   async member(root: string, path: string): Promise<SourceFile | undefined> {
     safePath(path);
+    this.checkPaths(root, [path]);
     return this.anchored(root, async (tree: AnchoredFiles): Promise<SourceFile | undefined> => {
       const file = await tree.source(join(root,path));
       return file ? {...file,path} : undefined;
@@ -200,12 +214,13 @@ export class VaultProjectStore implements ProjectStore {
   }
 
   private anchored<T>(root: string, action: (tree: AnchoredFiles) => Promise<T>): Promise<T> {
+    this.checkPaths(root);
     if (root) safePath(root);
     return withAnchors(this.basePath, async (tree: AnchoredFiles): Promise<T> => {
       this.vaultIdentity ??= statSync(this.basePath, {bigint:true});
       tree.checkRoot(this.vaultIdentity);
       return action(tree);
-    });
+    }, this.vault.configDir);
   }
 
   private async pinnedSnapshot(tree: AnchoredFiles, root: string): Promise<ProjectSnapshot> {
@@ -213,6 +228,7 @@ export class VaultProjectStore implements ProjectStore {
     const manifest = await tree.source(join(root,CONFIG_PATH),identities);
     if (!manifest) throw new UserFacingError("The paper is missing paper.json.");
     const config = parsePaperConfig(manifest.text);
+    this.checkPaths(root, projectMembers(config));
     const files = [{...manifest, path:CONFIG_PATH}];
     for (const path of projectMembers(config).slice(1)) {
       safePath(path);
@@ -259,8 +275,9 @@ export class VaultProjectStore implements ProjectStore {
     await this.exclusive(root, (): Promise<ProjectSnapshot> => this.anchored(root, async (tree: AnchoredFiles): Promise<ProjectSnapshot> => {
       tree.lockProject(root);
       const intent = await readPendingImport(tree,root);
-      await rejectNestedProject(this.basePath,root,join(this.basePath,root));
+      await rejectNestedProject(this.basePath,root,join(this.basePath,root),this.vault.configDir);
       const changes = importChanges(intent.binding.workingBase);
+      this.checkPaths(root, changes.map((change: FileChange): string => change.path));
       for (const change of changes) {
         const existing = await tree.source(join(root,change.path));
         if (!existing) continue;
@@ -283,6 +300,7 @@ export class VaultProjectStore implements ProjectStore {
       }
       const config = parsePaperConfig(changes.find((change: FileChange): boolean => change.path === CONFIG_PATH)?.afterText ?? "");
       const members = projectMembers(config);
+      this.checkPaths(root, members);
       const keys = new Set<string>();
       for (const member of members) safePath(member);
       for (const change of changes) {
@@ -325,7 +343,7 @@ export class VaultProjectStore implements ProjectStore {
   async recoverMerge(root: string): Promise<void> {
     await this.exclusive(root, (): Promise<ProjectSnapshot> => this.anchored(root, async (tree: AnchoredFiles): Promise<ProjectSnapshot> => {
       tree.lockProject(root);
-      await rejectNestedProject(this.basePath,root,join(this.basePath,root));
+      await rejectNestedProject(this.basePath,root,join(this.basePath,root),this.vault.configDir);
       const read = (): Promise<ProjectSnapshot> => this.pinnedSnapshot(tree,root);
       const project = await read();
       const checked = await writeTransaction(tree,root,project,[],this.host,read);
@@ -357,10 +375,11 @@ export class VaultProjectStore implements ProjectStore {
   private save(root: string, expectedRevision: string, changes: readonly FileChange[],
     move?: { from: string; to: string }, merge?: MergeCommit): Promise<ProjectSnapshot> {
     return this.exclusive(root, async (): Promise<ProjectSnapshot> => {
+      this.checkPaths(root, changes.map((change: FileChange): string => change.path));
       return this.anchored(root,async (tree: AnchoredFiles): Promise<ProjectSnapshot> => {
         if (merge) tree.lockProject(root);
         else tree.directory(root);
-        await rejectNestedProject(this.basePath, root, join(this.basePath,root));
+        await rejectNestedProject(this.basePath, root, join(this.basePath,root),this.vault.configDir);
         const project = await this.pinnedSnapshot(tree,root);
         try {
           if (project.revision !== expectedRevision) throw new PreconditionConflict("The paper changed elsewhere. Reload it and review the changes.");
@@ -382,7 +401,7 @@ export class VaultProjectStore implements ProjectStore {
   }
 
   watch(root: string, listener: (event: ProjectEvent) => void): () => void {
-    checkRoot(root);
+    this.checkPaths(root);
     const key = pathKey(root);
     let previous: ProjectSnapshot | undefined;
     let previousError: string | undefined;

@@ -10,15 +10,7 @@ The software uses the [MIT license](../LICENSE). Papers have their own author-se
 
 ## Peerpedia for Obsidian
 
-Write research papers locally with BananaMark completion, syntax highlighting, shared references and a website-matched preview. Import public papers, compare remote changes and explicitly submit a reviewed version to Peerpedia. The plugin source is in [`obsidian/`](../obsidian/); it uses the same [`renderer`](../packages/peerpedia-renderer/) and [`theme`](../packages/peerpedia-theme/) as the website. The root `manifest.json` describes the Obsidian plugin; the website, CLI and plugin use the same release version.
-
-**Platform:** Apple silicon Macs with Obsidian Desktop 1.15.1 or newer. Other platforms and mobile are not supported. The official directory application is being prepared; do not assume it is listed yet. Read the [installation and upgrade guide](../obsidian/docs/installation.md) and [usage guide](../obsidian/docs/usage.md).
-
-**Account and network use:** writing, syntax assistance and preview work offline without an account. Import, remote checks and publication contact only the Peerpedia site you explicitly connect to, normally `https://peerpedia.dev`. Publishing requires an account and access token; tokens use Obsidian secret storage. The plugin does not send client-side telemetry. The server processes requests under its [privacy policy](https://peerpedia.dev/privacy/). No payment is required by this plugin.
-
-**Files and native code:** manuscript edits stay inside the selected vault. For safe file transactions, the plugin embeds a small native macOS component built from [`anchored.c`](../obsidian/native/anchored.c). It writes this component to a newly created system temporary directory outside the vault, loads it, then removes that directory. It does not download, install or update dependencies at runtime. The component protects against replaced directories and late writes to old file handles. Its source and build process are public; official acceptance of this component has not been confirmed.
-
-**License and build:** MIT for Peerpedia code; third-party notices, including renderer and font licenses, are included in the packaged `styles.css`. On an Apple silicon Mac with Xcode Command Line Tools and Node.js 22.13+ (22.x) or 24+, run `npm run build` from the repository root. This installs locked build dependencies and produces `main.js`, `manifest.json` and `styles.css`. See [build details](../obsidian/docs/installation.md#build). Submit problems through [GitHub issues](https://github.com/peerpedia/peerpedia/issues).
+See the [plugin introduction](../README.md) for official installation, offline writing and platform requirements, or the [usage guide](https://peerpedia.dev/help/obsidian/).
 
 ## What is implemented
 
@@ -696,7 +688,7 @@ Build with `docker compose build web renderer`, run migrations, then start
 typography, colors, and math fonts for the reader, upload preview, and writing
 guide examples. `static/bananamark.css` adapts the shared theme to the existing
 website layout. No old syntax compatibility
-renderer is retained. Desktop packaging is a separate follow-up.
+renderer is retained. The Obsidian plugin reuses these same renderer and theme packages.
 
 ### Chapters, references, and reading progress
 

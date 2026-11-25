@@ -50,7 +50,7 @@ def check() -> None:
     assert versions[plugin_version] == plugin["minAppVersion"], "Obsidian version compatibility"
 
     for path, heading in (
-        ("README.md", f"# Peerpedia {version}"),
+        ("docs/website.md", f"# Peerpedia {version}"),
         ("cli/README.md", f"# Peerpedia CLI {version}"),
     ):
         assert (ROOT / path).read_text().splitlines()[0] == heading, path

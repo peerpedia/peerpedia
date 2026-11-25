@@ -1,3 +1,4 @@
+import { setTimeout, clearTimeout } from "node:timers";
 import {failure, isRecord, type RenderRequest, type RenderResponse} from "../../renderer/protocol";
 
 declare const __PEERPEDIA_RENDERER_WORKER__: string;

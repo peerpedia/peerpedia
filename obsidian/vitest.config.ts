@@ -7,7 +7,7 @@ const require = createRequire(import.meta.url);
 
 export default defineConfig({
   // Inline the diagram hook so its errors use the same BananaMark class as the handler.
-  test: { server: { deps: { inline: [/bananamark-tikz/] } } },
+  test: { setupFiles: ["./tests/timers.ts"], server: { deps: { inline: [/bananamark-tikz/] } } },
   define: {
     __PEERPEDIA_ANCHORED__: JSON.stringify(
       process.platform === "darwin" ? nativeFiles() : "",

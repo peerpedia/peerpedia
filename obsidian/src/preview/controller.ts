@@ -1,3 +1,4 @@
+import { setTimeout, clearTimeout } from "node:timers";
 import { UserFacingError, userErrorMessage } from "../user-error";
 import type { RenderFailure, RenderRequest, RenderResponse } from "../../renderer/protocol";
 import type { PublicationDocument } from "../project/document";

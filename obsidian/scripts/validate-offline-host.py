@@ -258,6 +258,20 @@ def verify(page: Page, context: BrowserContext, vault: Path, package: Path, evid
     assert page.evaluate("app.plugins.getPlugin('peerpedia').loadData()") is None
     print("PASS first enable from exactly three files in a fresh vault", flush=True)
 
+    page.evaluate("""/** @returns {void} */ () => {
+        app.setting.open();
+        app.setting.openTabById('peerpedia');
+    }""")
+    page.get_by_placeholder("Folder path (blank for vault root)").fill("writing-scope-probe")
+    page.get_by_role("button", name="Add rule", exact=True).first.click()
+    page.wait_for_function(
+        "app.plugins.getPlugin('peerpedia').writingScope.folders['writing-scope-probe'] === true"
+    )
+    page.get_by_text("writing-scope-probe", exact=True).wait_for()
+    page.screenshot(path=str(evidence / "community-settings.png"))
+    page.evaluate("app.setting.close()")
+    print("PASS searchable settings render and refresh after adding a folder rule", flush=True)
+
     intro = f"{PROJECT}/intro.md"
     proof = f"{PROJECT}/proof.md"
     page.evaluate(
