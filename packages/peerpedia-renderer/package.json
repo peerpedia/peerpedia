@@ -30,10 +30,10 @@
     "bananamark": "0.1.0",
     "bananamark-tikz": "0.1.0",
     "buffer": "6.0.3",
-    "cheerio": "1.2.0",
     "entities": "8.1.0",
     "linkedom": "0.18.15",
-    "lru-cache": "10.4.3"
+    "lru-cache": "10.4.3",
+    "parse5": "8.1.1"
   },
   "overrides": {
     "markdown-it": "15.0.3"

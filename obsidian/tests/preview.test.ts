@@ -122,3 +122,40 @@ test("diagram font declarations preserve family names with WOFF2 resources", ():
   expect(localTheme(manifest, (): string => "data:font/woff2;base64,AAAA").fonts)
     .toContain('font-family:tikzjax-cmr10;src:url("data:font/woff2;base64,AAAA") format("woff2")');
 });
+
+test("opening a paper starts rendering without the typing delay, while subsequent edits still coalesce", async (): Promise<void> => {
+  const {controller, pending} = harness();
+  const paper = projectFixture();
+  controller.update({...paper, revision: "opened"});
+  await vi.advanceTimersByTimeAsync(0);
+  expect(pending).toHaveLength(1);
+  expect(pending[0].request.revision).toBe("opened");
+  pending[0].finish({...pending[0].request, pages: []});
+  await vi.advanceTimersByTimeAsync(0);
+  controller.update({...paper, revision: "typing-1"});
+  await vi.advanceTimersByTimeAsync(200);
+  controller.update({...paper, revision: "typing-2"});
+  await vi.advanceTimersByTimeAsync(299);
+  expect(pending).toHaveLength(1);
+  await vi.advanceTimersByTimeAsync(1);
+  expect(pending).toHaveLength(2);
+  expect(pending[1].request.revision).toBe("typing-2");
+  controller.dispose();
+});
+
+test("switching to another paper bypasses typing delay and cannot publish the cancelled old render", async (): Promise<void> => {
+  const {controller, pending} = harness();
+  const paper = projectFixture();
+  controller.update({...paper, revision: "old"});
+  await vi.advanceTimersByTimeAsync(300);
+  controller.reset();
+  controller.update({...paper, revision: "new"});
+  await vi.advanceTimersByTimeAsync(0);
+  expect(pending).toHaveLength(2);
+  expect(pending[0].signal.aborted).toBe(true);
+  pending[1].finish({...pending[1].request, pages: []});
+  pending[0].finish({...pending[0].request, pages: []});
+  await vi.advanceTimersByTimeAsync(0);
+  expect(controller.state()).toMatchObject({renderedRevision: "new", busy: false});
+  controller.dispose();
+});

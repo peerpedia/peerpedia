@@ -1,11 +1,20 @@
 import { createBook, createRenderer, defineDialect } from "bananamark";
-import { load } from "cheerio";
+import { parseFragment, serialize } from "parse5";
 import { decodeHTMLAttribute } from "entities";
 import { LRUCache } from "lru-cache";
 import { dialectOptions, numbering } from "./dialect.js";
 import { inspectChapter } from "./chapter-title.js";
 
 const dialect = defineDialect(dialectOptions);
+
+/** @param {import("parse5").DefaultTreeAdapterMap["node"]} node
+ * @returns {Generator<import("parse5").DefaultTreeAdapterMap["node"]>} */
+function* htmlNodes(node) {
+  yield node;
+  if ("childNodes" in node)
+    for (const child of node.childNodes) yield* htmlNodes(child);
+  if ("content" in node) yield* htmlNodes(node.content);
+}
 /** @typedef {{id: string, title?: string, markdown: string}} Page */
 /** @typedef {{pages?: Page[], source?: string, action?: string, bibliography?: string, reader?: string, prefix?: string,
  * diagrams?: boolean, staticUrl?: string, numberSections?: boolean}} DocumentInput */
@@ -48,33 +57,36 @@ export function createDocumentRenderer(platform) {
 
   /** @param {string} html @returns {string} */
   function plain(html) {
-    return load(html, {}, false).root().text();
+    let text = "";
+    for (const node of htmlNodes(parseFragment(html))) {
+      if (node.nodeName === "#text" && "value" in node) text += node.value;
+    }
+    return text;
   }
 
   /** Put each embedded help example's fragment links and SVG resources in its own namespace.
    * @param {string} html @param {string} prefix @returns {string} */
   function prefixExampleIds(html, prefix) {
-    const $ = load(html, {}, false);
+    const fragment = parseFragment(html);
     /** @param {string} _match @param {string} id @returns {string} */
     function svgReference(_match, id) {
       return "url(#" + prefix + id + ")";
     }
-    for (const element of $("*")) {
-      for (const [name, value] of Object.entries(element.attribs)) {
-        if (name === "id") element.attribs[name] = prefix + value;
+    for (const element of htmlNodes(fragment)) {
+      if (!("attrs" in element)) continue;
+      for (const attribute of element.attrs) {
+        const { name, value } = attribute;
+        if (name === "id") attribute.value = prefix + value;
         else if (
           (name === "href" || name === "xlink:href") &&
           value.startsWith("#")
         )
-          element.attribs[name] = "#" + prefix + value.slice(1);
-        else if (element.namespace === "http://www.w3.org/2000/svg")
-          element.attribs[name] = value.replace(
-            /url\(#([^)]*)\)/g,
-            svgReference,
-          );
+          attribute.value = "#" + prefix + value.slice(1);
+        else if (element.namespaceURI === "http://www.w3.org/2000/svg")
+          attribute.value = value.replace(/url\(#([^)]*)\)/g, svgReference);
       }
     }
-    return $.html();
+    return serialize(fragment);
   }
 
   /** @param {Page} page @param {ResolvedDocument} resolved @param {Renderer} renderer

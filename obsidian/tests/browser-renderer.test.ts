@@ -1,3 +1,4 @@
+import type { CacheRequest, CacheResponse } from "../../packages/peerpedia-renderer/browser/diagram-cache";
 import { afterEach, expect, test, vi } from "vitest";
 import {
   BrowserRendererClient,
@@ -13,12 +14,14 @@ const request: RenderRequest = {
   document: toPublicationDocument(projectFixture()),
 };
 class ControlledWorker implements RenderWorker {
-  onmessage: ((event: MessageEvent<RenderResponse>) => void) | null = null;
+  onmessage: ((event: MessageEvent<RenderResponse | CacheRequest>) => void) | null = null;
   onerror: ((event: ErrorEvent) => void) | null = null;
   terminated = false;
   requests: RenderRequest[] = [];
-  postMessage(value: RenderRequest): void {
-    this.requests.push(value);
+  replies: CacheResponse[] = [];
+  postMessage(value: RenderRequest | CacheResponse): void {
+    if ("channel" in value) this.replies.push(value);
+    else this.requests.push(value);
   }
   terminate(): void {
     this.terminated = true;
@@ -150,5 +153,26 @@ test("an invalid worker response is rejected and the next request uses a new wor
   const next = client.render(request, new AbortController().signal);
   workers[1].finish();
   expect(await next).toHaveProperty("pages");
+  await client.dispose();
+});
+
+
+test("successful diagram cache survives idle worker replacement and ignores obsolete workers", async (): Promise<void> => {
+  vi.useFakeTimers();
+  const {client, workers} = setup();
+  const key = "a".repeat(64);
+  const first = client.render(request, new AbortController().signal);
+  const send = (worker: ControlledWorker, operation: "get" | "set", value?: string): void => {
+    worker.onmessage!(new MessageEvent("message", {data: {channel: "peerpedia-diagram-cache", id: 1, operation, key, value}}));
+  };
+  send(workers[0], "set", "saved diagram");
+  workers[0].finish(); await first;
+  await vi.advanceTimersByTimeAsync(100);
+  expect(workers[0].terminated).toBe(true);
+  const next = client.render(request, new AbortController().signal);
+  send(workers[0], "set", "obsolete response");
+  send(workers[1], "get");
+  expect(workers[1].replies.at(-1)?.value).toBe("saved diagram");
+  workers[1].finish(); await next;
   await client.dispose();
 });

@@ -11,10 +11,53 @@ const root = resolve(base, "../..");
 const upstream = join(base, "node_modules");
 const require = createRequire(join(base, "package.json"));
 /** Gzip's OS byte must not make otherwise identical release bundles differ. */
-export function portableGzip(source: string): Buffer {
+export function portableGzip(source: string | Uint8Array): Buffer {
   const bytes = gzipSync(source, { level: 9 });
   bytes[9] = 255;
   return bytes;
+}
+
+/** Keep engine bytes binary through compression; only the small index is JSON. */
+export function encodeAssets(
+  core: Uint8Array,
+  wasm: Uint8Array,
+  files: Record<string, Uint8Array>,
+): string {
+  const coreOffsets: number[] = [];
+  const blocks: Uint8Array[] = [];
+  for (let offset = 0; offset < core.byteLength; offset += 65536) {
+    const block = core.subarray(offset, offset + 65536);
+    if (block.some((value: number): boolean => value !== 0)) {
+      coreOffsets.push(offset);
+      blocks.push(block);
+    }
+  }
+  const entries: [string, Uint8Array][] = [
+    ["core", Buffer.concat(blocks)],
+    ["wasm", wasm],
+    ...Object.entries(files),
+  ];
+  const index = Buffer.from(
+    JSON.stringify({
+      coreLength: core.byteLength,
+      coreOffsets,
+      entries: entries.map(
+        ([name, bytes]: [string, Uint8Array]): [string, number] => [
+          name,
+          bytes.byteLength,
+        ],
+      ),
+    }),
+  );
+  const size = Buffer.alloc(4);
+  size.writeUInt32LE(index.byteLength);
+  return portableGzip(
+    Buffer.concat([
+      size,
+      index,
+      ...entries.map((entry: [string, Uint8Array]): Uint8Array => entry[1]),
+    ]),
+  ).toString("base64");
 }
 
 export async function buildBrowserRenderer(
@@ -44,26 +87,20 @@ export async function buildBrowserRenderer(
     );
   await engine.load();
   const fs = engine.dumpMemfs();
-  const files: Record<string, string> = {};
+  const files: Record<string, Uint8Array> = {};
   function collect(path: string): void {
     for (const name of fs.readdirSync(path).sort()) {
       const file = path.replace(/\/$/, "") + "/" + name;
       if (fs.statSync(file).isDirectory()) collect(file);
-      else files[file] = fs.readFileSync(file).toString("base64");
+      else files[file] = fs.readFileSync(file);
     }
   }
   collect("/");
-  const texAssets = portableGzip(
-    JSON.stringify({
-      files,
-      core: gunzipSync(
-        await readFile(join(upstream, "node-tikzjax/tex/core.dump.gz")),
-      ).toString("base64"),
-      wasm: gunzipSync(
-        await readFile(join(upstream, "node-tikzjax/tex/tex.wasm.gz")),
-      ).toString("base64"),
-    }),
-  ).toString("base64");
+  const texAssets = encodeAssets(
+    gunzipSync(await readFile(join(upstream, "node-tikzjax/tex/core.dump.gz"))),
+    gunzipSync(await readFile(join(upstream, "node-tikzjax/tex/tex.wasm.gz"))),
+    files,
+  );
   const recipe = {
     "/bananamark-tikz/compiler.mjs": await source(
       join(upstream, "bananamark-tikz/src/compiler.mjs"),

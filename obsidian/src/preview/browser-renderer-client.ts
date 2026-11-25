@@ -1,11 +1,12 @@
+import { DiagramCache, isCacheRequest, type CacheRequest, type CacheResponse } from "../../../packages/peerpedia-renderer/browser/diagram-cache";
 import { setTimeout, clearTimeout } from "node:timers";
 import {failure, isRecord, type RenderRequest, type RenderResponse} from "../../renderer/protocol";
 
 declare const __PEERPEDIA_RENDERER_WORKER__: string;
 export interface RenderWorker {
-  onmessage: ((event: MessageEvent<RenderResponse>) => void) | null;
+  onmessage: ((event: MessageEvent<RenderResponse | CacheRequest>) => void) | null;
   onerror: ((event: ErrorEvent) => void) | null;
-  postMessage(request: RenderRequest): void;
+  postMessage(request: RenderRequest | CacheResponse): void;
   terminate(): void;
 }
 export interface RenderService {
@@ -20,6 +21,7 @@ function createWorker(): RenderWorker {
 
 /** One plugin-owned queue; cancellation belongs to a request, never to a view or project ID. */
 export class BrowserRendererClient implements RenderService {
+  private readonly diagrams = new DiagramCache();
   private worker?: RenderWorker;
   private active?: Pending;
   private readonly queue: Pending[] = [];
@@ -62,9 +64,15 @@ export class BrowserRendererClient implements RenderService {
       if (!this.worker) {
         const worker = this.factory();
         this.worker = worker;
-        worker.onmessage = (event: MessageEvent<RenderResponse>): void => {
+        worker.onmessage = (event: MessageEvent<RenderResponse | CacheRequest>): void => {
           if (this.worker !== worker || !this.active) return;
           const current = this.active, response: unknown = event.data;
+          if (isCacheRequest(response)) {
+            if (response.operation === "set") this.diagrams.set(response.key, response.value!);
+            worker.postMessage({ channel: response.channel, id: response.id,
+              value: response.operation === "get" ? this.diagrams.get(response.key) : undefined });
+            return;
+          }
           if (!isRecord(response) || response.id !== current.request.id || response.revision !== current.request.revision ||
             !(Array.isArray(response.pages) || (isRecord(response.error) && typeof response.error.message === "string"))) {
             this.cancel(current, "The local renderer returned an invalid response."); return;
@@ -100,6 +108,7 @@ export class BrowserRendererClient implements RenderService {
 
   async dispose(): Promise<void> {
     this.disposed = true;
+    this.diagrams.clear();
     if (this.active) this.cancel(this.active, "Renderer disposed.");
     for (const pending of this.queue.splice(0)) pending.finish(failure(pending.request, "Renderer disposed."));
     this.stop();
