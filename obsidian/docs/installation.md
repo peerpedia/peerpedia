@@ -18,7 +18,7 @@ Download [Peerpedia 0.1.3 for Apple silicon Macs](https://github.com/peerpedia/p
 4. Place the three new files in `plugins/peerpedia/`. For an upgrade, retain your previous `data.json`. The old `native/` and `renderer/` directories are no longer used; leave their backed-up copies intact for rollback.
 5. Enable community plugins and **Peerpedia**. Open a manuscript and run **Peerpedia: Open paper preview** from **⌘P**. See [Usage](usage.md) for project creation, import and publication.
 
-Older account bindings are retained. Re-enter the token once through **Connect or disconnect account** to save it in Obsidian secret storage. This version does not read or delete old macOS Keychain entries. Do not copy a token into `data.json`.
+Older account bindings are retained. Re-enter the token once through **Connect or disconnect a Peerpedia account** to save it in Obsidian secret storage. This version does not read or delete old macOS Keychain entries. Do not copy a token into `data.json`.
 
 ## Disable, roll back or remove
 

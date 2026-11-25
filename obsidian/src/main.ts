@@ -127,7 +127,7 @@ export default class PeerpediaPlugin extends Plugin {
     const connection = new ConnectionModal(this.app, storedIdentity(settings?.connection), transport,
       credentials,
       (identity: AccountIdentity | null, pending: readonly AccountIdentity[]): Promise<void> => this.updateConnection(identity, pending), cleanup);
-    this.addCommand({ id: "connect-account", name: "Connect or disconnect account", callback: (): void => connection.open() });
+    this.addCommand({ id: "connect-account", name: "Connect or disconnect a Peerpedia account", callback: (): void => connection.open() });
     this.register((): void => connection.close());
     this.registerView(PREVIEW_VIEW, (leaf: WorkspaceLeaf): PreviewView => new PreviewView(leaf, store, language, renderer));
     const openPaperPreview = async (selectedRoot?: string): Promise<void> => {
@@ -211,7 +211,7 @@ export default class PeerpediaPlugin extends Plugin {
     };
     this.addCommand({ id: "manage-paper", name: "Manage paper", callback: (): void => showPanel(false) });
     this.addCommand({ id: "create-paper", name: "Create paper", callback: (): void => showPanel(true) });
-    this.addCommand({ id:"import-paper", name:"Import paper", callback:(): void => {
+    this.addCommand({ id:"import-paper", name:"Import paper from Peerpedia", callback:(): void => {
       void openPanel().then((panel: ProjectPanel): void => panel.importForm())
         .catch((error: unknown): void => { new Notice(errorMessage(error)); });
     } });

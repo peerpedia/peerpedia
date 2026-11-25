@@ -12,7 +12,7 @@ For manual installation or upgrading an older package, see the [installation gui
 
 ## Write and publish
 
-1. Open the command palette (**⌘P**) and choose **Peerpedia: Create paper** or **Peerpedia: Import paper**.
+1. Open the command palette (**⌘P**) and choose **Peerpedia: Create paper** or **Peerpedia: Import paper from Peerpedia**.
 2. Write in Obsidian’s **Source mode**. Enable the desired writing folders in **Settings → Peerpedia** for completion and syntax assistance.
 3. Run **Peerpedia: Open paper preview** for equations, theorem blocks, TikZ diagrams and references. Obsidian’s built-in reading mode does not render the full BananaMark syntax.
 4. Use **Manage paper** for chapters, paper details and the shared YAML bibliography. Import, compare remote changes and publish only when you choose.
