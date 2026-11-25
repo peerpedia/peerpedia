@@ -2,7 +2,7 @@ import { afterEach, expect, test } from "vitest";
 import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { nativeFiles } from "../scripts/native-files";
+import { nativeFiles, verifyNativeToolchain } from "../scripts/native-files";
 
 const folders: string[] = [];
 function fixture(): string {
@@ -25,4 +25,10 @@ test("rejects a corrupted packaged native component", (): void => {
 test("embeds exactly the verified component", (): void => {
   const dir = fixture();
   expect(Buffer.from(nativeFiles(dir), "base64")).toEqual(readFileSync(join(dir, "anchored.node")));
+});
+test("rejects changed native compilation inputs before rebuilding", (): void => {
+  const expected = JSON.parse(readFileSync(new URL("../native/anchored.json", import.meta.url), "utf8")).toolchain;
+  for (const key of ["compiler", "sdk", "linker", "headers"] as const) {
+    expect((): void => verifyNativeToolchain({ ...expected, [key]: "different" })).toThrow("Native toolchain mismatch");
+  }
 });

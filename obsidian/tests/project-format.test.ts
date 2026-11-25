@@ -407,6 +407,12 @@ test("protects a custom config directory without treating its files as nested pa
   const store = new VaultProjectStore(path, Object.assign(vault, { configDir }));
   const snapshot = await store.read("paper");
   expect(snapshot.files.length).toBeGreaterThan(1);
+  const chapter = snapshot.files.find((file: SourceFile): boolean => file.path.endsWith(".md"))!;
+  const recovery = await store.recordNativeConflict("paper", chapter.path,
+    [{ base: "older text", local: "unsaved draft" }], (): void => {});
+  expect(recovery).toBeDefined();
+  const records = await store.recoveryFiles("paper", recovery!.transactionId);
+  expect(JSON.stringify(records)).toContain("unsaved draft");
   await expect(store.member("paper", "settings/paper.json")).rejects.toThrow(/configuration/i);
   await expect(store.apply("paper", snapshot.revision, [
     { path: "settings/notes.md", beforeDigest: null, afterText: "do not write" },

@@ -45,7 +45,9 @@ Choose a new output directory; the packager refuses to overwrite an existing des
 
 `obsidian/native/anchored.node` is a checked-in macOS binary built from the adjacent `anchored.c`. Packaging verifies both the source and binary SHA-256 against `anchored.json` and refuses stale or altered inputs. macOS CI independently compiles the component using Xcode and compares its bytes. Linux builds reuse the verified binary; they do not compile Darwin source. This boundary is explicit so bundle reproducibility is not confused with independent compilation of native code.
 
-To verify a rebuild on macOS, run `cd obsidian && node_modules/.bin/tsx scripts/native-files.ts`. After an intentional native source change, use the same command with `--write`, review the source, binary and digest changes together, and run the file-transaction tests. Never edit a digest solely to silence a failed check.
+Native verification requires Xcode 16.4 (or matching Command Line Tools): Apple clang `17.0.0 (clang-1700.0.13.5)`, macOS SDK `15.5`, linker `1167.5`, and locked `node-api-headers@1.9.0`. The recipe is recorded in `anchored.json`; mismatched tools fail before compilation. CI selects `/Applications/Xcode_16.4.app/Contents/Developer` through `DEVELOPER_DIR`. Node-API headers come from the locked package, not the installed Node executable.
+
+To verify a rebuild on macOS, run `cd obsidian && node_modules/.bin/tsx scripts/native-files.ts`. After an intentional native source or toolchain change, use the same command with `--write`, review the source, binary, recipe and digest changes together, and run the file-transaction tests. Never edit a digest solely to silence a failed check.
 
 ## Validate a candidate in an isolated vault
 

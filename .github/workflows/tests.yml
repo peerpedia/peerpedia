@@ -59,6 +59,8 @@ jobs:
       - run: npm run check:community --prefix obsidian
       - run: obsidian/node_modules/.bin/eslint -c obsidian/eslint.config.mjs 'packages/peerpedia-renderer/**/*.ts'
       - name: Verify native component against its source
+        env:
+          DEVELOPER_DIR: /Applications/Xcode_16.4.app/Contents/Developer
         run: cd obsidian && node_modules/.bin/tsx scripts/native-files.ts
       - run: npm run build --prefix obsidian
       - run: npm test --prefix obsidian

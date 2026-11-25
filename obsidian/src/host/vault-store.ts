@@ -181,7 +181,7 @@ export class VaultProjectStore implements ProjectStore {
       const members = projectMembers(config).slice(1).filter((name: string): boolean => name !== config.bibliography);
       const member = members.find((name: string): boolean => name.normalize() === path.normalize());
       if (!member) return;
-      await rejectNestedProject(this.basePath, root, join(this.basePath, root));
+      await rejectNestedProject(this.basePath, root, join(this.basePath, root), this.vault.configDir);
       // One durable record per distinct pane draft, even if their bases differ.
       let notice: RecoveryNotice | undefined;
       for (const {base, local} of divergent) {
