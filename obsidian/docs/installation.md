@@ -1,10 +1,14 @@
 # Install Peerpedia for Obsidian
 
-This checkout builds the standard three Obsidian plugin files. It is a community-channel candidate; it has not yet been submitted to or accepted into the official directory. The current supported target is Apple Silicon macOS with Obsidian Desktop 1.15.1 or newer.
+Requires Obsidian Desktop 1.15.1 or newer on an Apple silicon Mac. Writing and preview work offline; Node.js, Python and TeX are not required at runtime.
 
-The plugin contains the shared website renderer, theme, fonts and TikZ engine. Writing and preview work offline. No separate Node.js, Python, TeX or credential helper is required at runtime. A small embedded native component still protects publication and recovery file transactions; its acceptance by the official directory remains unresolved.
+## Official directory
 
-## Download and install
+Open [Peerpedia in the official directory](https://community.obsidian.md/plugins/peerpedia), choose **Add to Obsidian**, then **Install** and **Enable**. Alternatively, search for **Peerpedia** in **Settings → Community plugins → Browse**. Use the same settings page to check for updates.
+
+The listing is available for installation. Its automated review includes warnings, so listing does not mean every check passed or that the plugin is security-certified.
+
+## Manual installation
 
 Download [Peerpedia 0.1.3 for Apple silicon Macs](https://github.com/peerpedia/peerpedia/releases/download/0.1.3/peerpedia-obsidian-0.1.3-darwin-arm64.zip) and its [SHA-256 checksum](https://github.com/peerpedia/peerpedia/releases/download/0.1.3/peerpedia-obsidian-0.1.3-darwin-arm64.zip.sha256). With both in the same folder, run `shasum -a 256 -c peerpedia-obsidian-0.1.3-darwin-arm64.zip.sha256`; the result should say `OK`.
 
@@ -24,7 +28,7 @@ Disable the plugin before replacing its files. For rollback, restore the previou
 
 ## Build
 
-Use an Apple Silicon Mac, Xcode Command Line Tools, and Node.js 22.13+ in the 22.x series or Node.js 24+. From the repository root:
+Use Node.js 22.13+ in the 22.x series or Node.js 24+ on Linux or macOS. From the repository root, `npm run build` installs locked dependencies and produces the three plugin files. To choose a new output directory instead:
 
 ```sh
 npm ci --prefix packages/peerpedia-renderer --ignore-scripts
@@ -36,6 +40,12 @@ npm run package --prefix obsidian -- /absolute/path/to/new-output/peerpedia
 ```
 
 Choose a new output directory; the packager refuses to overwrite an existing destination. Installation needs only the three output files. Third-party notices are included in `styles.css` so they remain available after standard installation. The two pinned dependency compatibility patches live in `packages/peerpedia-renderer/patches/`; applying them does not download a runtime.
+
+### Native component provenance
+
+`obsidian/native/anchored.node` is a checked-in macOS binary built from the adjacent `anchored.c`. Packaging verifies both the source and binary SHA-256 against `anchored.json` and refuses stale or altered inputs. macOS CI independently compiles the component using Xcode and compares its bytes. Linux builds reuse the verified binary; they do not compile Darwin source. This boundary is explicit so bundle reproducibility is not confused with independent compilation of native code.
+
+To verify a rebuild on macOS, run `cd obsidian && node_modules/.bin/tsx scripts/native-files.ts`. After an intentional native source change, use the same command with `--write`, review the source, binary and digest changes together, and run the file-transaction tests. Never edit a digest solely to silence a failed check.
 
 ## Validate a candidate in an isolated vault
 

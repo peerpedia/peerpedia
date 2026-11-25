@@ -4,7 +4,7 @@
 {% block guide_intro %}<p class="lede">Write locally, preview with Peerpedia’s formatting, and publish when your manuscript is ready.</p>{% endblock %}
 {% block guide_tabs %}{% include 'publishing/includes/help_tabs.html' with current='obsidian' %}{% endblock %}
 {% block guide_contents %}
-<a href="#install">Download and install</a>
+<a href="#install">Install the plugin</a>
 <a href="#start">Create or import a paper</a>
 <a href="#preview">Open the Peerpedia preview</a>
 <a href="#write">Chapters, formatting and references</a>
@@ -16,7 +16,9 @@
 {% endblock %}
 {% block guide_body %}
 <section id="install">
-  <h2>Download and install</h2>
+  <h2>Install the plugin</h2>
+  <p>Open <a href="https://community.obsidian.md/plugins/peerpedia">Peerpedia in the official Obsidian directory</a>, choose <strong>Add to Obsidian</strong>, then <strong>Install</strong> and <strong>Enable</strong>. You can also search for <strong>Peerpedia</strong> under <strong>Settings → Community plugins → Browse</strong>.</p>
+  <h3>Manual installation</h3>
   <p><a href="{{ repository_url }}/releases/download/{{ project_version }}/peerpedia-obsidian-{{ project_version }}-darwin-arm64.zip">Download Peerpedia {{ project_version }} for Obsidian — Mac with Apple silicon</a> · <a href="{{ repository_url }}/releases/download/{{ project_version }}/peerpedia-obsidian-{{ project_version }}-darwin-arm64.zip.sha256">SHA-256 checksum</a></p>
   <p>This package is for desktop Macs with an Apple M-series chip. It requires Obsidian 1.15.1 or newer and was tested on macOS 15.6.1. Intel Macs, Windows, Linux and mobile are not supported by this package. It includes the renderer, fonts and diagram tools; no separate Node.js, Python or TeX installation is needed.</p>
   <ol class="help-steps">
@@ -24,7 +26,7 @@
     <li>Download the ZIP above and extract it in Finder. The extracted <code>peerpedia</code> folder contains three files: <code>main.js</code>, <code>manifest.json</code> and <code>styles.css</code>. The renderer, fonts and diagram tools are embedded in these files.</li>
     <li>Open your vault folder in Finder. Press <kbd>⌘⇧.</kbd> to show hidden files. Open <code>.obsidian</code> and create a <code>plugins</code> folder if it does not exist. If you use a custom configuration folder, use its <code>plugins</code> folder instead.</li>
     <li>Copy the extracted folder into <code>.obsidian/plugins/peerpedia/</code>. You should find <code>manifest.json</code>, <code>main.js</code> and <code>styles.css</code> directly inside that folder. If Peerpedia is already installed, follow <a href="#update">Update the plugin</a> below first.</li>
-    <li>Reopen the vault. In <strong>Settings → Community plugins</strong>, enable community plugins and turn on <strong>Peerpedia</strong>. This is a manual installation, so it will not appear through searching the community directory.</li>
+    <li>Reopen the vault. In <strong>Settings → Community plugins</strong>, enable community plugins and turn on <strong>Peerpedia</strong>.</li>
     <li>Press <kbd>⌘P</kbd> to open the command palette and search for <strong>Peerpedia</strong>. The commands below are available there.</li>
   </ol>
   <details class="help-disclosure"><summary>Verify the download</summary>
@@ -89,6 +91,7 @@
 </section>
 <section id="update">
   <h2>Update or remove the plugin</h2>
+  <p>For an installation from the official directory, back up your papers and use <strong>Settings → Community plugins → Check for updates</strong>. Resolve any pending submission before updating. For a manual installation or migration from an older package, follow the steps below.</p>
   <ol class="help-steps">
     <li>Back up your manuscript folders, including hidden binding and recovery files. Disable <strong>Peerpedia</strong> in <strong>Settings → Community plugins</strong>.</li>
     <li>Move the existing <code>.obsidian/plugins/peerpedia/</code> folder to a backup location outside <code>plugins/</code>. Copy the new complete <code>peerpedia</code> folder into its place.</li>

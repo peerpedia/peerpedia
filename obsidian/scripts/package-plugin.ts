@@ -6,7 +6,6 @@ import { promisify } from "node:util";
 
 const run = promisify(execFile);
 const project = fileURLToPath(new URL("..", import.meta.url));
-const target = "darwin-arm64";
 
 interface PluginManifest {
   id: string;
@@ -16,7 +15,6 @@ interface PluginManifest {
 }
 
 export async function packagePlugin(outputDirectory: string): Promise<void> {
-  if (`${process.platform}-${process.arch}` !== target) throw new Error("Build the Apple Silicon package on Apple Silicon macOS.");
   const output = resolve(outputDirectory);
   const parent = dirname(output);
   await mkdir(parent, { recursive: true });
