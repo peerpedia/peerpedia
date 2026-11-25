@@ -58,6 +58,10 @@ jobs:
       - run: npm run check:types --prefix obsidian
       - run: npm run check:community --prefix obsidian
       - run: obsidian/node_modules/.bin/eslint -c obsidian/eslint.config.mjs 'packages/peerpedia-renderer/**/*.ts'
+      - name: Verify native component against its source
+        env:
+          DEVELOPER_DIR: /Applications/Xcode_16.4.app/Contents/Developer
+        run: cd obsidian && node_modules/.bin/tsx scripts/native-files.ts
       - run: npm run build --prefix obsidian
       - run: npm test --prefix obsidian
       - run: pip install -r requirements.lock -r requirements-browser.txt pgserver==0.1.4
@@ -67,6 +71,12 @@ jobs:
           PEERPEDIA_PG_PYTHON: python
       - name: Build the complete offline plugin
         run: npm run package --prefix obsidian -- "$RUNNER_TEMP/peerpedia"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: obsidian-macos-bundle
+          path: |
+            ${{ runner.temp }}/peerpedia/main.js
+            ${{ runner.temp }}/peerpedia/styles.css
       - name: Install the minimum supported Obsidian in temporary storage
         run: |
           curl --fail --location --retry 3 --output "$RUNNER_TEMP/Obsidian.dmg" https://github.com/obsidianmd/obsidian-releases/releases/download/v1.15.1/Obsidian-1.15.1.dmg
@@ -250,3 +260,31 @@ jobs:
           include-hidden-files: true
           if-no-files-found: ignore
           retention-days: 7
+
+  obsidian-linux-build:
+    if: github.event_name != 'schedule'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+      - run: npm run build
+      - uses: actions/upload-artifact@v7
+        with:
+          name: obsidian-linux-bundle
+          path: |
+            main.js
+            styles.css
+  obsidian-reproducibility:
+    needs: [obsidian, obsidian-linux-build]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v7
+        with:
+          pattern: obsidian-*-bundle
+          path: bundles
+      - name: Compare independently built release files
+        run: |
+          cmp bundles/obsidian-macos-bundle/main.js bundles/obsidian-linux-bundle/main.js
+          cmp bundles/obsidian-macos-bundle/styles.css bundles/obsidian-linux-bundle/styles.css

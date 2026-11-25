@@ -53,15 +53,15 @@ export class AnchoredFiles {
   private pendingDirectorySyncs = 0;
   private readonly missing = new Set<string>();
   private readonly pins = new Map<string, Pin>();
-  private constructor(readonly base: string, fd: number) {
+  private constructor(readonly base: string, fd: number, private readonly configDir?: string) {
     this.pins.set("", { fd, identity: fstatSync(fd, { bigint: true }), name: "" });
   }
 
-  static open(base: string): AnchoredFiles {
+  static open(base: string, configDir?: string): AnchoredFiles {
     const absolute = resolve(base);
     // O_NOFOLLOW_ANY (Darwin) applies to every component of the trusted vault's canonical name.
     const fd = openSync(absolute, directoryFlags | 0x20000000);
-    return new AnchoredFiles(absolute, fd);
+    return new AnchoredFiles(absolute, fd, configDir);
   }
 
   private verify(pin: Pin): void {
@@ -81,7 +81,15 @@ export class AnchoredFiles {
     return matches[0] ?? name;
   }
 
+  private checkConfiguration(path: string): void {
+    const key = pathKey(path), config = this.configDir && pathKey(this.configDir);
+    if (config && (key === config || key.startsWith(config + "/"))) {
+      throw new UserFacingError("Paper files must stay outside the vault configuration directory.");
+    }
+  }
+
   private pin(path: string, make: boolean = false): Pin {
+    this.checkConfiguration(path);
     if (this.closed) throw new UserFacingError("The file operation has ended.");
     if (path === ".") path = "";
     const existing = this.pins.get(path);
@@ -166,6 +174,7 @@ export class AnchoredFiles {
   }
 
   private parent(path: string): { dir: Pin; name: string } {
+    this.checkConfiguration(path);
     if (!isRelativePath(path)) throw new UserFacingError("The project path is invalid.");
     const dir = this.pin(dirname(path));
     return { dir, name: this.entry(dir, basename(path)) };
@@ -259,7 +268,7 @@ export class AnchoredFiles {
   }
 }
 
-export async function withAnchors<T>(base: string, action: (tree: AnchoredFiles) => Promise<T>): Promise<T> {
-  const tree = AnchoredFiles.open(base);
+export async function withAnchors<T>(base: string, action: (tree: AnchoredFiles) => Promise<T>, configDir?: string): Promise<T> {
+  const tree = AnchoredFiles.open(base, configDir);
   try { return await action(tree); } finally { tree.close(); }
 }

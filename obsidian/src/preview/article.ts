@@ -76,9 +76,9 @@ export function localTheme(
     return url.href;
   };
   const fonts = manifest.tikz.fonts.map((path: string): string => {
-    const name = /^tikz\/([\w-]+)\.ttf$/.exec(path)?.[1];
-    if (!name) throw new UserFacingError("The diagram font manifest is invalid.");
-    return `@font-face{font-family:tikzjax-${name};src:url(${JSON.stringify(local(path))}) format("truetype")}`;
+    const match = /^tikz\/([\w-]+)\.(ttf|woff2)$/.exec(path);
+    if (!match) throw new UserFacingError("The diagram font manifest is invalid.");
+    return `@font-face{font-family:tikzjax-${match[1]};src:url(${JSON.stringify(local(path))}) format("${match[2] === "woff2" ? "woff2" : "truetype"}")}`;
   }).join("\n");
   const katex = new Map<string, string>();
   for (const path of manifest.katex.fonts) {

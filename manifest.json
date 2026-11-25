@@ -5,6 +5,6 @@
   "minAppVersion": "1.15.1",
   "description": "Write and preview papers offline, and import, compare, or submit them to Peerpedia on Apple silicon Macs.",
   "author": "Peerpedia",
-  "authorUrl": "https://github.com/peerpedia/peerpedia",
+  "authorUrl": "https://github.com/peerpedia",
   "isDesktopOnly": true
 }

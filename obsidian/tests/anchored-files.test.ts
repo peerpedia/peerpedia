@@ -72,3 +72,19 @@ test("asking the host to observe publication preserves content and mtime and ver
     expect(signal).toThrow(/changed after it was saved/i);
   } finally { tree.close(); await fs.rm(base, { recursive: true, force: true }); }
 });
+
+test("native transactions cannot read, replace or create entries in the configured settings directory", async (): Promise<void> => {
+  const base = await fs.realpath(await fs.mkdtemp(join(tmpdir(), "paper-config-guard-")));
+  await fs.mkdir(join(base, "custom-settings"));
+  await fs.writeFile(join(base, "custom-settings/private.json"), "private");
+  await fs.writeFile(join(base, "staged"), "changed");
+  const tree = AnchoredFiles.open(base, "custom-settings");
+  try {
+    await expect(tree.source("custom-settings/private.json")).rejects.toThrow(/configuration/i);
+    await expect(tree.file("custom-settings/new.json", "changed")).rejects.toThrow(/configuration/i);
+    expect((): void => tree.rename("staged", "custom-settings/private.json", "swap")).toThrow(/configuration/i);
+    expect((): void => tree.rename("custom-settings", "elsewhere", "publish")).toThrow(/configuration/i);
+    expect(await fs.readFile(join(base, "custom-settings/private.json"), "utf8")).toBe("private");
+    expect(await fs.readdir(join(base, "custom-settings"))).toEqual(["private.json"]);
+  } finally { tree.close(); await fs.rm(base, { recursive: true, force: true }); }
+});

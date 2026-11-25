@@ -5,9 +5,6 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = fileURLToPath(new URL("..", import.meta.url));
-if (process.platform !== "darwin" || process.arch !== "arm64") {
-  throw new Error("Build on Apple silicon macOS with Xcode Command Line Tools.");
-}
 
 /** @param {string[]} args @returns {void} */
 function npm(args) {

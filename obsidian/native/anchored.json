@@ -1,0 +1,10 @@
+{
+  "source": "736eb59bb7e1ed288179dca8c8d9e37f161efc5f2aa6290504e35812a66e92c3",
+  "component": "785099775889bb1f5912da431d71520e36e2f2498912623872ff65b5beb742d0",
+  "toolchain": {
+    "compiler": "Apple clang version 17.0.0 (clang-1700.0.13.5)",
+    "sdk": "15.5",
+    "linker": "1167.5",
+    "headers": "1.9.0"
+  }
+}

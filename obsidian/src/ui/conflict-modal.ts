@@ -1,14 +1,14 @@
-import { execFile } from "node:child_process";
-import { promisify } from "node:util";
 import { Modal, Notice, type App } from "obsidian";
 import { styleModal } from "./controls";
 import { userErrorMessage } from "../user-error";
 import type { RecoveryNotice } from "../project/recovery";
 import { ProjectReadError } from "../project/types";
 
-const open = promisify(execFile);
 export async function openLocalFile(path: string, reveal: boolean): Promise<void> {
-  await open("/usr/bin/open", [reveal ? "-R" : "-t", path]);
+  const { shell } = await import("electron");
+  if (reveal) { shell.showItemInFolder(path); return; }
+  const error = await shell.openPath(path);
+  if (error) throw new Error(error);
 }
 
 export function errorMessage(error: unknown, fallback: string = "The operation could not be completed."): string {

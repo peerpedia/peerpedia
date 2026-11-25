@@ -1,6 +1,5 @@
 import { LanguageWorker } from "./host/language-worker";
 import { UserFacingError } from "./user-error";
-import { join } from "node:path";
 import type { Text } from "@codemirror/state";
 import { EditorView, type ViewUpdate } from "@codemirror/view";
 import { editorInfoField, FileSystemAdapter, TFile, MarkdownView, Notice, Plugin, type Editor, type MarkdownFileInfo, type TAbstractFile, type WorkspaceLeaf, type View } from "obsidian";
@@ -101,7 +100,7 @@ export default class PeerpediaPlugin extends Plugin {
         preview:(root: string): Promise<void> => openPaperPreview(root), connect:(): void => connection.open(),
       }));
     const paperRoot = async (file: TAbstractFile | null): Promise<string | undefined> => {
-      if (!file || !isManuscriptPath(file.path)) return undefined;
+      if (!file || !isManuscriptPath(file.path, this.app.vault.configDir)) return undefined;
       for (let parent = file.parent; parent; parent = parent.parent) {
         const folder = parent.isRoot() ? "" : parent.path;
         if (await adapter.exists(folder ? folder + "/" + CONFIG_PATH : CONFIG_PATH)) {

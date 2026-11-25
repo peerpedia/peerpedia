@@ -397,3 +397,26 @@ test("manuscript membership and entered roots refuse reserved components before 
     await expect(store.read(folder + "/absent")).rejects.toThrow(/unsafe project root/i);
   }
 });
+
+test("protects a custom config directory without treating its files as nested papers", async (): Promise<void> => {
+  const project = projectFixture();
+  const { path, vault } = await vaultFixture(project);
+  const configDir = "paper/settings";
+  await mkdir(join(path, configDir));
+  await writeFile(join(path, configDir, "paper.json"), "private config");
+  const store = new VaultProjectStore(path, Object.assign(vault, { configDir }));
+  const snapshot = await store.read("paper");
+  expect(snapshot.files.length).toBeGreaterThan(1);
+  const chapter = snapshot.files.find((file: SourceFile): boolean => file.path.endsWith(".md"))!;
+  const recovery = await store.recordNativeConflict("paper", chapter.path,
+    [{ base: "older text", local: "unsaved draft" }], (): void => {});
+  expect(recovery).toBeDefined();
+  const records = await store.recoveryFiles("paper", recovery!.transactionId);
+  expect(JSON.stringify(records)).toContain("unsaved draft");
+  await expect(store.member("paper", "settings/paper.json")).rejects.toThrow(/configuration/i);
+  await expect(store.apply("paper", snapshot.revision, [
+    { path: "settings/notes.md", beforeDigest: null, afterText: "do not write" },
+  ])).rejects.toThrow(/configuration/i);
+  await expect(store.read("paper/settings")).rejects.toThrow(/configuration/i);
+  expect(await readFile(join(path, configDir, "paper.json"), "utf8")).toBe("private config");
+});
