@@ -36,7 +36,15 @@ class ReleaseGateTests(unittest.TestCase):
                     if jobs is not None
                     else [
                         {"name": n, "conclusion": "success"}
-                        for n in ["test", "browser", "quality", "security", "obsidian"]
+                        for n in [
+                            "test",
+                            "browser",
+                            "quality",
+                            "security",
+                            "obsidian",
+                            "obsidian-linux-build",
+                            "obsidian-reproducibility",
+                        ]
                     ]
                 }
             return {
@@ -93,3 +101,13 @@ class ReleaseGateTests(unittest.TestCase):
             )
             with self.subTest(conclusion=conclusion), self.assertRaises(ValueError):
                 verified_release(SHA, self.reader(jobs=jobs))
+
+    def test_portable_build_gates_must_succeed_even_if_workflow_succeeds(self) -> None:
+        complete = self.reader()("actions/runs/1/jobs?per_page=100")["jobs"]
+        for gate in ("obsidian-linux-build", "obsidian-reproducibility"):
+            for conclusion in (None, "failure", "skipped", "cancelled"):
+                jobs = [job for job in complete if job["name"] != gate]
+                if conclusion:
+                    jobs.append({"name": gate, "conclusion": conclusion})
+                with self.subTest(gate=gate, conclusion=conclusion), self.assertRaises(ValueError):
+                    verified_release(SHA, self.reader(jobs=jobs))

@@ -18,7 +18,15 @@ import subprocess
 import tempfile
 
 REPOSITORY = "peerpedia/peerpedia"
-REQUIRED_JOBS = {"test", "browser", "quality", "security", "obsidian"}
+REQUIRED_JOBS = {
+    "test",
+    "browser",
+    "quality",
+    "security",
+    "obsidian",
+    "obsidian-linux-build",
+    "obsidian-reproducibility",
+}
 ROOT = Path(__file__).resolve().parent.parent
 BACKUP_PATH_FILTER = (
     r"sed -n -e 's/^Backup written to \([^ ]*\.dump\).*$/\1/p' -e t -e '/^backups\/.*\.dump$/p'"
@@ -50,7 +58,9 @@ def verified_release(sha: str, read: Callable[[str], dict[str, Any]] = github) -
     jobs = read(f"actions/runs/{latest['id']}/jobs?per_page=100")["jobs"]
     successful = {job["name"] for job in jobs if job["conclusion"] == "success"}
     if not REQUIRED_JOBS <= successful:
-        raise ValueError("Backend, browser, quality, security, and Obsidian gates must all pass.")
+        raise ValueError(
+            "Backend, browser, quality, security, Obsidian, Linux build, and reproducibility gates must all pass."
+        )
     return latest["html_url"]
 
 

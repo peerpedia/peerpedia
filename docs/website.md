@@ -446,10 +446,11 @@ editor/node_modules/.bin/prettier --check 'editor/*.js' 'editor/*.mjs' 'static/*
 python -m unittest discover -s scripts -p 'test_*_unit.py'
 ```
 
-Full CI runs `test`, `browser`, `quality`, `security`, and `obsidian` on pushes, pull requests,
+Full CI runs `test`, `browser`, `quality`, `security`, `obsidian`, `obsidian-linux-build`,
+and `obsidian-reproducibility` on pushes, pull requests,
 and manual runs. The daily scheduled run checks Python and npm dependency security
 only, and appears in GitHub Actions as **Daily security scan**. It does not push
-commits or deploy the website. Deployment still requires all five jobs to pass
+commits or deploy the website. Deployment requires all seven jobs to pass
 on the exact main commit.
 
 CI also checks that `requirements.lock` satisfies `requirements.txt`. Update both
