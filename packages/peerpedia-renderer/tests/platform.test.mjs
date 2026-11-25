@@ -55,3 +55,31 @@ test("requesting diagrams without a compiler fails explicitly", /** @returns {Pr
     /diagram compiler/i,
   );
 });
+
+test("rich heading labels retain text and decoded HTML entities", /** @returns {Promise<void>} */ async () => {
+  const result = await createDocumentRenderer({ hash })({
+    source: "# **Bold** &amp; `code` 中文\n\nBody.",
+  });
+  assert.equal(result.pages[0].headings[0].label, "Bold & code 中文");
+});
+
+test("embedded examples prefix fragment and SVG references without changing namespaces or external links", /** @returns {Promise<void>} */ async () => {
+  const render = createDocumentRenderer({
+    hash,
+    createDiagrams: /** @returns {object} */ () => ({
+      render: /** @returns {Promise<string>} */ async () =>
+        '<svg xmlns="http://www.w3.org/2000/svg"><defs><clipPath id="clip"><path d="M0 0"></path></clipPath></defs><use xlink:href="#clip" clip-path="url(#clip)"></use><text>α &amp; β</text></svg><a id="jump" href="#clip">Go</a><a href="https://example.test/#clip">External</a>',
+      close: /** @returns {Promise<void>} */ async () => {},
+    }),
+  });
+  const result = await render({
+    source:
+      "```tikz\n\\begin{tikzpicture}\\draw (0,0)--(1,1);\\end{tikzpicture}\n```",
+    diagrams: true,
+    prefix: "help-",
+  });
+  assert.equal(
+    result.pages[0].html,
+    '<svg xmlns="http://www.w3.org/2000/svg"><defs><clipPath id="help-clip"><path d="M0 0"></path></clipPath></defs><use xlink:href="#help-clip" clip-path="url(#help-clip)"></use><text>α &amp; β</text></svg><a id="help-jump" href="#help-clip">Go</a><a href="https://example.test/#clip">External</a>',
+  );
+});

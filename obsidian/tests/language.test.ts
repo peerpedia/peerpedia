@@ -1,5 +1,6 @@
 import type { SyntaxMark } from "../src/language/index";
-import { expect, test } from "vitest";
+import { expect, test, vi } from "vitest";
+import * as diagnostics from "../src/language/diagnostics";
 
 import { analyzeProject, analyzeWriting } from "../src/language/analysis";
 import { complete, type Suggestion } from "../src/language/completion";
@@ -158,4 +159,45 @@ test("preserves upstream syntax classes for TeX commands, delimiters, environmen
     expect.objectContaining({classes:expect.stringContaining("bm-hl-reference")}),
   ]));
   expect(tokens.some((mark: SyntaxMark): boolean => normalized.slice(mark.from, mark.to) === "$" && mark.classes!.includes("bm-hl"))).toBe(true);
+});
+
+test("reuses complete validation for unchanged chapters while checking edited text", (): void => {
+  const cache = new Map();
+  const project = projectFixture();
+  const check = vi.spyOn(diagnostics, "checkChapter");
+  try {
+    analyzeWriting(project, cache);
+    check.mockClear();
+    const cached = analyzeWriting(project, cache);
+    expect(check).not.toHaveBeenCalled();
+    expect(cached).toEqual(analyzeWriting(project, new Map()));
+    check.mockClear();
+    const changed = editFixture(project, intro, "# **Introduction** {@sec:intro}\r\n\r\nChanged text $\\badcommand$. See @thm:main.\r\n");
+    const result = analyzeWriting(changed, cache);
+    expect(check).toHaveBeenCalledTimes(1);
+    expect(check.mock.calls[0][0]).toBe(intro);
+    expect(result).toEqual(analyzeWriting(changed, new Map()));
+    expect(result.analysis.diagnostics.some((issue: {path: string}): boolean => issue.path === intro)).toBe(true);
+  } finally { check.mockRestore(); }
+});
+
+test("cached diagnostics follow changed definitions, bibliography, errors and CRLF positions", (): void => {
+  const cache = new Map();
+  let project = editFixture(projectFixture(), intro, "# Introduction\r\n\r\n😀 See @thm:main and [@example].\r\n");
+  analyzeWriting(project, cache);
+  const edits: [string, string][] = [
+    [proof, "# Proof\n\n::: theorem {@thm:renamed}\nCorrect.\n:::\n"],
+    ["references.yaml", "other: {type: book, title: Other}\n"],
+    [proof, "# Proof\n\n::: theorem {@thm:main}\nCorrect.\n:::\n"],
+    [intro, "# Introduction\r\n\r\n::: theorem {@thm:main}\r\nDuplicate\r\n:::\r\nSee @thm:main.\r\n"],
+    [proof, "# Proof\n\nNo definition.\n"],
+    ["references.yaml", "example: [broken"],
+    ["references.yaml", "example: {type: book, title: Restored}\n"],
+    [intro, "# Introduction\r\n\r\n::: theorem {@thm:main}\r\nFixed.\r\n:::\r\nSee @thm:main and [@example].\r\n"],
+  ];
+  for (const [path, text] of edits) {
+    project = editFixture(project, path, text);
+    expect(analyzeWriting(project, cache), path).toEqual(analyzeWriting(project, new Map()));
+  }
+  expect(analyzeWriting(project, cache).analysis.diagnostics).toEqual([]);
 });

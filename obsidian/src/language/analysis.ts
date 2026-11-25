@@ -28,6 +28,7 @@ interface IndexedSource {
   references: readonly Reference[];
   marks: readonly SyntaxMark[];
   diagnostics: readonly Diagnostic[];
+  validation?: { key: string; diagnostics: readonly Diagnostic[] };
 }
 
 export type SourceAnalysisCache = Map<string, IndexedSource>;
@@ -66,7 +67,8 @@ export function analyzeWriting(project: ProjectSnapshot, cache: SourceAnalysisCa
     labels.push(...source.labels);
     diagnostics.push(...source.diagnostics);
     if (source.bibliography && source.diagnostics.length === 0) {
-      diagnostics.push(...checkBibliography(source.file.path, source.file.text));
+      source.validation ??= {key: "", diagnostics: checkBibliography(source.file.path, source.file.text)};
+      diagnostics.push(...source.validation.diagnostics);
     }
   }
 
@@ -87,8 +89,21 @@ export function analyzeWriting(project: ProjectSnapshot, cache: SourceAnalysisCa
   const unique = [...groups.values()]
     .map((group: LabelTarget[]): LabelTarget => group[0])
     .filter((target: LabelTarget): boolean => isValidLabel(target.key));
-  for (const { file, bibliography } of sources) {
-    if (!bibliography) diagnostics.push(...checkChapter(file.path, file.text, unique, diagnostics));
+  for (const source of sources) {
+    if (source.bibliography) continue;
+    const {file} = source;
+    // Text changes replace the IndexedSource. External declarations and local
+    // diagnostic offsets also affect validation and duplicate-error suppression.
+    const key = JSON.stringify([
+      unique.filter((label: LabelTarget): boolean => label.path !== file.path)
+        .map((label: LabelTarget): string[] => [label.key, label.label, label.path]),
+      diagnostics.filter((issue: Diagnostic): boolean => issue.path === file.path)
+        .map((issue: Diagnostic): number => issue.from),
+    ]);
+    if (source.validation?.key !== key) {
+      source.validation = {key, diagnostics: checkChapter(file.path, file.text, unique, diagnostics)};
+    }
+    diagnostics.push(...source.validation.diagnostics);
   }
 
   const chapters = new Map<string, ChapterLanguage>();

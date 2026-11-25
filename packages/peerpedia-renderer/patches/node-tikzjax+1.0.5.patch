@@ -1,5 +1,5 @@
 diff --git a/node_modules/node-tikzjax/dist/bootstrap.d.ts b/node_modules/node-tikzjax/dist/bootstrap.d.ts
-index ff78148..03459d4 100644
+index ff78148..4a7b502 100644
 --- a/node_modules/node-tikzjax/dist/bootstrap.d.ts
 +++ b/node_modules/node-tikzjax/dist/bootstrap.d.ts
 @@ -64,3 +64,6 @@ export declare function getTexPreamble(options?: TeXOptions): string;
@@ -7,17 +7,28 @@ index ff78148..03459d4 100644
   */
  export declare function dumpMemfs(): IFs;
 +
-+export interface EngineAssets { core: Uint8Array; wasm: Uint8Array; readFile(name: string): Uint8Array; }
++export interface EngineAssets { core: Uint8Array | { byteLength: number; restore(target: Uint8Array): void }; wasm: Uint8Array; readFile(name: string): Uint8Array; }
 +export declare function setAssetLoader(loader: () => Promise<EngineAssets>): void;
 diff --git a/node_modules/node-tikzjax/dist/bootstrap.js b/node_modules/node-tikzjax/dist/bootstrap.js
-index 25b173c..1e48e7c 100644
+index 25b173c..6b82901 100644
 --- a/node_modules/node-tikzjax/dist/bootstrap.js
 +++ b/node_modules/node-tikzjax/dist/bootstrap.js
-@@ -46,7 +46,27 @@ const TEX_FILES_EXTRACTED_PATH = (0, path_1.join)('/', 'tex_files');
+@@ -34,6 +34,10 @@ const library = __importStar(require("./library"));
+ let coredump;
+ // The cached unzipped data of file `tex.wasm.gz`.
+ let bytecode;
++/** @type {WebAssembly.Module|undefined} */
++let compiledModule;
++/** @type {WebAssembly.Memory|undefined} */
++let workingMemory;
+ // The memory filesystem that stores the TeX files extracted from `tex_files.tar.gz`.
+ let memfs;
+ // The directory where the TeX files are located (core.dump.gz, tex.wasm.gz, tex_files.tar.gz).
+@@ -46,7 +50,27 @@ const TEX_FILES_EXTRACTED_PATH = (0, path_1.join)('/', 'tex_files');
  /**
   * Load necessary files into memory.
   */
-+/** @typedef {{core:Uint8Array, wasm:Uint8Array, readFile:(name:string)=>Uint8Array}} EngineAssets */
++/** @typedef {{core:Uint8Array|{byteLength:number,restore:(target:Uint8Array)=>void}, wasm:Uint8Array, readFile:(name:string)=>Uint8Array}} EngineAssets */
 +/** @type {undefined|(()=>Promise<EngineAssets>)} */
 +let assetLoader;
 +/** Supply immutable embedded engine resources before the first compilation.
@@ -41,3 +52,85 @@ index 25b173c..1e48e7c 100644
      if (!coredump) {
          const stream = (0, fs_1.createReadStream)(COREDUMP_PATH).pipe((0, zlib_1.createGunzip)());
          coredump = await stream2buffer(stream);
+@@ -60,47 +84,44 @@ async function load() {
+     }
+ }
+ exports.load = load;
+-/**
+- * Run the TeX engine to compile TeX source code.
+- *
+- * @param input The TeX source code.
+- * @returns The generated DVI file.
++/** Run TeX with fresh globals and restored memory for every isolated job.
++ * @param {string} input
++ * @param {import('./bootstrap').TeXOptions} options
++ * @returns {Promise<Buffer>}
+  */
+ async function tex(input, options = {}) {
+-    // Set up the tex input file.
+-    const preamble = getTexPreamble(options);
+-    input = preamble + input;
+-    if (options.showConsole) {
+-        library.setShowConsole();
+-        console.log('TikZJax: Rendering input:');
+-        console.log(input);
+-    }
+-    // Write the tex input file into the memory filesystem.
+-    library.writeFileSync('input.tex', Buffer.from(input));
+-    // Copy the coredump into the memory.
+-    const memory = new WebAssembly.Memory({ initial: library.pages, maximum: library.pages });
+-    const buffer = new Uint8Array(memory.buffer, 0, library.pages * 65536);
+-    buffer.set(coredump.slice(0));
+-    library.setMemory(memory.buffer);
+-    library.setInput(' input.tex \n\\end\n');
+-    // Set the file loader to read files from the memory filesystem.
+-    library.setFileLoader(readTexFileFromMemory);
+-    // Set up the WebAssembly TeX engine.
+-    const wasm = await WebAssembly.instantiate(bytecode, {
+-        library: library,
+-        env: { memory: memory },
+-    });
+-    // Execute TeX and extract the generated DVI file.
+-    await library.executeAsync(wasm.instance.exports);
+     try {
+-        const dvi = Buffer.from(library.readFileSync('input.dvi'));
+-        // Clean up the library for the next run.
+-        library.deleteEverything();
+-        return dvi;
+-    }
+-    catch (e) {
++        input = getTexPreamble(options) + input;
++        if (options.showConsole) {
++            library.setShowConsole();
++            console.log('TikZJax: Rendering input:');
++            console.log(input);
++        }
++        library.writeFileSync('input.tex', Buffer.from(input));
++        workingMemory ??= new WebAssembly.Memory({ initial: library.pages, maximum: library.pages });
++        const buffer = new Uint8Array(workingMemory.buffer);
++        if (typeof coredump.restore === 'function') coredump.restore(buffer);
++        else {
++            buffer.fill(0);
++            buffer.set(coredump);
++        }
++        library.setMemory(workingMemory.buffer);
++        library.setInput(' input.tex \n\\end\n');
++        library.setFileLoader(readTexFileFromMemory);
++        compiledModule ??= await WebAssembly.compile(bytecode);
++        // Re-instantiation resets mutable WASM globals without recompiling code.
++        const instance = await WebAssembly.instantiate(compiledModule, {
++            library,
++            env: { memory: workingMemory },
++        });
++        await library.executeAsync(instance.exports);
++        try {
++            return Buffer.from(library.readFileSync('input.dvi'));
++        } catch {
++            throw new Error('TeX engine render failed. Set `options.showConsole` to `true` to see logs.');
++        }
++    } finally {
+         library.deleteEverything();
+-        throw new Error('TeX engine render failed. Set `options.showConsole` to `true` to see logs.');
+     }
+ }
+ exports.tex = tex;

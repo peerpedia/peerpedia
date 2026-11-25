@@ -1,8 +1,14 @@
 import {
+  DiagramCache,
+  isCacheRequest,
+  type CacheRequest,
+} from "../../packages/peerpedia-renderer/browser/diagram-cache";
+import {
   Plugin,
   ItemView,
   type WorkspaceLeaf,
   FileSystemAdapter,
+  sanitizeHTMLToDom,
 } from "obsidian";
 import { join } from "node:path";
 import {
@@ -39,6 +45,7 @@ class Preview extends ItemView {
   }
 }
 export default class Prototype extends Plugin {
+  private readonly diagrams = new DiagramCache();
   private worker?: Worker;
   private serial = 0;
   private readonly pending = new Map<
@@ -63,9 +70,27 @@ export default class Prototype extends Plugin {
       );
       this.worker = new Worker(url);
       URL.revokeObjectURL(url);
-      this.worker.onmessage = (
-        event: MessageEvent<{ id: number; result: Result; error?: string }>,
+      const worker = this.worker;
+      worker.onmessage = (
+        event: MessageEvent<
+          { id: number; result: Result; error?: string } | CacheRequest
+        >,
       ): void => {
+        if (this.worker !== worker) return;
+        if (isCacheRequest(event.data)) {
+          const message = event.data;
+          if (message.operation === "set")
+            this.diagrams.set(message.key, message.value!);
+          this.worker?.postMessage({
+            channel: message.channel,
+            id: message.id,
+            value:
+              message.operation === "get"
+                ? this.diagrams.get(message.key)
+                : undefined,
+          });
+          return;
+        }
         const pending = this.pending.get(event.data.id);
         if (!pending) return;
         clearTimeout(pending.timer);
@@ -116,7 +141,7 @@ export default class Prototype extends Plugin {
       const article = doc.createElement("article");
       article.className = "peerpedia-article peerpedia-theme-tokens";
       for (const page of this.result?.pages ?? [])
-        article.append(articleFragment(doc, page.html));
+        article.append(articleFragment(doc, sanitizeHTMLToDom(page.html)));
       doc.body.append(article);
     };
     frame.srcdoc =
@@ -177,6 +202,7 @@ export default class Prototype extends Plugin {
     this.pending.clear();
   }
   onunload(): void {
+    this.diagrams.clear();
     this.stop(new Error("Prototype unloaded"));
   }
 }

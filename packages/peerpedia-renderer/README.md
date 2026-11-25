@@ -23,6 +23,22 @@ The plugin owns the outer render queue, cancellation, deadline and idle disposal
 in `obsidian/src/preview/browser-renderer-client.ts`. The shared package does not
 own Obsidian views, account storage or publication transactions.
 
+## Browser diagram cache
+
+The browser adapter preserves `bananamark-tikz`'s JSON cache format and keys
+(compiler recipe, preamble, source, mode and display options). Its filesystem
+adapter accesses only a reserved virtual cache path; it never reads or writes
+user files. Browser hosts must route the `peerpedia-diagram-cache` request/reply
+messages, as the production client and retained prototype do.
+
+The plugin owns a memory-only LRU cache limited to 128 diagrams and 8 MiB of
+UTF-16 string payload. Successful SVG results survive both workers' idle
+shutdown and are cleared on plugin unload; they do not survive app restart.
+Changed diagrams miss the cache and use the complete embedded TeX engine offline.
+No package, library or font is omitted. The working WASM memory still requires
+68.75 MiB; sparse snapshots remove redundant stored zeros, not the engine's
+address space.
+
 ## Reproduce
 
 From the repository root:
@@ -48,7 +64,11 @@ the upstream projects:
 
 1. `node-tikzjax@1.0.5`: exports `setAssetLoader` for embedded core/WASM/resources.
    The original disk loader remains the Node default. Loading new assets after
-   engine initialization is rejected. TeX execution and SVG conversion are retained.
+   engine initialization is rejected. The browser core snapshot stores only nonzero
+   64 KiB pages. Every job clears and restores one reusable working memory; the
+   compiled WASM module is reused with a fresh instance to reset mutable globals.
+   Virtual files are cleared in `finally`, including execution failures. The engine
+   remains serial and SVG conversion is unchanged.
 2. `bananamark-tikz@0.1.0`: calls the timer's Node-specific `unref` only when present.
    Diagram source, compiler options and timeout behavior are retained.
 

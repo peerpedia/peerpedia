@@ -23,6 +23,8 @@ export class PreviewController {
 
   update(project: ProjectSnapshot): void {
     if (this.disposed || project.revision === this.value.currentRevision) return;
+    // Opening or switching papers is explicit; only later edits need typing debounce.
+    const delay = this.value.currentRevision ? 300 : 0;
     this.cancel();
     if (project.revision === this.value.renderedRevision) {
       this.value = { ...this.value, currentRevision: project.revision, busy: false, error: null };
@@ -30,7 +32,7 @@ export class PreviewController {
       this.value = { ...this.value, currentRevision: project.revision, busy: true, error: null };
       const active = new AbortController();
       this.active = active;
-      this.timer = setTimeout((): void => { void this.run(project, active); }, 300);
+      this.timer = setTimeout((): void => { void this.run(project, active); }, delay);
     }
     this.changed();
   }

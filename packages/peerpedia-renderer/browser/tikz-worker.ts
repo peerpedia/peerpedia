@@ -1,11 +1,10 @@
 import { setAssetLoader } from "node-tikzjax";
-import { Buffer } from "buffer";
-import { loadAssets } from "./assets";
+import { loadAssets, type CoreSnapshot } from "./assets";
 import "peerpedia-tikz-worker";
 
 setAssetLoader(
   async (): Promise<{
-    core: Uint8Array;
+    core: CoreSnapshot;
     wasm: Uint8Array;
     readFile: (name: string) => Uint8Array;
   }> => {
@@ -14,9 +13,11 @@ setAssetLoader(
       core: assets.core,
       wasm: assets.wasm,
       readFile(name: string): Uint8Array {
-        if (!(name in assets.files))
+        if (!Object.hasOwn(assets.files, name))
           throw new Error("Missing TeX resource: " + name);
-        return Buffer.from(assets.files[name], "base64");
+        // TeX can reopen a loaded file for writing. Keep the archive immutable
+        // across compilations, as the former base64 decoding did on each read.
+        return Uint8Array.from(assets.files[name]);
       },
     };
   },
